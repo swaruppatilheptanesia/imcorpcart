@@ -29,6 +29,10 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
     .map((s) => s.v)
     .join('  |  ');
 
+  // This SKU's own colour · variant (families are shown one card per SKU), so
+  // same-name variants stay distinguishable — e.g. "Blue · 128GB".
+  const variantLabel = [p.optionColor, p.optionVariant].filter(Boolean).join(' · ');
+
   return (
     <button className={cn(styles.card, list && styles.listCard)} onClick={() => navigate(`/shop/product/${p.id}`)}>
       <div className={styles.well} style={{ aspectRatio: list ? '1 / 1' : ASPECT[p.group] ?? DEFAULT_ASPECT }}>
@@ -67,9 +71,7 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
           </div>
         )}
         <div className={styles.name}>{p.name}</div>
-        {(p.familyColors ?? 1) > 1 && (
-          <div className={styles.colours}>{p.familyColors} colours</div>
-        )}
+        {variantLabel && <div className={styles.colours}>{variantLabel}</div>}
         {specLine && <div className={styles.specs}>{specLine}</div>}
         <div className={styles.priceRow}>
           <span className={styles.price}>{inr(p.price)}</span>

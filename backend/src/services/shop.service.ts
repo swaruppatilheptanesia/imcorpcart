@@ -140,30 +140,6 @@ const HAS_LIVE_OFFER = {
   offers: { some: { isActive: true, status: ProductStatus.ACTIVE, quantity: { gt: 0 }, deletedAt: null } },
 } satisfies Prisma.ProductWhereInput;
 
-// Collapse a variant family to one card: keep the cheapest-priced representative
-// per familyKey (standalone products — null familyKey — always kept), and stamp
-// how many distinct colours the family has so a card can badge "N colours".
-function collapseFamilies(items: StoreProductLite[]): StoreProductLite[] {
-  const byFamily = new Map<string, StoreProductLite[]>();
-  const out: StoreProductLite[] = [];
-  for (const it of items) {
-    if (!it.familyKey) {
-      out.push({ ...it, familyColors: 1 });
-      continue;
-    }
-    const arr = byFamily.get(it.familyKey);
-    if (arr) arr.push(it);
-    else byFamily.set(it.familyKey, [it]);
-  }
-  for (const members of byFamily.values()) {
-    const rep = [...members].sort((a, b) => a.price - b.price)[0];
-    const colours = new Set(members.map((m) => m.optionColor).filter(Boolean));
-    out.push({ ...rep, familyColors: colours.size || 1 });
-  }
-  // Preserve the original createdAt-desc ordering by newness stamp.
-  return out.sort((a, b) => b.newness - a.newness);
-}
-
 // Sibling SKUs of a product's variant family (self included), for the detail
 // page's colour/variant selectors. Empty family → just the product itself.
 async function familyMembersOf(
@@ -200,7 +176,9 @@ export async function listProducts() {
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
-  return { data: serialize(collapseFamilies(rows.map((r) => toStoreProduct(r)))) };
+  // Every SKU is shown as its own card — variant families are NOT collapsed
+  // (each colour/variant combination is a separate product on the storefront).
+  return { data: serialize(rows.map((r) => toStoreProduct(r))) };
 }
 
 export async function getProduct(id: string) {
@@ -236,7 +214,8 @@ export async function listPublicProducts() {
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
-  return { data: serialize(collapseFamilies(rows.map((r) => toStoreProduct(r, { public: true })))) };
+  // Every SKU is shown as its own card — see listProducts.
+  return { data: serialize(rows.map((r) => toStoreProduct(r, { public: true }))) };
 }
 
 export async function getPublicProduct(id: string) {
