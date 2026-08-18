@@ -171,6 +171,7 @@
   width: 60px;
 }
 .thumb {
+  position: relative;
   width: 60px;
   height: 60px;
   border-radius: 10px;
@@ -179,6 +180,29 @@
   overflow: hidden;
   cursor: pointer;
   padding: 0;
+}
+/* "+N / View more" overlay on the last thumbnail when there are extra images. */
+.thumbMore {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: #fff;
+  pointer-events: none;
+}
+.thumbMore strong {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.thumbMore span {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .thumbOn {
   border-color: var(--accent);
@@ -761,7 +785,7 @@ button.varChip:hover {
 
 @media (max-width: 768px) {
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
   .center,
@@ -775,13 +799,23 @@ button.varChip:hover {
   .title {
     font-size: 22px;
   }
-  /* Thumb rail moves below the image as a horizontal, scrollable row. */
+  /* min-width:0 down the gallery chain so wide content (the thumb row) scrolls
+     inside the viewport instead of pushing the whole page sideways. */
+  .galleryCol {
+    min-width: 0;
+  }
+  /* Thumb rail moves below the image as a horizontal, scrollable row that is
+     capped to the container width so it scrolls internally, never overflowing. */
   .galleryRow {
     flex-direction: column-reverse;
+    min-width: 0;
   }
   .thumbs {
     flex-direction: row;
-    width: auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }

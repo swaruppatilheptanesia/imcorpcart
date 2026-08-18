@@ -15,6 +15,9 @@ import s from './store-screen.module.css';
 import styles from './Product.module.css';
 
 const PINCODE_KEY = 'imc_pincode';
+// Amazon-style: cap the thumbnail rail; extra images go behind a "+N / View more"
+// tile that opens the full-view lightbox.
+const MAX_THUMBS = 5;
 
 export function Product() {
   const { id } = useParams();
@@ -182,17 +185,28 @@ function Detail({ p }: { p: ProductDetail }) {
           <div className={styles.galleryRow}>
             {hasImages && p.images.length > 1 && (
               <div className={styles.thumbs}>
-                {p.images.map((src, i) => (
-                  <button
-                    key={src + i}
-                    className={cn(styles.thumb, i === activeImg && styles.thumbOn)}
-                    onMouseEnter={() => setActiveImg(i)}
-                    onClick={() => setActiveImg(i)}
-                    aria-label={`Image ${i + 1}`}
-                  >
-                    <img className={styles.thumbImg} src={src} alt="" />
-                  </button>
-                ))}
+                {p.images.slice(0, MAX_THUMBS).map((src, i) => {
+                  // Last visible slot when there are more images → "+N / View more"
+                  // tile that opens the full-view lightbox instead of selecting.
+                  const isMore = i === MAX_THUMBS - 1 && p.images.length > MAX_THUMBS;
+                  return (
+                    <button
+                      key={src + i}
+                      className={cn(styles.thumb, !isMore && i === activeImg && styles.thumbOn)}
+                      onMouseEnter={() => !isMore && setActiveImg(i)}
+                      onClick={() => (isMore ? setLightbox(true) : setActiveImg(i))}
+                      aria-label={isMore ? 'View all images' : `Image ${i + 1}`}
+                    >
+                      <img className={styles.thumbImg} src={src} alt="" />
+                      {isMore && (
+                        <span className={styles.thumbMore}>
+                          <strong>+{p.images.length - MAX_THUMBS}</strong>
+                          <span>View more</span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
             <div className={styles.gallery} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
