@@ -1,0 +1,51 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications (spec §1 bus + config / §3 employee events) — B6.
+// Templates + event->channel matrix drive dispatch across EMAIL / SMS / WEB.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model NotificationTemplate {
+  id      String              @id @default(cuid())
+  event   NotificationEvent
+  channel NotificationChannel
+  locale  String              @default("en")
+  subject String?
+  body    String
+  active  Boolean             @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([event, channel, locale])
+  @@map("notification_templates")
+}
+
+// The event -> enabled-channels matrix (which channels fire for which event).
+model NotificationEventChannelMap {
+  id      String              @id @default(cuid())
+  event   NotificationEvent
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  @@unique([event, channel])
+  @@index([event])
+  @@map("notification_event_channel_map")
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  recipientId String
+  recipient   User                @relation(fields: [recipientId], references: [id])
+  event       NotificationEvent
+  channel     NotificationChannel
+  status      NotificationStatus  @default(QUEUED)
+  payload     Json?
+  sentAt      DateTime?
+  error       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([recipientId])
+  @@index([event])
+  @@index([status])
+  @@map("notifications")
+}

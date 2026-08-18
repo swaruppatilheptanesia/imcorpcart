@@ -1,0 +1,206 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog management (spec §2 — P1, Super Admin)
+// Products, categories/sub-categories, dual EPP / Smart EPP pricing, visibility.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Category {
+  id       String     @id @default(cuid())
+  name     String
+  slug     String     @unique
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+  coupons  Coupon[]
+
+  exhibitionCampaigns ExhibitionCampaign[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  sku         String        @unique
+  name        String
+  brand       String?
+  description String?
+  categoryId  String
+  category    Category      @relation(fields: [categoryId], references: [id])
+  subCategory String?       @map("sub_category") // e.g. flagship / audio / backpacks
+  status      ProductStatus @default(DRAFT)
+
+  // Product-level list price (MRP) + public/pre-login MOP, authored by the Super
+  // Admin (single published prices). Per-reseller EPP/Smart-EPP selling prices +
+  // stock live on ProductOffer. MOP null falls back to MRP for the public catalog.
+  mrp Decimal? @db.Decimal(12, 2)
+  mop Decimal? @db.Decimal(12, 2)
+
+  // Legacy single-seller FK. DEPRECATED by the marketplace ProductOffer model
+  // (a product can have many resellers). Kept nullable for back-compat; new
+  // products leave it null and derive sellers from `offers`.
+  resellerId String?
+  reseller   Reseller? @relation(fields: [resellerId], references: [id])
+
+  // Optional free-text options (comma-separated), primarily for mobiles.
+  colorOptions   String? @map("color_options") // e.g. "Black, Blue, White"
+  variantOptions String? @map("variant_options") // e.g. "128GB, 256GB, 512GB"
+
+  // Amazon-style variant family: separate SKUs sharing a `familyKey` are sibling
+  // variations. Each carries its own colour + config axis value. Null familyKey =
+  // a standalone product. The storefront collapses a family to one card and the
+  // detail page renders colour/variant selectors that switch between siblings.
+  familyKey     String? @map("family_key")
+  optionColor   String? @map("option_color") // this SKU's colour label, e.g. "Gold"
+  optionVariant String? @map("option_variant") // this SKU's config label, e.g. "64GB"
+
+  // Storefront presentation fields (drive the shopper catalog cards / detail).
+  rating      Float?  @map("rating") // average customer rating, 0–5
+  reviewCount Int?    @map("review_count")
+  freebieText String? @map("freebie_text") // first-party freebie text (reseller products use freeGift)
+  specs       Json?   @map("specs") // [{k,v}] key-value spec rows
+
+  // Attached reseller-managed free gift (null = none). Reseller products use this
+  // instead of freebieText; the storefront badge shows the gift's title.
+  freeGiftId String?
+  freeGift   FreeGift? @relation(fields: [freeGiftId], references: [id])
+
+  images       ProductImage[]
+  prices       ProductPrice[] // DEPRECATED — superseded by ProductOffer
+  offers       ProductOffer[]
+  visibilities ProductVisibility[]
+  inventory    Inventory? // DEPRECATED — per-offer stock lives on ProductOffer
+
+  cartItems     CartItem[]
+  smartEppItems SmartEppRequestItem[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([categoryId])
+  @@index([subCategory])
+  @@index([resellerId])
+  @@index([status])
+  @@index([familyKey])
+  @@map("products")
+}
+
+// Employee's saved products (backs storefront wishlist + "most wishlisted" analytics).
+model WishlistItem {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([employeeId, productId])
+  @@index([productId])
+  @@map("wishlist_items")
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String?
+  position  Int     @default(0)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+// Dual pricing: one row per PriceType (EPP / Smart EPP), with effective window.
+model ProductPrice {
+  id            String    @id @default(cuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceType     PriceType
+  mrp           Decimal   @db.Decimal(12, 2)
+  // Market Operating Price — the public/pre-login price (Samsung B2B model).
+  // Null falls back to MRP for the public catalog projection.
+  mop           Decimal?  @db.Decimal(12, 2)
+  sellingPrice  Decimal   @db.Decimal(12, 2)
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, priceType, isActive])
+  @@map("product_prices")
+}
+
+// Marketplace offer/listing: one row per (product × reseller). A product can be
+// sold by many resellers, each with their own selling prices + stock. The
+// storefront "buy box" picks the cheapest active, in-stock offer. A null
+// resellerId is the first-party / house offer.
+model ProductOffer {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  resellerId String?
+  reseller   Reseller? @relation(fields: [resellerId], references: [id])
+
+  eppPrice      Decimal  @db.Decimal(12, 2) // corporate EPP selling price
+  smartEppPrice Decimal? @db.Decimal(12, 2) // Smart-EPP selling price (optional)
+  mop           Decimal? @db.Decimal(12, 2) // DEPRECATED — public MOP is now Product.mop (admin-set)
+  quantity      Int      @default(0)
+
+  // One of the offer reseller's own free gifts (null = none).
+  freeGiftId String?
+  freeGift   FreeGift? @relation(fields: [freeGiftId], references: [id])
+
+  // DRAFT until the reseller sets a price; only ACTIVE + isActive + in-stock
+  // offers are eligible for the buy box.
+  status   ProductStatus @default(DRAFT)
+  isActive Boolean       @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([productId, resellerId])
+  @@index([productId])
+  @@index([resellerId])
+  @@map("product_offers")
+}
+
+// Visibility control (spec §2): global, or scoped to a specific company.
+model ProductVisibility {
+  id        String          @id @default(cuid())
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  scope     VisibilityScope @default(GLOBAL)
+  companyId String? // set when scope = COMPANY
+  isVisible Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, scope, companyId])
+  @@index([companyId])
+  @@map("product_visibilities")
+}
+
+model Inventory {
+  id        String          @id @default(cuid())
+  productId String          @unique
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int             @default(0)
+  status    InventoryStatus @default(IN_STOCK)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("inventory")
+}

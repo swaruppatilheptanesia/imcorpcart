@@ -1,0 +1,254 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums — shared across all domains.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The 8 roles served by the portal (spec §2/§3/§4).
+enum Role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  COMPANY_HR
+  LEASING_COMPANY
+  RESELLER
+  FULFILLMENT_PARTNER
+  EMPLOYEE_EPP
+  EMPLOYEE_SMART_EPP
+}
+
+enum UserStatus {
+  INVITED
+  PENDING // self-registered, awaiting Super Admin activation (blocked at login)
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+// Primarily admin-created (spec: no self-registration). QR_EXHIBITION is the
+// deliberate exception for the exhibition sign-up flow (special discount).
+enum RegistrationSource {
+  ADMIN
+  QR_EXHIBITION
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+// How long a QR-registered user's exhibition discount lasts.
+enum CampaignDiscountMode {
+  FIRST_ORDER // consumed by the user's first order
+  WHILE_ACTIVE // every order while the campaign is ACTIVE and in-window
+  FOREVER // permanent once registered via the QR
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  ONBOARDING
+}
+
+// Which purchase program an employee is eligible for.
+enum EmployeeProgram {
+  EPP
+  SMART_EPP
+  BOTH
+}
+
+// ── Catalog ──────────────────────────────────────────────────────────────────
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+  DISCONTINUED
+}
+
+enum PriceType {
+  EPP
+  SMART_EPP
+}
+
+enum VisibilityScope {
+  GLOBAL
+  COMPANY
+}
+
+// ── Coupons / promotions ─────────────────────────────────────────────────────
+enum CouponType {
+  PERCENT // % off (uses maxDiscount as a cap)
+  FLAT // ₹ off
+}
+
+enum CouponStatus {
+  ACTIVE
+  SCHEDULED
+  EXPIRED
+}
+
+// ── Payments ─────────────────────────────────────────────────────────────────
+enum PaymentMethod {
+  UPI
+  NET_BANKING
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum GatewayProvider {
+  RAZORPAY
+  PAYU
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED // reserved for future refund engine (B5)
+}
+
+// ── Credit engine ────────────────────────────────────────────────────────────
+enum CreditModel {
+  REVOLVING
+  ONE_TIME
+}
+
+enum CreditPeriod {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  NONE
+}
+
+enum CreditLedgerType {
+  RESERVE // at Smart EPP submission (S2)
+  RELEASE // on rejection / cancellation (S3)
+  CONSUME // on fulfillment
+  REPLENISH // revolving top-up at period roll-over
+  ADJUST // manual admin correction
+}
+
+// ── Smart EPP ────────────────────────────────────────────────────────────────
+enum SmartEppStatus {
+  DRAFT
+  SUBMITTED
+  HR_APPROVED
+  LEASING_APPROVED
+  APPROVED
+  REJECTED
+  CANCELLED
+  ORDERED
+}
+
+enum ApprovalStage {
+  HR
+  LEASING
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ── Orders ───────────────────────────────────────────────────────────────────
+enum OrderType {
+  EPP
+  SMART_EPP
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  DISPATCHED
+  DELIVERED
+  CANCELLED // reserved — cancellation flow out of scope (B3)
+  RETURNED // reserved — returns flow out of scope (B4)
+}
+
+enum AddressType {
+  OFFICE
+  HOME
+  COMPANY_DEFINED
+}
+
+// ── Fulfillment ──────────────────────────────────────────────────────────────
+enum CourierCode {
+  BLUEDART
+  DELHIVERY
+  DTDC
+  EKART
+  INDIA_POST
+}
+
+enum CourierPriority {
+  HIGH
+  MEDIUM
+  FALLBACK
+}
+
+enum ShipmentStatus {
+  PENDING
+  DISPATCHED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum DocumentType {
+  INVOICE
+  EWAY_BILL
+  POD
+}
+
+// Hybrid per S5/S6: a document is either portal-generated or partner-uploaded.
+enum DocumentSource {
+  GENERATED
+  UPLOADED
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WEB
+}
+
+enum NotificationEvent {
+  ACCOUNT_CREATED
+  OTP_ISSUED
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  ORDER_DISPATCHED
+  ORDER_DELIVERED
+  SMART_EPP_SUBMITTED
+  SMART_EPP_HR_APPROVED
+  SMART_EPP_LEASING_APPROVED
+  SMART_EPP_APPROVED
+  SMART_EPP_REJECTED
+  CREDIT_RESERVED
+  CREDIT_RELEASED
+  PAYMENT_CAPTURED
+  PAYMENT_FAILED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+enum ReportFormat {
+  CSV
+  PDF
+}

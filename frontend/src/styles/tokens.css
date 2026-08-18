@@ -1,0 +1,85 @@
+/* Design tokens — extracted verbatim from the handoff (README + Phase 2A prototype).
+   Light is the default; dark is applied via [data-theme="dark"] and honored as the
+   OS default via prefers-color-scheme. Style components through these vars only. */
+
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --accent: #0a5bd6;
+
+  /* Neutrals — light */
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --surface2: #fafbfc;
+  --text: #14161a;
+  --text2: #5b6270;
+  --text3: #949ba7;
+  --border: #e7e9ee;
+  --hair: #eef0f4;
+
+  /* Semantic — mode-independent */
+  --success: #1e9e6a;
+  --warning: #e0921a;
+  --error: #e0453b;
+  --info: #2b7be4;
+
+  /* Vendor brand colors */
+  --v-imcorpcart: #0a5bd6;
+  --v-techno: #1e9e6a;
+  --v-mobilehub: #e0921a;
+  --v-gadgetpro: #7a5af0;
+  --v-urbancarry: #c0562b;
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(16, 18, 22, 0.04);
+  --shadow-hover: 0 14px 30px -16px rgba(16, 18, 22, 0.28);
+  --shadow-pop: 0 24px 50px -18px rgba(16, 18, 22, 0.28);
+  --shadow-drawer: -24px 0 60px -20px rgba(16, 18, 22, 0.35);
+  --shadow-modal: 0 30px 70px -25px rgba(0, 0, 0, 0.5);
+  --shadow-toast: 0 16px 40px -14px rgba(16, 18, 22, 0.35);
+
+  /* Type */
+  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* Dark palette — used when the OS prefers dark and no explicit theme is set. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0d0e11;
+    --surface: #16181d;
+    --surface2: #1d2026;
+    --text: #f3f4f7;
+    --text2: #a6acb9;
+    --text3: #6c7481;
+    --border: #262a31;
+    --hair: #20242b;
+  }
+}
+
+/* Explicit theme override wins in both directions (viewer toggle). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d0e11;
+  --surface: #16181d;
+  --surface2: #1d2026;
+  --text: #f3f4f7;
+  --text2: #a6acb9;
+  --text3: #6c7481;
+  --border: #262a31;
+  --hair: #20242b;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --surface2: #fafbfc;
+  --text: #14161a;
+  --text2: #5b6270;
+  --text3: #949ba7;
+  --border: #e7e9ee;
+  --hair: #eef0f4;
+}

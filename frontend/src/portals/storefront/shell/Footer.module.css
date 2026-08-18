@@ -1,0 +1,99 @@
+.footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  margin-top: 40px;
+}
+.inner {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 40px;
+  padding: 40px 40px 28px;
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: start;
+}
+.brandCol {
+  max-width: 360px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.glyph {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.glyphInner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+}
+.word {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.tagline {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text2);
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.colTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 2px;
+}
+.link,
+.linkBtn {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--text2);
+  text-decoration: none;
+  cursor: pointer;
+}
+.link:hover,
+.linkBtn:hover {
+  color: var(--accent);
+}
+.bottom {
+  border-top: 1px solid var(--hair);
+  padding: 16px 40px;
+  font-size: 12px;
+  color: var(--text3);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .inner {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 32px 20px 24px;
+  }
+  .bottom {
+    padding: 16px 20px 90px; /* clear the fixed bottom TabBar */
+  }
+}

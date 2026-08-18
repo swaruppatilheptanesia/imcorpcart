@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+dist-ssr/
+**/dist/
+.vite/
+
+# Env & secrets (keep example templates)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Backend runtime uploads (keep dir, ignore contents)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Prisma local dev DBs
+**/prisma/*.db
+**/prisma/migrations/dev.db*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editors / tooling
+.DS_Store
+.vscode/
+.idea/
+*.local
+.claude/
+
+# Markdown & documents excluded per request (README.md kept)
+*.md
+!README.md
+frontend/design_handoff_imcorpcart_platform/
+backend/docs/
+*.docx
+*.pdf
+*.sql
+
+# Root tooling folder (out of frontend/backend scope)
+/scripts/

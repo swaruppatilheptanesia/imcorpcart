@@ -1,0 +1,109 @@
+.sidebar {
+  width: 244px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 20px 20px 22px;
+}
+.glyph {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.glyphInner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff;
+  border-radius: 4px;
+}
+.word {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.role {
+  font-size: 10.5px;
+  color: var(--text3);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.nav {
+  padding: 6px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text2);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+}
+.item:hover {
+  background: var(--surface2);
+}
+.itemActive {
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  color: var(--accent);
+  font-weight: 700;
+}
+.itemActive:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--hair);
+}
+.who {
+  flex: 1;
+  min-width: 0;
+}
+.whoName {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.whoSub {
+  font-size: 11px;
+  color: var(--text3);
+}
+.signout {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  padding: 6px;
+  border-radius: 8px;
+  display: inline-flex;
+}
+.signout:hover {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+}

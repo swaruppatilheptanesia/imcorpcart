@@ -1,0 +1,60 @@
+import {
+  LayoutDashboard,
+  Package,
+  FolderTree,
+  ShoppingBag,
+  Users,
+  BarChart3,
+  CreditCard,
+  UploadCloud,
+  QrCode,
+  GalleryHorizontalEnd,
+  type LucideIcon,
+} from 'lucide-react';
+
+export interface NavDef {
+  key: string; // route segment
+  label: string;
+  icon: LucideIcon;
+}
+
+export const navDefs: NavDef[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'products', label: 'Products', icon: Package },
+  { key: 'categories', label: 'Categories', icon: FolderTree },
+  { key: 'orders', label: 'Orders', icon: ShoppingBag },
+  { key: 'users', label: 'Users & companies', icon: Users },
+  { key: 'qr-campaigns', label: 'QR campaigns', icon: QrCode },
+  { key: 'banners', label: 'Banners', icon: GalleryHorizontalEnd },
+  { key: 'reports', label: 'Reports', icon: BarChart3 },
+  { key: 'payments', label: 'Payments', icon: CreditCard },
+  { key: 'bulk', label: 'Bulk operations', icon: UploadCloud },
+];
+
+/** Sub-routes fold onto their parent nav item for active highlighting. */
+export function activeNav(route: string): string {
+  if (route === 'productDetail' || route === 'productEdit') return 'products';
+  if (route === 'orderDetail') return 'orders';
+  return route;
+}
+
+export interface RouteMeta {
+  title: string;
+  sub: string;
+}
+
+export const titles: Record<string, RouteMeta> = {
+  dashboard: { title: 'Dashboard', sub: 'Real-time overview across all companies' },
+  products: { title: 'Products', sub: 'The platform catalog across every vendor' },
+  productDetail: { title: 'Product detail', sub: 'Master record + sellers' },
+  productEdit: { title: 'Product', sub: 'Author the product master' },
+  categories: { title: 'Categories', sub: 'Category & sub-category master' },
+  orders: { title: 'Orders', sub: 'All orders across every company' },
+  orderDetail: { title: 'Order detail', sub: 'Manifest, timeline, and documents' },
+  users: { title: 'Users & companies', sub: 'Companies, employees, resellers, partners' },
+  'qr-campaigns': { title: 'QR campaigns', sub: 'Exhibition QR codes and registration discounts' },
+  banners: { title: 'Banners', sub: 'Promotional banners on the shopper Home carousel' },
+  reports: { title: 'Reports', sub: 'Export platform analytics' },
+  payments: { title: 'Payments', sub: 'Surcharge and gateway configuration' },
+  bulk: { title: 'Bulk operations', sub: 'CSV import and price updates' },
+};

@@ -1,0 +1,24 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+.p_none {
+  padding: 0;
+}
+.p_sm {
+  padding: 16px 18px;
+}
+.p_md {
+  padding: 20px;
+}
+.p_lg {
+  padding: 22px;
+}
+.hover {
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.hover:hover {
+  box-shadow: var(--shadow-hover);
+}

@@ -1,0 +1,80 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.icon {
+  display: inline-flex;
+  margin-left: -2px;
+}
+
+/* sizes */
+.sm {
+  font-size: 13px;
+  padding: 8px 13px;
+  border-radius: 9px;
+}
+.md {
+  font-size: 13.5px;
+  padding: 10px 16px;
+}
+.lg {
+  font-size: 15px;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
+}
+
+/* variants */
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.primary:hover {
+  background: color-mix(in srgb, var(--accent) 90%, #000);
+}
+.lg.primary {
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+.secondary:hover {
+  background: var(--surface2);
+}
+
+.danger {
+  background: var(--error);
+  color: #fff;
+}
+.danger:hover {
+  background: color-mix(in srgb, var(--error) 90%, #000);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--accent);
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.ghost:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.block {
+  width: 100%;
+}

@@ -1,0 +1,48 @@
+.header {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .back {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    display: inline-flex;
+    padding: 4px;
+    margin-left: -4px;
+  }
+  .brandGlyph {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .glyphInner {
+    width: 11px;
+    height: 11px;
+    border: 2px solid #fff;
+    border-radius: 3px;
+  }
+  .title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}

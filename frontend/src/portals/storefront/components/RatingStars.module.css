@@ -1,0 +1,17 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stars {
+  display: inline-flex;
+  gap: 1px;
+}
+.num {
+  font-size: 13px;
+  font-weight: 700;
+}
+.reviews {
+  font-size: 12px;
+  color: var(--text3);
+}

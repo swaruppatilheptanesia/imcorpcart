@@ -1,0 +1,102 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart EPP request & approval (spec §2 consoles / §3 employee flow) — S4.
+// Whole-request approval through a sequential, UNANIMOUS multi-stage flow:
+// every stage must approve; any single rejection rejects the entire request.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SmartEppRequest {
+  id          String         @id @default(cuid())
+  requestNo   String         @unique
+  employeeId  String
+  employee    Employee       @relation(fields: [employeeId], references: [id])
+  status      SmartEppStatus @default(DRAFT)
+  totalAmount Decimal        @db.Decimal(12, 2)
+  submittedAt DateTime?
+  decidedAt   DateTime?
+
+  items      SmartEppRequestItem[]
+  approvals  ApprovalStep[]
+  leaseTerms LeaseTerms?
+  order      Order?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("smart_epp_requests")
+}
+
+// Line items — approval is whole-request (no line-level approval, per S4).
+model SmartEppRequestItem {
+  id        String          @id @default(cuid())
+  requestId String
+  request   SmartEppRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product         @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Decimal         @db.Decimal(12, 2)
+  lineTotal Decimal         @db.Decimal(12, 2)
+
+  @@index([requestId])
+  @@map("smart_epp_request_items")
+}
+
+// One row per approval stage (HR stage-1, Leasing stage-2). Sequenced by `sequence`.
+// Unanimous rule enforced in app logic: any REJECTED -> request REJECTED (+ credit
+// RELEASE); all APPROVED -> request advances.
+model ApprovalStep {
+  id             String          @id @default(cuid())
+  requestId      String
+  request        SmartEppRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  stage          ApprovalStage
+  sequence       Int
+  status         ApprovalStatus  @default(PENDING)
+  approverUserId String?
+  approver       User?           @relation(fields: [approverUserId], references: [id])
+  comments       String?
+  decidedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([requestId, stage])
+  @@index([requestId])
+  @@index([approverUserId])
+  @@map("approval_steps")
+}
+
+// EMI / lease terms entered by the leasing company at stage 2.
+model LeaseTerms {
+  id               String          @id @default(cuid())
+  requestId        String          @unique
+  request          SmartEppRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  leasingCompanyId String
+  leasingCompany   LeasingCompany  @relation(fields: [leasingCompanyId], references: [id])
+  tenureMonths     Int
+  interestRate     Decimal         @db.Decimal(5, 2)
+  downPayment      Decimal         @default(0) @db.Decimal(12, 2)
+  financedAmount   Decimal         @db.Decimal(12, 2)
+  emiAmount        Decimal         @db.Decimal(12, 2)
+
+  installments LeaseScheduleInstallment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leasingCompanyId])
+  @@map("lease_terms")
+}
+
+// Schedule supplied by the leasing co; portal DISPLAYS only, does not track repayments.
+model LeaseScheduleInstallment {
+  id            String     @id @default(cuid())
+  leaseTermsId  String
+  leaseTerms    LeaseTerms @relation(fields: [leaseTermsId], references: [id], onDelete: Cascade)
+  installmentNo Int
+  dueDate       DateTime
+  amount        Decimal    @db.Decimal(12, 2)
+
+  @@unique([leaseTermsId, installmentNo])
+  @@index([leaseTermsId])
+  @@map("lease_schedule_installments")
+}

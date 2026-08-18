@@ -1,0 +1,105 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(12, 13, 16, 0.45);
+  backdrop-filter: blur(3px);
+  animation: saFade 0.2s ease;
+}
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Drawer */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow-drawer);
+  animation: saDrawer 0.3s ease;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hair);
+}
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.drawerFooter {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--hair);
+}
+
+/* Modal */
+.modal {
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: 18px;
+  box-shadow: var(--shadow-modal);
+  animation: saIn 0.25s ease;
+  overflow: hidden;
+}
+.modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 24px 16px;
+}
+.modalBody {
+  padding: 0 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.modalFooter {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 18px 24px 22px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  padding: 5px;
+  border-radius: 8px;
+  display: inline-flex;
+  line-height: 0;
+}
+.close:hover {
+  background: var(--surface2);
+  color: var(--text);
+}

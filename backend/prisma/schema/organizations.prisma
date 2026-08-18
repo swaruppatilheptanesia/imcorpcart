@@ -1,0 +1,142 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Organizations & tenancy (spec §2 — P1)
+// Company (corporate customer) + partner orgs (Leasing / Reseller / Fulfillment).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id     String    @id @default(cuid())
+  name   String
+  gstin  String?   @unique
+  status OrgStatus @default(ONBOARDING)
+
+  // Smart EPP (SEPP) is available to this company's employees only when the
+  // Super Admin enables it here. Gates the storefront's EMI/Smart-EPP option.
+  smartEppEnabled Boolean @default(false) @map("smart_epp_enabled")
+
+  // Corporate email domain (e.g. "acme.com"). Self-registration matches an
+  // employee's email domain to auto-join (or create) the right company.
+  emailDomain String? @unique @map("email_domain")
+
+  // Company Admin operator account (spec §2: Company Admin console).
+  adminUserId String? @unique
+  adminUser   User?   @relation("CompanyAdmin", fields: [adminUserId], references: [id])
+
+  // Credit policy governing this company's employees (S1–S3).
+  creditPolicyId String?       @unique
+  creditPolicy   CreditPolicy? @relation(fields: [creditPolicyId], references: [id])
+
+  employees Employee[]
+  addresses Address[]
+  orders    Order[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("companies")
+}
+
+model Employee {
+  id            String          @id @default(cuid())
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id])
+  userId        String          @unique
+  user          User            @relation(fields: [userId], references: [id])
+  employeeCode  String
+  department    String?
+  monthlySalary Decimal         @db.Decimal(12, 2) // drives credit limit (S1–S3)
+  program       EmployeeProgram @default(EPP)
+
+  // HR-set credit limit (typically the employee's annual salary). Kept as a
+  // simple stored ceiling for EPP; the Smart-EPP CreditAccount/ledger is separate.
+  creditLimit Decimal? @map("credit_limit") @db.Decimal(12, 2)
+
+  creditAccount    CreditAccount?
+  cart             Cart?
+  smartEppRequests SmartEppRequest[]
+  orders           Order[]
+  addresses        Address[]
+  wishlistItems    WishlistItem[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([companyId, employeeCode])
+  @@index([companyId])
+  @@map("employees")
+}
+
+model LeasingCompany {
+  id           String    @id @default(cuid())
+  name         String
+  gstin        String?   @unique
+  contactEmail String?
+  contactPhone String?
+  status       OrgStatus @default(ACTIVE)
+
+  // Operator account for this partner org.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  leaseTerms LeaseTerms[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("leasing_companies")
+}
+
+model Reseller {
+  id           String    @id @default(cuid())
+  name         String
+  gstin        String?   @unique
+  pan          String?
+  contactEmail String?
+  contactPhone String?
+  status       OrgStatus @default(ACTIVE)
+
+  // Platform commission on this reseller's sales (percentage, 0–100).
+  commissionPct Decimal? @default(0) @map("commission_pct") @db.Decimal(5, 2)
+
+  // Registered business address (single address; flat columns mirror `gstin`).
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  pincode      String?
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  orders    Order[]
+  products  Product[] // DEPRECATED single-seller link; use `offers`
+  offers    ProductOffer[]
+  coupons   Coupon[]
+  freeGifts FreeGift[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("resellers")
+}
+
+model FulfillmentPartner {
+  id           String    @id @default(cuid())
+  name         String
+  gstin        String?   @unique
+  contactEmail String?
+  contactPhone String?
+  status       OrgStatus @default(ACTIVE)
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  shipments Shipment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("fulfillment_partners")
+}

@@ -1,0 +1,138 @@
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 40px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex: none;
+}
+.glyph {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.glyphInner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff;
+  border-radius: 4px;
+}
+.word {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.search {
+  position: relative;
+  flex: 1;
+  max-width: 460px;
+}
+.searchIcon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.searchInput {
+  width: 100%;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  padding: 0 14px 0 38px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+}
+.searchInput:focus {
+  border-color: var(--accent);
+}
+.spacer {
+  flex: 1;
+}
+.iconBtn,
+.roundBtn {
+  position: relative;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.signInBtn {
+  height: 38px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.signInBtn:hover {
+  filter: brightness(1.05);
+}
+.iconBtn {
+  padding: 8px;
+  border-radius: 10px;
+}
+.iconBtn:hover,
+.roundBtn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.roundBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.cartBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.menuWrap {
+  position: relative;
+}
+
+/* On mobile the top nav is replaced by MobileHeader + TabBar. */
+@media (max-width: 768px) {
+  .nav {
+    display: none;
+  }
+}

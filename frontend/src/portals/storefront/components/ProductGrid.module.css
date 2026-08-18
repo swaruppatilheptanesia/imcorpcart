@@ -1,0 +1,42 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skelWell {
+  aspect-ratio: 150 / 160;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--hair), var(--border), var(--hair));
+  background-size: 200% 100%;
+  animation: saShimmer 1.4s infinite;
+  margin-bottom: 6px;
+}
+.skelLine {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--hair), var(--border), var(--hair));
+  background-size: 200% 100%;
+  animation: saShimmer 1.4s infinite;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+}

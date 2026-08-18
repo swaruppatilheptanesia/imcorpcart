@@ -1,0 +1,88 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.customer {
+  font-size: 15px;
+  font-weight: 700;
+}
+.sub {
+  font-size: 12.5px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+  margin-bottom: 2px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.item:last-child {
+  border-bottom: none;
+}
+.itemName {
+  font-size: 13.5px;
+  font-weight: 500;
+  min-width: 0;
+}
+.itemMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.qty {
+  font-size: 12.5px;
+  color: var(--text3);
+}
+.itemPrice {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.lineKey {
+  font-size: 12.5px;
+  color: var(--text3);
+}
+.lineVal {
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: right;
+}
+.lineMono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.lineStrong {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

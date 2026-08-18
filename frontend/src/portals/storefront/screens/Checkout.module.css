@@ -1,0 +1,320 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 24px;
+  align-items: start;
+}
+.closed {
+  max-width: 480px;
+  margin: 48px auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.closedTitle {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.closedBody {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text3);
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
+.cardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.cardHead .cardTitle {
+  margin-bottom: 0;
+}
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.muted {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text3);
+}
+.address {
+  display: flex;
+  gap: 12px;
+  color: var(--text2);
+  align-items: flex-start;
+}
+.address > div:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.addrName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.addrLine {
+  font-size: 13px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.addrList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.addrOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.addrOptionOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.defaultTag {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.billingToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.billingToggleLabel {
+  font-size: 12.5px;
+  color: var(--text2);
+  font-weight: 600;
+}
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.methods {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.method {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.methodOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.methodBody {
+  flex: 1;
+}
+.methodLabel {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.methodNote {
+  font-size: 11.5px;
+  color: var(--text3);
+  margin-top: 1px;
+}
+.methodPct {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+.payNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  color: var(--accent);
+}
+.payNoteTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text1);
+}
+.payNoteSub {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+.emiBlock {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hair);
+}
+.emiLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 10px;
+}
+.tenures {
+  display: flex;
+  gap: 8px;
+}
+.tenure {
+  flex: 1;
+  padding: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.tenureOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+.emiSummary {
+  margin-top: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.emiAmount {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.emiPer {
+  font-size: 13px;
+  color: var(--text2);
+}
+.emiTotal {
+  font-size: 12.5px;
+  color: var(--text3);
+}
+.emiNote {
+  font-size: 11.5px;
+  color: var(--text3);
+  margin-top: 6px;
+}
+
+.summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  position: sticky;
+  top: 84px;
+}
+.summaryTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.sumRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13.5px;
+  padding: 7px 0;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.discount {
+  color: var(--success);
+  font-weight: 700;
+}
+.divider {
+  height: 1px;
+  background: var(--hair);
+  margin: 8px 0;
+}
+.total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 17px;
+  font-weight: 700;
+  padding-top: 4px;
+}
+.emiHint {
+  font-size: 12px;
+  color: var(--text3);
+  text-align: right;
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .summary {
+    position: static;
+  }
+}

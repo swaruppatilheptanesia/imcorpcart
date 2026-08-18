@@ -1,0 +1,89 @@
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.head {
+  text-align: left;
+}
+.overline {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.title {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 10px 0 12px;
+}
+.lede {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text2);
+  margin: 0;
+  max-width: 640px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.perk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.perkIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  margin-bottom: 4px;
+}
+.perkTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+.perkBody {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text3);
+}
+
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.steps li {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text2);
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .title {
+    font-size: 24px;
+  }
+}

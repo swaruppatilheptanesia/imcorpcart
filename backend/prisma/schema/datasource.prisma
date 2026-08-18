@@ -1,0 +1,14 @@
+// imcorpcart B2B Portal — datasource + generator.
+// Domain models live alongside this file in prisma/schema/*.prisma
+// (prismaSchemaFolder preview feature). See docs/data-model.md for the
+// module -> table coverage map.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["prismaSchemaFolder"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

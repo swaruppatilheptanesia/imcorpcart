@@ -1,0 +1,57 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+}
+.step {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+}
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.node {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  margin-top: 3px;
+  flex: none;
+}
+.nodeDone {
+  border-color: var(--success);
+  background: var(--success);
+}
+.nodeActive {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.nodeCancel {
+  border-color: var(--error);
+  background: var(--error);
+}
+.line {
+  width: 2px;
+  flex: 1;
+  min-height: 22px;
+  background: var(--border);
+  margin: 2px 0;
+}
+.lineDone {
+  background: var(--success);
+}
+.stepBody {
+  padding-bottom: 16px;
+}
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text3);
+}
+.labelDone {
+  color: var(--text);
+}

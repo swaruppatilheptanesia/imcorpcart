@@ -1,0 +1,34 @@
+.formGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.formRow3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.defaultToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+}
+.toggleLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.toggleHint {
+  font-size: 11.5px;
+  color: var(--text3);
+  margin-top: 2px;
+}

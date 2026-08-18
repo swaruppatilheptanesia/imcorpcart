@@ -1,0 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics & reporting (spec §2 — P1 build, real data lands in P2).
+// Analytics are mostly aggregation queries over transactional tables; this table
+// tracks CSV/PDF exports (profitability, volume/value, partner performance, etc.).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ReportExport {
+  id            String       @id @default(cuid())
+  reportType    String // "PROFITABILITY" | "VOLUME_VALUE" | "PARTNER_PERFORMANCE" | ...
+  format        ReportFormat
+  filters       Json? // date range and other filter params
+  fileUrl       String?
+  generatedById String?
+  generatedBy   User?        @relation(fields: [generatedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([reportType])
+  @@index([generatedById])
+  @@map("report_exports")
+}

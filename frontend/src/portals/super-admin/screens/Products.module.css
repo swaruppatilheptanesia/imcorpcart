@@ -1,0 +1,39 @@
+.vendorSelect {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vendorSelect option {
+  background: var(--surface);
+  color: var(--text);
+}
+.pager {
+  display: flex;
+  gap: 8px;
+}
+.pageBtn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.pageBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pageBtn:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

@@ -1,0 +1,46 @@
+.card {
+  overflow: hidden;
+}
+.header {
+  display: grid;
+  padding: 13px 20px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+  align-items: center;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: grid;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hair);
+  align-items: center;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.row:last-child {
+  border-bottom: none;
+}
+.clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.clickable:hover {
+  background: var(--surface2);
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid var(--hair);
+  font-size: 12.5px;
+  color: var(--text3);
+}

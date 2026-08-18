@@ -1,0 +1,17 @@
+.filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.orderId {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

@@ -1,0 +1,28 @@
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.sortSelect {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sortSelect option {
+  background: var(--surface);
+  color: var(--text);
+}
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

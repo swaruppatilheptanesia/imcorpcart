@@ -1,0 +1,68 @@
+.actions {
+  display: flex;
+  gap: 14px;
+  justify-content: flex-end;
+}
+.link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 0;
+}
+.linkDanger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--error);
+  padding: 0;
+}
+.confirm {
+  font-size: 13.5px;
+  color: var(--text2);
+  line-height: 1.5;
+  margin: 0;
+}
+.dropzone {
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface2);
+  padding: 34px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text3);
+}
+.dropTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.dropSub {
+  font-size: 12.5px;
+  color: var(--text3);
+}
+
+/* Per-row account status control (Active / Pending / Suspended). */
+.statusSelect {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 8px;
+  outline: none;
+  cursor: pointer;
+}
+.statusSelect:focus {
+  border-color: var(--accent);
+}

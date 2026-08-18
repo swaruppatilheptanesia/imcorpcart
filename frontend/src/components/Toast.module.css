@@ -1,0 +1,32 @@
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 13px 18px;
+  box-shadow: var(--shadow-toast);
+  animation: saIn 0.35s ease;
+}
+.iconTile {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, var(--surface));
+  flex: none;
+}
+.msg {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}

@@ -1,0 +1,176 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & RBAC (spec §1 — P1 foundation, all 8 roles)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  phone        String?    @unique
+  passwordHash String?
+  fullName     String
+  role         Role
+  status       UserStatus @default(INVITED)
+
+  // OTP / 2FA for admin roles (spec §1: Auth & RBAC).
+  twoFactorEnabled Boolean          @default(false)
+  twoFactorSecret  TwoFactorSecret?
+
+  // Exhibition exception (client requirement): users who self-register by
+  // scanning the exhibition QR code are flagged for a special discount.
+  registrationSource RegistrationSource  @default(ADMIN)
+  qrDiscountEligible Boolean             @default(false)
+  qrCampaignId       String?
+  qrCampaign         ExhibitionCampaign? @relation(fields: [qrCampaignId], references: [id])
+
+  // Role-scoped org membership (exactly one is set depending on role).
+  employee           Employee?
+  leasingCompany     LeasingCompany?
+  reseller           Reseller?
+  fulfillmentPartner FulfillmentPartner?
+  companyAdminOf     Company?            @relation("CompanyAdmin")
+
+  otpTokens       OtpToken[]
+  sessions        Session[]
+  auditLogs       AuditLog[]
+  approvalSteps   ApprovalStep[]
+  notifications   Notification[]
+  reportExports   ReportExport[]
+  uploadedDocs    OrderDocument[]      @relation("DocUploader")
+  orderStatusLogs OrderStatusHistory[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([role])
+  @@index([status])
+  @@index([qrCampaignId])
+  @@map("users")
+}
+
+// QR exhibition campaign(s). Scanning the QR resolves a campaign by token; a
+// registration outside the active window falls back to a non-discount account.
+model ExhibitionCampaign {
+  id              String               @id @default(cuid())
+  name            String
+  qrToken         String               @unique
+  discountPercent Decimal              @db.Decimal(5, 2)
+  discountMode    CampaignDiscountMode @default(FIRST_ORDER) @map("discount_mode")
+  status          CampaignStatus       @default(DRAFT)
+  startsAt        DateTime
+  endsAt          DateTime
+
+  // Scope: all products (null) or a single category (discount applies only to
+  // that category's items).
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  users  User[]
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([categoryId])
+  @@map("exhibition_campaigns")
+}
+
+// Configurable RBAC matrix — keeps role -> capability data-driven.
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique // e.g. "catalog.product.create"
+  description String?
+  roles       RolePermission[]
+
+  createdAt DateTime @default(now())
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  role         Role
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@index([role])
+  @@map("role_permissions")
+}
+
+model OtpToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  purpose   String // "LOGIN_2FA" | "PASSWORD_RESET" | ...
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("otp_tokens")
+}
+
+model TwoFactorSecret {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret       String
+  confirmedAt  DateTime?
+  recoveryCode String?
+
+  createdAt DateTime @default(now())
+
+  @@map("two_factor_secrets")
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime // session timeout sourced from SystemConfig
+  lastSeenAt DateTime @default(now())
+  revoked    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  actorId    String?
+  actor      User?   @relation(fields: [actorId], references: [id])
+  action     String // e.g. "product.deactivate"
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Key/value system settings (session timeout, feature flags, etc.).
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}

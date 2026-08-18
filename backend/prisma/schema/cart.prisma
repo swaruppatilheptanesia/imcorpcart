@@ -1,0 +1,36 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Storefront cart (spec §3 — employee shopping). One live cart per employee;
+// checkout drains it into an Order. Shade keys a line so the same product in two
+// colours is two lines (mirrors the storefront's (id, shade) line keying).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Cart {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shade     String? // selected colour/shade name, null = default
+  quantity  Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId, shade])
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}

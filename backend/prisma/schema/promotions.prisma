@@ -1,0 +1,76 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Promotions — discount coupons (spec: Amazon-like commerce feature).
+// Owned by the platform (resellerId null) or a reseller (their products only).
+// Scoped to all products (categoryId null) or a single category.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Coupon {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  type          CouponType
+  value         Decimal      @db.Decimal(12, 2) // percent (PERCENT) or ₹ (FLAT)
+  maxDiscount   Decimal?     @db.Decimal(12, 2) // cap for PERCENT (null = no cap)
+  minOrderValue Decimal      @default(0) @db.Decimal(12, 2)
+  status        CouponStatus @default(ACTIVE)
+  usedCount     Int          @default(0)
+  usageLimit    Int
+  startsAt      DateTime?
+  endsAt        DateTime?
+
+  // Ownership: platform-wide (null) or a specific reseller.
+  resellerId String?
+  reseller   Reseller? @relation(fields: [resellerId], references: [id])
+
+  // Scope: all products (null) or a single category.
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([resellerId])
+  @@index([categoryId])
+  @@map("coupons")
+}
+
+// A reseller-owned complimentary item that can be attached to their products.
+// Managed in the reseller Coupons/Promotions/Gifts screen; strictly per-reseller.
+model FreeGift {
+  id          String   @id @default(cuid())
+  resellerId  String
+  reseller    Reseller @relation(fields: [resellerId], references: [id])
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+
+  products Product[]
+  offers   ProductOffer[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([resellerId])
+  @@map("free_gifts")
+}
+
+// Storefront promotional banner (Super-Admin managed). Active banners render as
+// a carousel at the top of the shopper Home page; an optional linkUrl makes a
+// banner clickable (internal path or external URL).
+model PromoBanner {
+  id        String  @id @default(cuid())
+  title     String // admin label + image alt text
+  imageUrl  String // /uploads/<file> (or absolute URL)
+  linkUrl   String? // optional click target: internal path or external URL
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("promo_banners")
+}

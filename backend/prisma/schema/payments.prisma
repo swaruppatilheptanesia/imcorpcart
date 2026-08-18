@@ -1,0 +1,64 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Payments — config (spec §2, P1) + live checkout (spec §3, P2)
+// Surcharge per method + 18% GST-on-surcharge as separate line items.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-method surcharge config (UPI 0% / NetBanking 1% / CC 2% / Debit configurable)
+// plus the 18% GST-on-surcharge rate.
+model PaymentMethodConfig {
+  id                    String        @id @default(cuid())
+  method                PaymentMethod @unique
+  surchargePercent      Decimal       @db.Decimal(5, 2)
+  gstOnSurchargePercent Decimal       @default(18.00) @db.Decimal(5, 2)
+  active                Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_method_configs")
+}
+
+// Merchant/gateway config (Razorpay / PayU). Secrets stored as encrypted refs.
+model PaymentGatewayConfig {
+  id         String          @id @default(cuid())
+  provider   GatewayProvider @unique
+  merchantId String?
+  keyRef     String? // reference into secrets store, not the raw key
+  webhookRef String?
+  active     Boolean         @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_gateway_configs")
+}
+
+// A payment attempt for an EPP order (spec §3: live checkout).
+// baseAmount / surcharge / gstOnSurcharge kept separate per spec.
+model Payment {
+  id             String          @id @default(cuid())
+  orderId        String
+  order          Order           @relation(fields: [orderId], references: [id])
+  method         PaymentMethod
+  gateway        GatewayProvider
+  baseAmount     Decimal         @db.Decimal(12, 2)
+  surcharge      Decimal         @default(0) @db.Decimal(12, 2)
+  gstOnSurcharge Decimal         @default(0) @db.Decimal(12, 2)
+  total          Decimal         @db.Decimal(12, 2)
+  status         PaymentStatus   @default(PENDING)
+  gatewayOrderId String?         @map("gateway_order_id") // e.g. Razorpay order_...; shared across a split checkout
+  gatewayTxnId   String?
+  failureReason  String?
+
+  // Refund fields reserved (B5) — no refund engine built in this stage.
+  refundedAmount Decimal?  @db.Decimal(12, 2)
+  refundedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+  @@index([gatewayOrderId])
+  @@map("payments")
+}

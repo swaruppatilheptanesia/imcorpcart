@@ -1,0 +1,99 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Fulfillment & courier abstraction (spec §1 layer + §2 uploads / §3 tracking).
+// Invoice/e-way documents are hybrid (GENERATED | UPLOADED) per S5/S6.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Courier {
+  id       String          @id @default(cuid())
+  code     CourierCode     @unique
+  name     String
+  priority CourierPriority @default(MEDIUM)
+  active   Boolean         @default(true)
+
+  config    CourierConfig?
+  shipments Shipment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("couriers")
+}
+
+model CourierConfig {
+  id         String  @id @default(cuid())
+  courierId  String  @unique
+  courier    Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  apiKeyRef  String? // reference into secrets store
+  apiBaseUrl String?
+  active     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("courier_configs")
+}
+
+model Shipment {
+  id                   String              @id @default(cuid())
+  orderId              String              @unique
+  order                Order               @relation(fields: [orderId], references: [id])
+  // Optional: a reseller can self-fulfil and drive transit without a partner assigned.
+  fulfillmentPartnerId String?
+  fulfillmentPartner   FulfillmentPartner? @relation(fields: [fulfillmentPartnerId], references: [id])
+  courierId            String?
+  courier              Courier?            @relation(fields: [courierId], references: [id])
+
+  awbNumber      String? // airway bill (spec §2: fulfillment console)
+  status         ShipmentStatus @default(PENDING)
+  trackingActive Boolean        @default(true) // auto-stop on delivery (spec §3)
+  dispatchedAt   DateTime?
+  deliveredAt    DateTime?
+  podUrl         String? // proof of delivery upload
+
+  trackingEvents ShipmentTrackingEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fulfillmentPartnerId])
+  @@index([courierId])
+  @@index([status])
+  @@map("shipments")
+}
+
+model ShipmentTrackingEvent {
+  id          String         @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status      ShipmentStatus
+  description String?
+  occurredAt  DateTime
+  raw         Json? // raw courier-API payload
+
+  createdAt DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([occurredAt])
+  @@map("shipment_tracking_events")
+}
+
+// Invoice / e-way / POD documents. `source` marks generated vs uploaded (hybrid).
+model OrderDocument {
+  id           String         @id @default(cuid())
+  orderId      String
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  docType      DocumentType
+  source       DocumentSource
+  number       String?
+  fileUrl      String?
+  generatedAt  DateTime?
+  uploadedById String?
+  uploadedBy   User?          @relation("DocUploader", fields: [uploadedById], references: [id])
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([docType])
+  @@map("order_documents")
+}

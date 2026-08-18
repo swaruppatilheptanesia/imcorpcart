@@ -1,0 +1,111 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.thumb {
+  width: 132px;
+  aspect-ratio: 16 / 5;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.name {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.order {
+  font-size: 12px;
+  color: var(--text3);
+}
+.link {
+  font-size: 12.5px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* Upload field in the modal */
+.uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dropzone {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 5;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  color: var(--text3);
+}
+.dropzone:hover {
+  border-color: var(--accent);
+}
+.preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.hint {
+  font-size: 11.5px;
+  color: var(--text3);
+  line-height: 1.4;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.activeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 4px;
+}
+.activeLabel {
+  font-size: 13px;
+  font-weight: 600;
+}

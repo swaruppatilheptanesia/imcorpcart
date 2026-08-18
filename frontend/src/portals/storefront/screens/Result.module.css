@@ -1,0 +1,44 @@
+.center {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+}
+.processingTitle {
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 18px;
+}
+.processingSub {
+  font-size: 13.5px;
+  color: var(--text3);
+}
+.iconOk {
+  color: var(--success);
+  margin-bottom: 8px;
+}
+.iconError {
+  color: var(--error);
+  margin-bottom: 8px;
+}
+.resultTitle {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.resultSub {
+  font-size: 14px;
+  color: var(--text2);
+  max-width: 380px;
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}

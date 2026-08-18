@@ -1,0 +1,97 @@
+/* Shared layout helpers used across Super Admin screens. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.search {
+  position: relative;
+  min-width: 240px;
+}
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.searchInput {
+  padding-left: 34px !important;
+}
+.spacer {
+  flex: 1;
+}
+.rowActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.cellMain {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cellName {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cellSub {
+  font-size: 11.5px;
+  color: var(--text3);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.muted {
+  color: var(--text2);
+  font-size: 13px;
+}
+.price {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.iconBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  padding: 6px;
+  border-radius: 8px;
+  display: inline-flex;
+  justify-self: end;
+}
+.iconBtn:hover {
+  background: var(--surface2);
+  color: var(--accent);
+}
+
+.sectionTitle {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.narrow {
+  max-width: 780px;
+}
+.wide {
+  max-width: 1000px;
+}

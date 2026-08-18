@@ -1,0 +1,291 @@
+.stateSwitch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.stateLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.rangeLabel {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text2);
+  font-weight: 500;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+/* Let 1fr tracks shrink to the container so the row never overflows the page. */
+.grid > * {
+  min-width: 0;
+}
+.skelCard {
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+}
+.statLabel {
+  font-size: 12px;
+  color: var(--text3);
+  font-weight: 600;
+}
+
+/* order volume */
+.volCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.volTop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.volVal {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.volDelta {
+  font-size: 12px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.listCard {
+}
+.barList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.barRow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.barLabel {
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.barVal {
+  font-size: 12px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rankList,
+.partnerList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rankRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.rankName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rankMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11px;
+  color: var(--text3);
+}
+.rankVal {
+  font-weight: 600;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+}
+
+.partnerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.partnerDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.partnerName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+}
+.partnerType {
+  font-size: 11px;
+  color: var(--text3);
+  font-weight: 400;
+}
+.partnerOt {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* donut */
+.donutCard {
+}
+.donutWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.legendPct {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* full-width */
+.wideCard {
+  grid-column: 1 / -1;
+}
+.wishGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+.wishItem {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+}
+.wishBody {
+  min-width: 0;
+}
+.wishName {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wishMeta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+.wishTrend {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+}
+.recentRow {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1.6fr 0.8fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 13px;
+}
+.recentRow > * {
+  min-width: 0;
+}
+.recentRow:first-child {
+  border-top: none;
+}
+.recentId {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.recentCompany {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recentProduct {
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recentValue {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The 240px sidebar isn't counted by the viewport-based query, so collapse the
+   4-up row to 2-up well before the widgets get cramped. */
+@media (max-width: 1280px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wishGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .wishGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

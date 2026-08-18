@@ -1,0 +1,140 @@
+.wrap {
+  max-width: 1000px;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.orderId {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.sub {
+  font-size: 13px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.item:last-child {
+  border-bottom: none;
+}
+.device {
+  width: 44px;
+  height: 56px;
+  border-radius: 10px;
+  flex: none;
+}
+.itemBody {
+  flex: 1;
+  min-width: 0;
+}
+.itemName {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.itemSub {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.itemPrice {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.docs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.doc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  cursor: pointer;
+  color: var(--text2);
+}
+.doc:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.docLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  padding: 6px 0;
+}
+.row > span:last-child {
+  text-align: right;
+}
+.txn {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text2);
+  word-break: break-all;
+}
+.divider {
+  height: 1px;
+  background: var(--hair);
+  margin: 8px 0;
+}
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 700;
+}
+.ship {
+  font-size: 13px;
+}
+.shipName {
+  font-weight: 600;
+}
+.shipLine {
+  color: var(--text3);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

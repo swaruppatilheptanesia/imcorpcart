@@ -1,0 +1,40 @@
+.sidebar {
+  position: sticky;
+  top: 80px; /* clears the sticky 64px TopNav + gap */
+  align-self: start;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px 16px 8px;
+  box-shadow: var(--shadow-card);
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--hair);
+}
+.title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  flex: 1;
+}
+.clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Mobile: sidebar collapses — the FilterPanel bottom-sheet takes over. */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+}

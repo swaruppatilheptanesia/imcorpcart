@@ -1,0 +1,159 @@
+.wrap {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sub {
+  font-size: 13px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.company {
+  font-size: 13px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+.program {
+  color: var(--accent);
+  font-weight: 600;
+}
+.cardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.creditRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.creditAvailable {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.creditOf {
+  font-size: 13px;
+  color: var(--text3);
+}
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.creditNote {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 8px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.addr {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hair);
+  color: var(--text2);
+}
+.addr:last-child {
+  border-bottom: none;
+}
+.addrBody {
+  flex: 1;
+  min-width: 0;
+}
+.addrTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.addrLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.addrLine {
+  font-size: 12.5px;
+  color: var(--text3);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.addrContact {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+.addrActions {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.linkBtn,
+.linkBtnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.linkBtnDanger {
+  color: var(--error);
+}
+.linkBtn:disabled,
+.linkBtnDanger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 15px 18px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+}
+.settingRow:last-child {
+  border-bottom: none;
+}
+.settingRow:hover {
+  background: var(--surface2);
+}
