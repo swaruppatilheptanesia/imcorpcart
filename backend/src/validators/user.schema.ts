@@ -83,10 +83,12 @@ export const createCompanyBody = z.object({
   smartEppEnabled: z.boolean().optional(),
 });
 
-// Super Admin edits a company's org-level settings (Smart-EPP enablement + name).
+// Super Admin edits a company's org-level settings (Smart-EPP enablement, name,
+// and approval status — ONBOARDING = pending approval, ACTIVE = approved).
 export const updateCompanyBody = z.object({
   name: z.string().trim().min(1).optional(),
   smartEppEnabled: z.boolean().optional(),
+  status: z.enum(['ACTIVE', 'ONBOARDING', 'SUSPENDED']).optional(),
 });
 
 // Assign an admin to a company that has none (e.g. a self-registration-created

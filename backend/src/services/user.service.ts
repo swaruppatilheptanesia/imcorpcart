@@ -300,6 +300,7 @@ export async function updateCompany(id: string, input: UpdateCompanyInput) {
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.smartEppEnabled !== undefined ? { smartEppEnabled: input.smartEppEnabled } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
     },
     select: { id: true, name: true, status: true, smartEppEnabled: true },
   });

@@ -63,6 +63,32 @@ export async function login(
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) throw invalid;
 
+  // Company-level approval gate: no user may sign in until a Super Admin has
+  // approved (activated) their company. Resolved via the employee relation or
+  // the company admin link — Super Admins / resellers have no company row and
+  // pass through. Checked after the password so company state isn't leaked to
+  // unauthenticated probers; before any session/OTP is issued (so the OTP path
+  // never mints a challenge for a non-approved company).
+  const company = await prisma.company.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [
+        { adminUserId: user.id },
+        { employees: { some: { userId: user.id, deletedAt: null } } },
+      ],
+    },
+    select: { status: true },
+  });
+  if (company && company.status !== 'ACTIVE') {
+    if (company.status === 'ONBOARDING')
+      throw new AppError(
+        403,
+        'COMPANY_PENDING',
+        'Your company is pending administrator approval. You can sign in once it has been approved.',
+      );
+    throw AppError.forbidden('Your company account is not active. Please contact support.');
+  }
+
   // Beta convenience: when 2FA is disabled, sign the user in directly.
   if (!env.OTP_ENABLED) return issueSession(user, ctx);
   return issueLoginOtp(user);

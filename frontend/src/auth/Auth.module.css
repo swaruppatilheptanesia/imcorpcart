@@ -36,13 +36,18 @@
   position: relative;
   max-width: 460px;
 }
+/* Tighten the logo→title gap in the hero only (the shared .brand keeps its
+   larger margin in the sign-in / register cards). */
+.heroInner .brand {
+  margin-bottom: 12px;
+}
 .heroTitle {
   font-size: 40px;
   line-height: 1.08;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #fff;
-  margin: 30px 0 16px;
+  margin: 0 0 16px;
 }
 .heroSub {
   font-size: 16px;

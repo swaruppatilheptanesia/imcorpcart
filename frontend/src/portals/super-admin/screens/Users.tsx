@@ -52,6 +52,17 @@ const STATUS_LABEL: Record<SettableStatus, string> = {
 const stateToStatus = (st: UserState): SettableStatus | 'INVITED' =>
   st === 'Active' ? 'ACTIVE' : st === 'Pending' ? 'PENDING' : st === 'Suspended' ? 'SUSPENDED' : 'INVITED';
 
+// Company approval status (OrgStatus). ONBOARDING is the "pending approval"
+// state — a company can't log in until a Super Admin sets it ACTIVE.
+type CompanySettableStatus = 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED';
+const COMPANY_STATUS_LABEL: Record<CompanySettableStatus, string> = {
+  ACTIVE: 'Active',
+  ONBOARDING: 'Pending',
+  SUSPENDED: 'Suspended',
+};
+const stateToCompanyStatus = (st: UserState): CompanySettableStatus =>
+  st === 'Active' ? 'ACTIVE' : st === 'Suspended' ? 'SUSPENDED' : 'ONBOARDING';
+
 const TABS: { value: UserTab; label: string }[] = (
   ['companies', 'employees', 'resellers', 'partners'] as UserTab[]
 ).map((t) => ({ value: t, label: userTabLabels[t] }));
@@ -196,6 +207,18 @@ export function UsersScreen() {
     }
   };
 
+  // Approve / suspend a COMPANY (OrgStatus). ONBOARDING = pending; the company's
+  // users can't log in until it's set Active.
+  const setCompanyStatus = async (row: UserRowWithId, next: CompanySettableStatus) => {
+    try {
+      await updateCompany(row.id, { status: next });
+      flash(`Company set to ${COMPANY_STATUS_LABEL[next]}`);
+      reload();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
   const submitAssign = async () => {
     if (!assignTarget) return;
     if (!assignForm.adminName.trim() || !assignForm.adminEmail.trim()) {
@@ -299,34 +322,53 @@ export function UsersScreen() {
                       Smart EPP: {row.smartEppEnabled ? 'On' : 'Off'}
                     </Button>
                   )}
-                  {canAssign ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setAssignTarget({ id: row.id, name: u.name });
-                        setModal('assign');
-                      }}
-                    >
-                      Assign admin
-                    </Button>
-                  ) : row.userId ? (
-                    <select
-                      className={styles.statusSelect}
-                      value={stateToStatus(u.state)}
-                      onChange={(e) => setStatus(row, e.target.value as SettableStatus)}
-                      aria-label="Account status"
-                    >
-                      {stateToStatus(u.state) === 'INVITED' && (
-                        <option value="INVITED" disabled>Invited</option>
+                  {/* Companies: assign an admin (if none), plus the company
+                      approval-status control (governs whether its users can log in). */}
+                  {tab === 'companies' && (
+                    <>
+                      {canAssign && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setAssignTarget({ id: row.id, name: u.name });
+                            setModal('assign');
+                          }}
+                        >
+                          Assign admin
+                        </Button>
                       )}
-                      <option value="ACTIVE">Active</option>
-                      <option value="PENDING">Pending</option>
-                      <option value="SUSPENDED">Suspended</option>
-                    </select>
-                  ) : (
-                    <span className={s.muted}>—</span>
+                      <select
+                        className={styles.statusSelect}
+                        value={stateToCompanyStatus(u.state)}
+                        onChange={(e) => setCompanyStatus(row, e.target.value as CompanySettableStatus)}
+                        aria-label="Company approval status"
+                      >
+                        <option value="ACTIVE">Active</option>
+                        <option value="ONBOARDING">Pending</option>
+                        <option value="SUSPENDED">Suspended</option>
+                      </select>
+                    </>
                   )}
+                  {/* Employees / resellers / partners: per-user account status. */}
+                  {tab !== 'companies' &&
+                    (row.userId ? (
+                      <select
+                        className={styles.statusSelect}
+                        value={stateToStatus(u.state)}
+                        onChange={(e) => setStatus(row, e.target.value as SettableStatus)}
+                        aria-label="Account status"
+                      >
+                        {stateToStatus(u.state) === 'INVITED' && (
+                          <option value="INVITED" disabled>Invited</option>
+                        )}
+                        <option value="ACTIVE">Active</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="SUSPENDED">Suspended</option>
+                      </select>
+                    ) : (
+                      <span className={s.muted}>—</span>
+                    ))}
                 </div>
               </Row>
             );

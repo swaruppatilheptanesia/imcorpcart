@@ -560,7 +560,7 @@ export function createCompany(input: CreateCompanyInput): Promise<{ name: string
 }
 export function updateCompany(
   id: string,
-  input: { name?: string; smartEppEnabled?: boolean },
+  input: { name?: string; smartEppEnabled?: boolean; status?: 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED' },
 ): Promise<{ id: string; name: string; status: string; smartEppEnabled: boolean }> {
   return apiFetch(`/users/companies/${id}`, { method: 'PATCH', body: input });
 }
