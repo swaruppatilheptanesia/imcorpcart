@@ -36,7 +36,19 @@
 
 @media (max-width: 768px) {
   .grid {
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr) lets the tracks shrink below the card's content width so
+       the grid never overflows the viewport on narrow phones. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+  }
+}
+
+/* Very small phones (≤400px, e.g. 320px): two columns get too cramped and
+   overflow — drop to a single card, centred. */
+@media (max-width: 400px) {
+  .grid {
+    grid-template-columns: minmax(0, 360px);
+    justify-content: center;
+    gap: 14px;
   }
 }

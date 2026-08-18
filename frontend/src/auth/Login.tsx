@@ -122,6 +122,12 @@ export function Login({
         <button className={styles.linkBtn} onClick={onRegister}>
           New employee? Create an account
         </button>
+
+        {/* Mobile-only: the hero (with its Browse button) is hidden ≤860px, so
+            surface a Browse entry point inside the always-visible card. */}
+        <button className={styles.browseLinkMobile} onClick={() => navigate('/shop')}>
+          Browse products <ArrowRight size={16} />
+        </button>
       </div>
       </div>
     </div>

@@ -91,12 +91,36 @@
   justify-content: center;
   padding: 24px;
 }
+/* Shown only on mobile (see the 860px media query) — the desktop hero already
+   carries a "Browse products" button. */
+.browseLinkMobile {
+  display: none;
+}
 @media (max-width: 860px) {
   .split {
     grid-template-columns: 1fr;
   }
   .hero {
     display: none;
+  }
+  .browseLinkMobile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px 20px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .browseLinkMobile:hover {
+    background: var(--surface2);
   }
 }
 .card {
