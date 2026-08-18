@@ -31,7 +31,104 @@
 .mainImg {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  padding: 12px;
+  cursor: zoom-in;
+}
+
+/* ── Full-view lightbox (Amazon-style) ── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: lbFade 0.15s ease;
+}
+@keyframes lbFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lightboxImg {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  cursor: default;
+}
+.lightboxClose {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.lightboxClose:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.lightboxNav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.lightboxNav:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.lbPrev {
+  left: 20px;
+}
+.lbNext {
+  right: 20px;
+}
+.lightboxThumbs {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  max-width: 92vw;
+  overflow-x: auto;
+}
+.lbThumb {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.lbThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.lbThumbOn {
+  border-color: #fff;
 }
 .navArrow {
   position: absolute;

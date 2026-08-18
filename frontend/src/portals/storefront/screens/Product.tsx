@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Gift, Heart, ShoppingCart, AlertTriangle, Check, Truck, Trash2, ChevronLeft, ChevronRight, Share2 } from 'lucide-react';
+import { Gift, Heart, ShoppingCart, AlertTriangle, Check, Truck, Trash2, ChevronLeft, ChevronRight, Share2, X } from 'lucide-react';
 import { Button, Skeleton, EmptyState, useToast, Field, Input } from '@/components';
 import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
@@ -59,6 +59,7 @@ function Detail({ p }: { p: ProductDetail }) {
   const [shadeIdx, setShadeIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const [activeImg, setActiveImg] = useState(0);
+  const [lightbox, setLightbox] = useState(false);
   const [pincode, setPincode] = useState(() => localStorage.getItem(PINCODE_KEY) ?? '');
 
   // Switching colour/variant navigates to a sibling SKU; reset the gallery to
@@ -66,6 +67,7 @@ function Detail({ p }: { p: ProductDetail }) {
   useEffect(() => {
     setActiveImg(0);
     setShadeIdx(0);
+    setLightbox(false);
   }, [p.id]);
 
   const shade = hasShades ? p.shades[shadeIdx] : null;
@@ -116,6 +118,24 @@ function Detail({ p }: { p: ProductDetail }) {
     const len = p.images.length;
     if (len > 1) setActiveImg((i) => (i + n + len) % len);
   };
+
+  // Full-view lightbox: lock page scroll + wire keyboard (Esc / arrows) while open.
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(false);
+      else if (e.key === 'ArrowLeft') stepImg(-1);
+      else if (e.key === 'ArrowRight') stepImg(1);
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightbox, p.images.length]);
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.changedTouches[0].clientX;
@@ -177,7 +197,12 @@ function Detail({ p }: { p: ProductDetail }) {
             )}
             <div className={styles.gallery} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
               {hasImages ? (
-                <img className={styles.mainImg} src={p.images[activeImg] ?? p.images[0]} alt={p.name} />
+                <img
+                  className={styles.mainImg}
+                  src={p.images[activeImg] ?? p.images[0]}
+                  alt={p.name}
+                  onClick={() => setLightbox(true)}
+                />
               ) : (
                 <span className={styles.device} style={{ background: gradient }} />
               )}
@@ -452,6 +477,51 @@ function Detail({ p }: { p: ProductDetail }) {
             Related products
           </div>
           <ProductGrid items={related} />
+        </div>
+      )}
+
+      {/* Full-view image lightbox (Amazon-style) */}
+      {lightbox && hasImages && (
+        <div className={styles.lightbox} onClick={() => setLightbox(false)} role="dialog" aria-modal="true">
+          <button className={styles.lightboxClose} onClick={() => setLightbox(false)} aria-label="Close">
+            <X size={22} />
+          </button>
+          <img
+            className={styles.lightboxImg}
+            src={p.images[activeImg] ?? p.images[0]}
+            alt={p.name}
+            onClick={(e) => e.stopPropagation()}
+          />
+          {p.images.length > 1 && (
+            <>
+              <button
+                className={cn(styles.lightboxNav, styles.lbPrev)}
+                onClick={(e) => { e.stopPropagation(); stepImg(-1); }}
+                aria-label="Previous image"
+              >
+                <ChevronLeft size={26} />
+              </button>
+              <button
+                className={cn(styles.lightboxNav, styles.lbNext)}
+                onClick={(e) => { e.stopPropagation(); stepImg(1); }}
+                aria-label="Next image"
+              >
+                <ChevronRight size={26} />
+              </button>
+              <div className={styles.lightboxThumbs} onClick={(e) => e.stopPropagation()}>
+                {p.images.map((src, i) => (
+                  <button
+                    key={src + i}
+                    className={cn(styles.lbThumb, i === activeImg && styles.lbThumbOn)}
+                    onClick={() => setActiveImg(i)}
+                    aria-label={`Image ${i + 1}`}
+                  >
+                    <img src={src} alt="" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
