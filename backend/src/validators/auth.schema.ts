@@ -17,7 +17,15 @@ export const registerBody = z.object({
   fullName: z.string().trim().min(1),
   email: z.string().email(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  phone: z.string().trim().optional(),
+  // Mandatory Indian 10-digit mobile. Strip spaces/dashes/() then require an
+  // optional +91/0 prefix followed by a 6–9 leading digit + 9 more digits.
+  phone: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/[\s\-()]/g, ''))
+    .pipe(
+      z.string().regex(/^(\+91|0)?[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number'),
+    ),
   gstin: z
     .string()
     .trim()

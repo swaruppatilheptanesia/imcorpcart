@@ -141,7 +141,7 @@ export interface RegisterInput {
   fullName: string;
   email: string;
   password: string;
-  phone?: string;
+  phone: string;
   // Required (by the backend) when the email is a free/personal provider —
   // the company is then created keyed on GSTIN instead of the email domain.
   gstin?: string;

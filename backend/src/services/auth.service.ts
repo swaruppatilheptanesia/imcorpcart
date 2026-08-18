@@ -153,6 +153,11 @@ export async function register(
   const existing = await prisma.user.findFirst({ where: { email } });
   if (existing) throw AppError.conflict('An account with this email already exists');
 
+  // Phone is @unique — pre-check so a duplicate surfaces as a clear message
+  // rather than a raw P2002. (input.phone is the zod-normalized digits.)
+  const phoneTaken = await prisma.user.findFirst({ where: { phone: input.phone } });
+  if (phoneTaken) throw AppError.conflict('This phone number is already registered');
+
   // Exhibition QR attribution: only a live campaign (ACTIVE + in-window) grants
   // the discount; a dead/unknown token falls back to a normal account.
   const now = new Date();

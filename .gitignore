@@ -37,6 +37,7 @@ npm-debug.log*
 .claude/
 
 # Markdown & documents excluded per request (README.md kept)
+/docs
 *.md
 !README.md
 frontend/design_handoff_imcorpcart_platform/

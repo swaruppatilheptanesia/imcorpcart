@@ -4,6 +4,11 @@ import { Field, Input, Button, Logo } from '@/components';
 import { register, persistSession, isFreeMailEmail, GSTIN_RE, type QrCampaignInfo } from '@/data/unified-auth';
 import styles from './Auth.module.css';
 
+// Indian 10-digit mobile: optional +91/0 prefix, leading 6–9, then 9 digits.
+// Mirrors the backend zod rule (spaces/dashes/() are stripped before testing).
+const MOBILE_RE = /^(\+91|0)?[6-9]\d{9}$/;
+const normalizePhone = (v: string) => v.replace(/[\s\-()]/g, '');
+
 export function Register({
   onNext,
   onDone,
@@ -34,10 +39,11 @@ export function Register({
   // domain, so the registrant supplies their company's GSTIN + name instead.
   const freeMail = isFreeMailEmail(email);
   const gstinOk = GSTIN_RE.test(gstin.trim().toUpperCase());
+  const phoneOk = MOBILE_RE.test(normalizePhone(phone));
 
   const submit = async () => {
     const badGstinFlow = freeMail && (!gstinOk || !companyName.trim());
-    if (!fullName.trim() || !email.trim() || password.length < 6 || badGstinFlow) {
+    if (!fullName.trim() || !email.trim() || !phoneOk || password.length < 6 || badGstinFlow) {
       setError(true);
       return;
     }
@@ -48,7 +54,7 @@ export function Register({
         fullName: fullName.trim(),
         email: email.trim(),
         password,
-        phone: phone.trim() || undefined,
+        phone: normalizePhone(phone),
         gstin: freeMail ? gstin.trim().toUpperCase() : undefined,
         companyName: freeMail ? companyName.trim() : undefined,
         // Only send the token for a live campaign — a dead one registers normally.
@@ -137,8 +143,8 @@ export function Register({
           <Field label="Work email" error={error && !email.trim() ? 'Enter your work email' : undefined}>
             <Input type="email" placeholder="you@company.com" value={email} onChange={(e) => { setEmail(e.target.value); setError(false); }} />
           </Field>
-          <Field label="Phone (optional)">
-            <Input type="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Field label="Mobile number" error={error && !phoneOk ? 'Enter a valid 10-digit mobile number' : undefined}>
+            <Input type="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => { setPhone(e.target.value); setError(false); }} />
           </Field>
           <Field label="Password" error={error && password.length < 6 ? 'At least 6 characters' : undefined}>
             <Input
