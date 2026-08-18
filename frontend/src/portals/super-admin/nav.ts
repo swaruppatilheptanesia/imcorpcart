@@ -9,6 +9,7 @@ import {
   UploadCloud,
   QrCode,
   GalleryHorizontalEnd,
+  Star,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ export const navDefs: NavDef[] = [
   { key: 'categories', label: 'Categories', icon: FolderTree },
   { key: 'orders', label: 'Orders', icon: ShoppingBag },
   { key: 'users', label: 'Users & companies', icon: Users },
+  { key: 'reviews', label: 'Reviews', icon: Star },
   { key: 'qr-campaigns', label: 'QR campaigns', icon: QrCode },
   { key: 'banners', label: 'Banners', icon: GalleryHorizontalEnd },
   { key: 'reports', label: 'Reports', icon: BarChart3 },
@@ -52,6 +54,7 @@ export const titles: Record<string, RouteMeta> = {
   orders: { title: 'Orders', sub: 'All orders across every company' },
   orderDetail: { title: 'Order detail', sub: 'Manifest, timeline, and documents' },
   users: { title: 'Users & companies', sub: 'Companies, employees, resellers, partners' },
+  reviews: { title: 'Reviews', sub: 'Verify customer product reviews before they publish' },
   'qr-campaigns': { title: 'QR campaigns', sub: 'Exhibition QR codes and registration discounts' },
   banners: { title: 'Banners', sub: 'Promotional banners on the shopper Home carousel' },
   reports: { title: 'Reports', sub: 'Export platform analytics' },

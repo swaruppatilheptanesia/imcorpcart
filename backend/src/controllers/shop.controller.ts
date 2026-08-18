@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import * as service from '../services/shop.service';
+import * as reviewService from '../services/review.service';
 import { getParam } from '../middleware/validate';
 import { AppError } from '../utils/AppError';
 
@@ -14,6 +15,10 @@ export async function listProducts(_req: Request, res: Response) {
 
 export async function getProduct(req: Request, res: Response) {
   res.json(await service.getProduct(getParam(req, 'id')));
+}
+
+export async function submitReview(req: Request, res: Response) {
+  res.status(201).json(await reviewService.submitReview(userId(req), getParam(req, 'id'), req.body));
 }
 
 export async function listCoupons(_req: Request, res: Response) {

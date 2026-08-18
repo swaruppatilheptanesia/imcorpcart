@@ -13,12 +13,14 @@ import {
   createAddressBody,
   updateAddressBody,
 } from '../validators/shop.schema';
+import { reviewBody } from '../validators/review.schema';
 
 const router = Router();
 
 // Catalog
 router.get('/products', asyncHandler(ctrl.listProducts));
 router.get('/products/:id', validate({ params: idParam }), asyncHandler(ctrl.getProduct));
+router.post('/products/:id/reviews', validate({ params: idParam, body: reviewBody }), asyncHandler(ctrl.submitReview));
 router.get('/coupons', asyncHandler(ctrl.listCoupons));
 router.get('/banners', asyncHandler(ctrl.listBanners));
 

@@ -157,6 +157,13 @@ enum ApprovalStatus {
   REJECTED
 }
 
+// Moderation state for an employee-submitted product review.
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ── Orders ───────────────────────────────────────────────────────────────────
 enum OrderType {
   EPP

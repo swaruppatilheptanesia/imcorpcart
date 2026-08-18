@@ -628,6 +628,35 @@ export function getDashboard(range: DateRange): Promise<DashboardData> {
   return apiFetch('/dashboard', { query: { range } });
 }
 
+// ─── Reviews (moderation) ────────────────────────────────────────────────────
+
+export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export interface ReviewRow {
+  id: string;
+  author: string;
+  authorEmail: string;
+  productId: string;
+  productName: string;
+  productSku: string;
+  rating: number;
+  title: string | null;
+  body: string;
+  status: ReviewStatus;
+  createdAt: string;
+}
+export async function getReviews(
+  status?: ReviewStatus,
+  opts: { page?: number } = {},
+): Promise<{ items: ReviewRow[]; meta: PageMeta }> {
+  const res = await apiFetch<Envelope<ReviewRow[]>>('/reviews', {
+    query: { status, page: opts.page },
+  });
+  return { items: res.data, meta: res.meta };
+}
+export function setReviewStatus(id: string, status: 'APPROVED' | 'REJECTED'): Promise<unknown> {
+  return apiFetch(`/reviews/${id}/status`, { method: 'PATCH', body: { status } });
+}
+
 // ─── Static re-exports (labels/config the screens render synchronously) ───────
 // Data arrays from these fixtures are NO LONGER re-exported — screens use the
 // async accessors above. Only presentation constants remain.

@@ -3,6 +3,7 @@
 }
 .header {
   display: grid;
+  column-gap: 18px;
   padding: 13px 20px;
   background: var(--surface2);
   border-bottom: 1px solid var(--border);
@@ -19,6 +20,7 @@
 }
 .row {
   display: grid;
+  column-gap: 18px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--hair);
   align-items: center;
@@ -27,6 +29,13 @@
 }
 .row:last-child {
   border-bottom: none;
+}
+/* Keep fr tracks stable: without this, a cell with wide content stretches its
+   own track (min-width defaults to auto), so header and body columns resolve to
+   different widths and stop lining up. */
+.header > *,
+.row > * {
+  min-width: 0;
 }
 .clickable {
   cursor: pointer;

@@ -15,3 +15,17 @@
   font-size: 12px;
   color: var(--text3);
 }
+.input {
+  display: inline-flex;
+  gap: 2px;
+}
+.inputStar {
+  background: none;
+  border: 0;
+  padding: 2px;
+  cursor: pointer;
+  line-height: 0;
+}
+.inputStar:hover {
+  transform: scale(1.08);
+}

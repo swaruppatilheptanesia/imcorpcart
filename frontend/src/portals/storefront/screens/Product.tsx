@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Gift, Heart, ShoppingCart, AlertTriangle, Check, Truck, Trash2, ChevronLeft, ChevronRight, Share2 } from 'lucide-react';
-import { Button, Skeleton, EmptyState, useToast } from '@/components';
+import { Button, Skeleton, EmptyState, useToast, Field, Input } from '@/components';
 import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
-import type { StoreProduct } from '@/data/store-types';
 import { useStore } from '../store-context';
-import { getProductById, getRelated, deliveryEstimate } from '../data';
+import { getProductById, getRelated, deliveryEstimate, type ProductDetail } from '../data';
+import { submitReview } from '@/data/shop-api';
 import { QtyStepper } from '../components/QtyStepper';
 import { ProductGrid } from '../components/ProductGrid';
+import { RatingStars, StarInput } from '../components/RatingStars';
 import s from './store-screen.module.css';
 import styles from './Product.module.css';
 
@@ -17,7 +18,7 @@ const PINCODE_KEY = 'imc_pincode';
 
 export function Product() {
   const { id } = useParams();
-  const { data, state, error, reload } = useAsync<StoreProduct | undefined>(
+  const { data, state, error, reload } = useAsync<ProductDetail | undefined>(
     () => getProductById(id ?? ''),
     [id],
   );
@@ -49,7 +50,7 @@ export function Product() {
   return <Detail p={data} />;
 }
 
-function Detail({ p }: { p: StoreProduct }) {
+function Detail({ p }: { p: ProductDetail }) {
   const navigate = useNavigate();
   const { flash } = useToast();
   const { addToCart, cart, setLineQty, removeLine, toggleWishlist, isWished, authed, checkoutEnabled } = useStore();
@@ -212,6 +213,11 @@ function Detail({ p }: { p: StoreProduct }) {
           </div>
           <h1 className={styles.title}>{p.name}</h1>
           <div className={styles.metaRow}>
+            {p.reviews > 0 && (
+              <a href="#reviews" className={styles.ratingLink}>
+                <RatingStars rating={p.rating} reviews={p.reviews} />
+              </a>
+            )}
             <span className={cn(styles.stockPill, inStock ? styles.inStock : styles.outStock)}>
               {inStock ? 'In stock' : 'Out of stock'}
             </span>
@@ -438,6 +444,8 @@ function Detail({ p }: { p: StoreProduct }) {
         </aside>
       </div>
 
+      <ReviewsSection p={p} authed={authed} />
+
       {related.length > 0 && (
         <div className={styles.related}>
           <div className={s.sectionTitle} style={{ marginBottom: 16 }}>
@@ -446,6 +454,131 @@ function Detail({ p }: { p: StoreProduct }) {
           <ProductGrid items={related} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Reviews ─────────────────────────────────────────────────────────────────
+
+function ReviewsSection({ p, authed }: { p: ProductDetail; authed: boolean }) {
+  const navigate = useNavigate();
+  const { flash } = useToast();
+  const reviews = p.reviewList;
+  const [rating, setRating] = useState(0);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (rating < 1 || !body.trim()) {
+      setErr('Please pick a star rating and write a short review.');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await submitReview(p.id, { rating, title: title.trim() || undefined, body: body.trim() });
+      setDone(true);
+      flash('Review submitted — pending approval');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not submit your review');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div id="reviews" className={styles.reviews}>
+      <div className={s.sectionTitle} style={{ marginBottom: 16 }}>
+        Ratings &amp; reviews
+      </div>
+
+      <div className={styles.reviewsGrid}>
+        {/* Summary + list */}
+        <div>
+          {p.reviews > 0 ? (
+            <>
+              <div className={styles.reviewSummary}>
+                <span className={styles.reviewAvg}>{p.rating.toFixed(1)}</span>
+                <div>
+                  <RatingStars rating={p.rating} size={18} />
+                  <div className={styles.reviewCount}>
+                    {p.reviews.toLocaleString('en-IN')} verified review{p.reviews > 1 ? 's' : ''}
+                  </div>
+                </div>
+              </div>
+              <div className={styles.reviewList}>
+                {reviews.map((r) => (
+                  <div key={r.id} className={styles.reviewItem}>
+                    <RatingStars rating={r.rating} />
+                    {r.title && <div className={styles.reviewTitle}>{r.title}</div>}
+                    <p className={styles.reviewBody}>{r.body}</p>
+                    <div className={styles.reviewAuthor}>{r.author}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className={styles.reviewEmpty}>No reviews yet. Be the first to review this product.</p>
+          )}
+        </div>
+
+        {/* Write a review */}
+        <aside className={styles.reviewForm}>
+          {!authed ? (
+            <>
+              <div className={styles.blockTitle}>Share your experience</div>
+              <p className={styles.reviewEmpty}>Sign in to write a review.</p>
+              <Button block onClick={() => navigate('/')}>
+                Sign in to review
+              </Button>
+            </>
+          ) : done ? (
+            <div className={styles.reviewThanks}>
+              <Check size={18} />
+              <div>
+                <strong>Thanks for your review!</strong>
+                <div className={styles.reviewEmpty}>
+                  It will appear here once our team verifies it.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className={styles.blockTitle}>Write a review</div>
+              <div className={styles.reviewField}>
+                <span className={styles.reviewFieldLabel}>Your rating</span>
+                <StarInput value={rating} onChange={setRating} />
+              </div>
+              <Field label="Title (optional)">
+                <Input
+                  placeholder="Sum it up in a line"
+                  value={title}
+                  maxLength={120}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </Field>
+              <Field label="Your review">
+                <textarea
+                  className={styles.reviewTextarea}
+                  placeholder="What did you like or dislike?"
+                  value={body}
+                  maxLength={2000}
+                  rows={4}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+              </Field>
+              {err && <div className={styles.reviewError}>{err}</div>}
+              <Button block disabled={busy} onClick={submit}>
+                {busy ? 'Submitting…' : 'Submit review'}
+              </Button>
+              <p className={styles.reviewNote}>Reviews are verified by our team before they appear.</p>
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

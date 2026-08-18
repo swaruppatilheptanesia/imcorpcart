@@ -18,6 +18,7 @@ import { notDeleted, orderFullInclude } from '../models/selectors';
 import { resolveEmployee } from '../utils/scope';
 import { isLive as isCampaignLive } from './campaign.service';
 import { listActiveBanners } from './banner.service';
+import { listApprovedReviews } from './review.service';
 import type {
   AddToCartInput,
   UpdateCartInput,
@@ -102,7 +103,10 @@ function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
     mop,
     mrp,
     stock: winner?.quantity ?? 0,
-    rating: p.rating ?? 4.3,
+    // Real aggregate from approved reviews (recomputed on moderation). `reviews`
+    // (count) is the source of truth for whether a rating exists — the UI hides
+    // stars entirely when it's 0, so an unrated product never shows a fake score.
+    rating: p.rating ?? 0,
     reviews: p.reviewCount ?? 0,
     desc: p.description ?? '',
     // The winning offer's free gift is the badge; first-party/bulk products fall
@@ -189,6 +193,7 @@ export async function getProduct(id: string) {
   if (!p) throw AppError.notFound('Product not found');
   const product = toStoreProduct(p);
   const family = await familyMembersOf(p, {});
+  const reviews = await listApprovedReviews(p.id);
 
   const relatedRows = await prisma.product.findMany({
     where: {
@@ -203,7 +208,7 @@ export async function getProduct(id: string) {
     take: 4,
   });
 
-  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r)), family });
+  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r)), family, reviews });
 }
 
 // ─── Public catalog (no auth) — MOP-priced, EPP never exposed ────────────────
@@ -226,6 +231,7 @@ export async function getPublicProduct(id: string) {
   if (!p) throw AppError.notFound('Product not found');
   const product = toStoreProduct(p, { public: true });
   const family = await familyMembersOf(p, { public: true });
+  const reviews = await listApprovedReviews(p.id);
 
   const relatedRows = await prisma.product.findMany({
     where: {
@@ -239,7 +245,7 @@ export async function getPublicProduct(id: string) {
     take: 4,
   });
 
-  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r, { public: true })), family });
+  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r, { public: true })), family, reviews });
 }
 
 // ─── Coupons ─────────────────────────────────────────────────────────────────

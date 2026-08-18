@@ -4,7 +4,7 @@
 
 import { createAuthStore } from './auth-store';
 import { createHttpClient, createAuthApi } from './http';
-import type { StoreProduct, StoreCoupon, Shade, Freebie, Spec, ShopAddress, FamilyMember } from './store-types';
+import type { StoreProduct, StoreCoupon, Shade, Freebie, Spec, ShopAddress, FamilyMember, Review } from './store-types';
 
 export const shopStore = createAuthStore('shopper');
 const client = createHttpClient(shopStore);
@@ -23,8 +23,19 @@ export async function getProducts(): Promise<StoreProduct[]> {
   return r.data;
 }
 
-export function getProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[] }> {
+export function getProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
   return client.apiFetch(`/shop/products/${id}`);
+}
+
+// Submit (or overwrite) the shopper's review for a product. Returns the saved
+// review, which starts PENDING until a Super Admin approves it.
+export interface ReviewInput {
+  rating: number;
+  title?: string;
+  body: string;
+}
+export function submitReview(productId: string, body: ReviewInput): Promise<{ status: string }> {
+  return client.apiFetch(`/shop/products/${productId}/reviews`, { method: 'POST', body });
 }
 
 // Public (no-auth) catalog — MOP-priced. Used before login.
@@ -33,7 +44,7 @@ export async function getPublicProducts(): Promise<StoreProduct[]> {
   return r.data;
 }
 
-export function getPublicProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[] }> {
+export function getPublicProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
   return client.apiFetch(`/catalog/products/${id}`, { auth: false });
 }
 

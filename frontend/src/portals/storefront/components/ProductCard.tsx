@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
 import type { StoreProduct } from '@/data/store-types';
 import { useStore } from '../store-context';
+import { RatingStars } from './RatingStars';
 import styles from './ProductCard.module.css';
 
 // Per-category image aspect (phones tall, accessories square-ish, bags wide).
@@ -72,6 +73,11 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
         )}
         <div className={styles.name}>{p.name}</div>
         {variantLabel && <div className={styles.colours}>{variantLabel}</div>}
+        {p.reviews > 0 && (
+          <div className={styles.rating}>
+            <RatingStars rating={p.rating} reviews={p.reviews} />
+          </div>
+        )}
         {specLine && <div className={styles.specs}>{specLine}</div>}
         <div className={styles.priceRow}>
           <span className={styles.price}>{inr(p.price)}</span>

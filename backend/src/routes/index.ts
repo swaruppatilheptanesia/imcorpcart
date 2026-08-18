@@ -18,6 +18,7 @@ import uploadRoutes from './uploads.routes';
 import companyRoutes from './company.routes';
 import resellerRoutes from './reseller.routes';
 import shopRoutes from './shop.routes';
+import reviewRoutes from './review.routes';
 
 const router = Router();
 
@@ -52,6 +53,7 @@ router.use('/qr-campaigns', ...admin, campaignRoutes);
 router.use('/banners', ...admin, bannerRoutes);
 router.use('/dashboard', ...admin, dashboardRoutes);
 router.use('/uploads', ...admin, uploadRoutes);
+router.use('/reviews', ...admin, reviewRoutes);
 
 // Company Admin (HR) portal.
 router.use('/company', ...company, companyRoutes);

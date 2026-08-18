@@ -22,6 +22,16 @@ export interface Freebie {
   description: string;
 }
 
+// An approved customer review shown on the product detail page.
+export interface Review {
+  id: string;
+  author: string;
+  rating: number; // 1..5
+  title: string | null;
+  body: string;
+  createdAt: string;
+}
+
 // A sibling SKU in a variant family (Amazon-style colour/storage selectors).
 export interface FamilyMember {
   id: string;

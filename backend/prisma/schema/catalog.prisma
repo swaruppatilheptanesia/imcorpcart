@@ -79,6 +79,7 @@ model Product {
   smartEppItems SmartEppRequestItem[]
   orderItems    OrderItem[]
   wishlistItems WishlistItem[]
+  reviews       ProductReview[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -105,6 +106,28 @@ model WishlistItem {
   @@unique([employeeId, productId])
   @@index([productId])
   @@map("wishlist_items")
+}
+
+// Employee-submitted product review. Starts PENDING and is only shown on the
+// storefront (and folded into Product.rating/reviewCount) once a Super Admin
+// APPROVES it. One review per (employee × product); editing resets to PENDING.
+model ProductReview {
+  id         String       @id @default(cuid())
+  employeeId String
+  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating     Int // 1–5
+  title      String?
+  body       String
+  status     ReviewStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, productId])
+  @@index([productId, status])
+  @@map("product_reviews")
 }
 
 model ProductImage {

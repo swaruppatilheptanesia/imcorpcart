@@ -114,6 +114,9 @@
   color: var(--text3);
   text-align: left;
 }
+.rating {
+  text-align: left;
+}
 .priceRow {
   display: flex;
   align-items: baseline;

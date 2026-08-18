@@ -3,8 +3,11 @@
  *  synchronous facet helpers keep working. loadCatalog() is idempotent. */
 
 import * as shop from '@/data/shop-api';
-import type { StoreProduct, StoreCoupon, FilterState, SortKey, StoreCategory } from '@/data/store-types';
+import type { StoreProduct, StoreCoupon, FilterState, SortKey, StoreCategory, Review } from '@/data/store-types';
 import { PRICE_CEIL } from '@/data/store-types';
+
+// The detail page needs the approved review list alongside the product.
+export type ProductDetail = StoreProduct & { reviewList: Review[] };
 
 let CATALOG: StoreProduct[] = [];
 let COUPONS: StoreCoupon[] = [];
@@ -112,15 +115,16 @@ export async function getCatalog(q: CatalogQuery): Promise<StoreProduct[]> {
   return sortProducts(CATALOG.filter((p) => matchesFilters(p, q.filters, q.search)), q.sort);
 }
 
-export async function getProductById(id: string): Promise<StoreProduct | undefined> {
+export async function getProductById(id: string): Promise<ProductDetail | undefined> {
   await loadCatalog();
   // Fetch the exact SKU (a family sibling may not be the cached representative)
-  // + its variant-family members, in the current auth mode.
+  // + its variant-family members + approved reviews, in the current auth mode.
   try {
     const res = loadedMode === 'authed' ? await shop.getProduct(id) : await shop.getPublicProduct(id);
-    return { ...res.product, family: res.family };
+    return { ...res.product, family: res.family, reviewList: res.reviews };
   } catch {
-    return findProduct(id); // fall back to the cached collapsed catalog
+    const p = findProduct(id); // fall back to the cached collapsed catalog
+    return p ? { ...p, reviewList: [] } : undefined;
   }
 }
 
