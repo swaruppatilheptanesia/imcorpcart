@@ -61,11 +61,18 @@
   cursor: pointer;
 }
 
-.labels {
+.inputs {
   display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text2);
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.inputs > div,
+.inputs > input {
+  flex: 1;
+  min-width: 0;
+}
+.dash {
+  color: var(--text3);
+  flex: none;
 }
