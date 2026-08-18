@@ -16,7 +16,7 @@
 
 .well {
   position: relative;
-  background: var(--surface2);
+  background: var(--surface); /* white image area, Amazon-style */
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -29,6 +29,14 @@
   height: 74%;
   border-radius: 14px;
   box-shadow: 0 12px 26px -10px rgba(0, 0, 0, 0.42);
+}
+/* Real product photo — fills the well and shows the COMPLETE image (Amazon-style
+   contain, never cropped). Minimal padding so the image reads large. */
+.img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
 }
 .stockPill {
   position: absolute;
@@ -164,6 +172,9 @@
   width: 92px;
   flex: none;
   margin-bottom: 0;
+}
+.listCard .img {
+  padding: 6px;
 }
 .listCard .body {
   flex: 1;

@@ -7,20 +7,19 @@ import { useStore } from '../store-context';
 import { RatingStars } from './RatingStars';
 import styles from './ProductCard.module.css';
 
-// Per-category image aspect (phones tall, accessories square-ish, bags wide).
-// New/unknown categories fall back to a square well.
-const DEFAULT_ASPECT = '150 / 150';
+// Per-category image aspect — large, Amazon-style image area (phones tall,
+// accessories/bags roughly square). New/unknown categories fall back to square.
+const DEFAULT_ASPECT = '1 / 1';
 const ASPECT: Record<string, string> = {
-  phones: '150 / 172',
-  accessories: '150 / 150',
-  bags: '150 / 128',
+  phones: '150 / 185',
+  accessories: '1 / 1',
+  bags: '150 / 140',
 };
 
 export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boolean }) {
   const navigate = useNavigate();
   const { toggleWishlist, isWished, authed } = useStore();
   const wished = isWished(p.id);
-  const inStock = p.stock > 0;
 
   // Amazon-style spec highlights under the title: the first few spec values
   // ("6.7\" OLED · 120Hz | Exynos 1480 | …"). Packaging rows aren't a selling point.
@@ -38,13 +37,10 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
     <button className={cn(styles.card, list && styles.listCard)} onClick={() => navigate(`/shop/product/${p.id}`)}>
       <div className={styles.well} style={{ aspectRatio: list ? '1 / 1' : ASPECT[p.group] ?? DEFAULT_ASPECT }}>
         {p.image ? (
-          <img className={styles.device} style={{ objectFit: 'cover' }} src={p.image} alt={p.name} />
+          <img className={styles.img} src={p.image} alt={p.name} />
         ) : (
           <span className={styles.device} style={{ background: `linear-gradient(155deg, ${p.g1}, ${p.g2})` }} />
         )}
-        <span className={cn(styles.stockPill, inStock ? styles.inStock : styles.outStock)}>
-          {inStock ? 'In stock' : 'Out of stock'}
-        </span>
         <span
           role="button"
           tabIndex={0}
