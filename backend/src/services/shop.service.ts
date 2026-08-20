@@ -605,6 +605,13 @@ function verifyRazorpaySignature(orderId: string, paymentId: string, signature: 
   }
 }
 
+// View-only demo accounts can browse/cart but never purchase — enforced
+// server-side (not just hidden in the UI) regardless of the global flag.
+async function assertNotViewOnly(userId: string) {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true } });
+  if (u?.viewOnly) throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
+}
+
 // Step 1 of checkout: price the cart and open a Razorpay order for the grand
 // total. The frontend feeds the returned id into the Razorpay Checkout modal;
 // the signed result comes back through placeOrder.
@@ -612,6 +619,7 @@ export async function createPaymentOrder(userId: string, input: CreatePaymentOrd
   if (!env.CHECKOUT_ENABLED) {
     throw AppError.forbidden('Checkout is temporarily unavailable — online payments are launching soon');
   }
+  await assertNotViewOnly(userId);
   const razorpay = getRazorpay();
   const { grandTotal } = await priceCart(userId, input.couponCode);
   if (grandTotal <= 0) throw AppError.badRequest('Nothing to pay — place the order directly');
@@ -639,6 +647,7 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
   if (!env.CHECKOUT_ENABLED) {
     throw AppError.forbidden('Checkout is temporarily unavailable — online payments are launching soon');
   }
+  await assertNotViewOnly(userId);
   const { employeeId, companyId, cart, coupon, dbCoupon, qr, priced, grandTotal } =
     await priceCart(userId, input.couponCode);
 
@@ -922,7 +931,7 @@ export async function getProfile(userId: string) {
   const employee = await prisma.employee.findFirst({
     where: { userId, ...notDeleted },
     include: {
-      user: { select: { fullName: true, email: true, phone: true } },
+      user: { select: { fullName: true, email: true, phone: true, viewOnly: true } },
       company: { select: { name: true, status: true, smartEppEnabled: true } },
       addresses: { orderBy: { isDefault: 'desc' } },
     },
@@ -945,7 +954,9 @@ export async function getProfile(userId: string) {
     company: employee.company.name,
     companyStatus: employee.company.status,
     smartEppEnabled: employee.company.smartEppEnabled,
-    checkoutEnabled: env.CHECKOUT_ENABLED,
+    // View-only demo accounts never see checkout, even when the global flag is on.
+    checkoutEnabled: env.CHECKOUT_ENABLED && !employee.user.viewOnly,
+    viewOnly: employee.user.viewOnly,
     program: employee.program,
     creditLimit: employee.creditLimit === null ? null : toNumber(employee.creditLimit),
     creditUsed: toNumber(spent._sum.total),

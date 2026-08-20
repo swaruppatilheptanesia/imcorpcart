@@ -230,6 +230,7 @@ export interface ShopProfileApi {
   companyStatus: string;
   smartEppEnabled: boolean; // company has Smart EPP enabled by the Super Admin
   checkoutEnabled: boolean; // master switch — false hides all pay/checkout entry points
+  viewOnly: boolean; // demo account — purchase/checkout permanently disabled
   program: string;
   creditLimit: number | null;
   creditUsed: number;

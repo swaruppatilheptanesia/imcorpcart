@@ -27,6 +27,8 @@ const id = (p: string, n: string | number) => `seed-${p}-${n}`;
 
 async function main() {
   const pw = await bcrypt.hash('imcorp@2026', 10);
+  // Dedicated password for the client-facing view-only demo account.
+  const demoPw = await bcrypt.hash('Demo@2026', 10);
 
   // ── Categories ─────────────────────────────────────────────────────────────
   const categories = [
@@ -94,24 +96,31 @@ async function main() {
   }
 
   // ── Employees (+ user accounts) ────────────────────────────────────────────
-  const employees = [
+  const employees: {
+    key: string; name: string; email: string; company: string; code: string;
+    dept: string; salary: number; viewOnly?: boolean;
+  }[] = [
     { key: 'rohan', name: 'Rohan Mehta', email: 'rohan.m@acme.com', company: 'acme', code: 'ACM-001', dept: 'Engineering', salary: 180000 },
     { key: 'sara', name: 'Sara Iyer', email: 'sara.i@nexus.com', company: 'nexus', code: 'NEX-014', dept: 'Design', salary: 150000 },
     { key: 'neha', name: 'Neha Kapoor', email: 'neha.k@orbit.com', company: 'orbit', code: 'ORB-102', dept: 'Finance', salary: 210000 },
     { key: 'karan', name: 'Karan Shah', email: 'karan.s@zenith.com', company: 'zenith', code: 'ZEN-045', dept: 'Sales', salary: 120000 },
     { key: 'ananya', name: 'Ananya Rao', email: 'ananya.r@vertex.com', company: 'vertex', code: 'VER-078', dept: 'Operations', salary: 165000 },
+    // Client-facing view-only demo login (browse/cart/wishlist; no purchase/checkout).
+    { key: 'demo', name: 'Demo Account', email: 'demo@imcorpcart.com', company: 'acme', code: 'DEMO-001', dept: 'Demo', salary: 0, viewOnly: true },
   ];
   for (const e of employees) {
+    const hash = e.viewOnly ? demoPw : pw;
     const user = await prisma.user.upsert({
       where: { email: e.email },
-      update: { passwordHash: pw },
+      update: { passwordHash: hash, viewOnly: e.viewOnly ?? false },
       create: {
         id: id('user-emp', e.key),
         email: e.email,
         fullName: e.name,
         role: Role.EMPLOYEE_EPP,
         status: 'ACTIVE',
-        passwordHash: pw,
+        passwordHash: hash,
+        viewOnly: e.viewOnly ?? false,
       },
     });
     await prisma.employee.upsert({

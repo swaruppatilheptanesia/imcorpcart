@@ -11,6 +11,7 @@ interface StoreCtxValue {
   authed: boolean; // signed-in employee (EPP prices) vs public browsing (MOP)
   smartEppEnabled: boolean; // company has Smart EPP enabled (gates the EMI option)
   checkoutEnabled: boolean; // master switch — false hides all pay/checkout entry points
+  viewOnly: boolean; // demo account — purchase/checkout permanently disabled
   // cart (server-backed)
   cart: CartLineView[];
   addToCart: (id: string, shade: string, qty: number) => Promise<void>;
@@ -73,6 +74,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
   // Default false so the Pay/checkout buttons never flash before the profile
   // confirms checkout is open.
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
   const [notifs, setNotifs] = useState<ShopNotificationApi[]>([]);
   const [notifsSeenAt, setNotifsSeenAt] = useState<string>(() => {
     try {
@@ -116,6 +118,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
         setQrDiscount(p?.qrDiscount ?? null);
         setSmartEppEnabled(p?.smartEppEnabled ?? false);
         setCheckoutEnabled(p?.checkoutEnabled ?? false);
+        setViewOnly(p?.viewOnly ?? false);
         setNotifs(n);
       } finally {
         if (!cancelled) setReady(true);
@@ -243,6 +246,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     authed,
     smartEppEnabled,
     checkoutEnabled,
+    viewOnly,
     cart, addToCart, setLineQty, removeLine, cartCount, subtotal, placeOrder, qrDiscount,
     notifs, notifsUnread, markNotifsSeen,
     wishlist, toggleWishlist, isWished,

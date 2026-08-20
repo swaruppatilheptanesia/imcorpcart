@@ -15,6 +15,11 @@ model User {
   twoFactorEnabled Boolean          @default(false)
   twoFactorSecret  TwoFactorSecret?
 
+  // View-only demo account: browse/cart/wishlist work but purchase & checkout are
+  // permanently disabled (forces checkoutEnabled=false + blocks order APIs),
+  // independent of the global CHECKOUT_ENABLED flag.
+  viewOnly Boolean @default(false)
+
   // Exhibition exception (client requirement): users who self-register by
   // scanning the exhibition QR code are flagged for a special discount.
   registrationSource RegistrationSource  @default(ADMIN)

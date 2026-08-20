@@ -18,7 +18,7 @@ const fmtAddr = (a: ShopAddress) =>
 export function Checkout() {
   const navigate = useNavigate();
   const { flash } = useToast();
-  const { cart, subtotal, appliedCoupon, cartCount, placeOrder, qrDiscount, checkoutEnabled } = useStore();
+  const { cart, subtotal, appliedCoupon, cartCount, placeOrder, qrDiscount, checkoutEnabled, viewOnly } = useStore();
   const [busy, setBusy] = useState(false);
 
   const [addresses, setAddresses] = useState<ShopAddress[]>([]);
@@ -49,10 +49,13 @@ export function Checkout() {
   if (!checkoutEnabled) {
     return (
       <div className={styles.closed}>
-        <h1 className={styles.closedTitle}>Checkout is launching soon</h1>
+        <h1 className={styles.closedTitle}>
+          {viewOnly ? 'Checkout is disabled for this demo account' : 'Checkout is launching soon'}
+        </h1>
         <p className={styles.closedBody}>
-          Online ordering isn't open just yet. You can keep browsing and build your cart and wishlist — we'll
-          enable checkout shortly.
+          {viewOnly
+            ? 'This is a view-only demo account for previewing the store. Browsing, cart and wishlist all work; purchase and checkout are disabled.'
+            : "Online ordering isn't open just yet. You can keep browsing and build your cart and wishlist — we'll enable checkout shortly."}
         </p>
         <Button size="lg" onClick={() => navigate('/shop/home')}>Continue browsing</Button>
       </div>

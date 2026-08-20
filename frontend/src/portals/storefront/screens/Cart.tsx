@@ -11,7 +11,7 @@ import styles from './Cart.module.css';
 
 export function Cart() {
   const navigate = useNavigate();
-  const { ready, cart, setLineQty, removeLine, subtotal, appliedCoupon, couponError, applyCoupon, removeCoupon, qrDiscount, checkoutEnabled } =
+  const { ready, cart, setLineQty, removeLine, subtotal, appliedCoupon, couponError, applyCoupon, removeCoupon, qrDiscount, checkoutEnabled, viewOnly } =
     useStore();
   const [code, setCode] = useState('');
 
@@ -163,11 +163,12 @@ export function Cart() {
         ) : (
           <>
             <Button size="lg" block disabled style={{ marginTop: 16 }}>
-              Checkout — coming soon
+              {viewOnly ? 'Checkout disabled (demo)' : 'Checkout — coming soon'}
             </Button>
             <p className={styles.checkoutSoon}>
-              Online checkout is launching shortly. You can build your cart and wishlist now — we'll email you
-              when ordering opens.
+              {viewOnly
+                ? 'This is a view-only demo account. Browse, cart and wishlist are fully functional; purchase and checkout are disabled.'
+                : "Online checkout is launching shortly. You can build your cart and wishlist now — we'll email you when ordering opens."}
             </p>
           </>
         )}
