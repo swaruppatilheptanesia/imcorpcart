@@ -10,34 +10,33 @@ export function Login({
   onDone,
   onRegister,
 }: {
-  onNext: (challengeToken: string) => void;
+  onNext: (challengeToken: string, email: string) => void;
   onDone: (portalPath: string) => void;
   onRegister: () => void;
 }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!email.trim() || !password.trim()) {
+    if (!email.trim()) {
       setError(true);
       return;
     }
     setBusy(true);
     setApiError(null);
     try {
-      const res = await login(email.trim(), password);
-      // 2FA disabled (beta): signed in directly — route to the role's portal.
+      const res = await login(email.trim());
+      // Defensive: a server that still returns a direct session signs in as-is.
       if (res.accessToken && res.user) {
         onDone(persistSession(res.accessToken, res.user));
         return;
       }
       // In dev the OTP is printed to the backend console AND returned here.
       if (res.devOtp) console.info(`[dev] OTP: ${res.devOtp}`);
-      onNext(res.challengeToken);
+      onNext(res.challengeToken, email.trim());
     } catch (e) {
       setApiError(e instanceof Error ? e.message : 'Sign-in failed');
     } finally {
@@ -78,7 +77,7 @@ export function Login({
         </div>
 
         <h1 className={styles.heading}>Sign in</h1>
-        <p className={styles.subheading}>One account — we'll take you straight to your portal.</p>
+        <p className={styles.subheading}>Enter your email — we'll send you a 6-digit sign-in code.</p>
 
         <div className={styles.form}>
           <Field label="Email" error={error && !email.trim() ? 'Enter your email' : undefined}>
@@ -88,20 +87,6 @@ export function Login({
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
-                setError(false);
-              }}
-            />
-          </Field>
-          <Field
-            label="Password"
-            error={error && !password.trim() ? 'Enter your password' : undefined}
-          >
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
                 setError(false);
               }}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
@@ -115,7 +100,7 @@ export function Login({
           )}
 
           <Button size="lg" block onClick={submit} disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? 'Sending code…' : 'Send sign-in code'}
           </Button>
         </div>
 

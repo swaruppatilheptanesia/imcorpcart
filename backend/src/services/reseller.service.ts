@@ -12,10 +12,12 @@ import {
 import { serialize, toNumber } from '../models/serializers';
 import { resolveResellerId } from '../utils/scope';
 import { ensureOwnedGift } from './product-write';
+import { creditWallet } from './shop.service';
 import type {
   ResellerListQuery,
   TransitUpdateInput,
   ResellerOfferUpdateInput,
+  ResellerBulkOffersInput,
   ResellerFreeGiftInput,
   ResellerFreeGiftUpdateInput,
 } from '../validators/reseller.schema';
@@ -160,6 +162,7 @@ export async function getDashboard(userId: string) {
 const myOfferSelect = {
   id: true,
   eppPrice: true,
+  resellerPrice: true,
   smartEppPrice: true,
   quantity: true,
   freeGiftId: true,
@@ -197,7 +200,8 @@ function toResellerOffer(o: MyOfferRow) {
     productStatus: o.product.status,
     mrp: o.product.mrp,
     mop: o.product.mop, // read-only (admin-set public price)
-    eppPrice: o.eppPrice,
+    eppPrice: o.eppPrice, // customer price (shopper pays)
+    resellerPrice: o.resellerPrice, // reseller's own price; commission = eppPrice − resellerPrice
     smartEppPrice: o.smartEppPrice,
     quantity: o.quantity,
     freeGiftId: o.freeGiftId,
@@ -258,6 +262,12 @@ export async function updateMyOffer(userId: string, offerId: string, input: Rese
 
   // Pricing an offer for the first time promotes it out of DRAFT.
   const nextEpp = input.eppPrice ?? toNumber(existing.eppPrice);
+  const nextResellerPrice =
+    input.resellerPrice ?? (existing.resellerPrice != null ? toNumber(existing.resellerPrice) : 0);
+  // Customer price must cover the reseller's price (commission can't be negative).
+  if (nextResellerPrice > 0 && nextEpp < nextResellerPrice) {
+    throw new AppError(422, 'PRICE_INVALID', 'Customer price must be at least your price');
+  }
   const status =
     existing.status === ProductStatus.DRAFT && nextEpp > 0 ? ProductStatus.ACTIVE : existing.status;
 
@@ -265,6 +275,7 @@ export async function updateMyOffer(userId: string, offerId: string, input: Rese
     where: { id: offerId },
     data: {
       ...(input.eppPrice !== undefined ? { eppPrice: D(input.eppPrice) } : {}),
+      ...(input.resellerPrice !== undefined ? { resellerPrice: D(input.resellerPrice) } : {}),
       ...(input.smartEppPrice !== undefined ? { smartEppPrice: D(input.smartEppPrice) } : {}),
       ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
       ...(freeGiftId !== undefined ? { freeGiftId } : {}),
@@ -274,6 +285,76 @@ export async function updateMyOffer(userId: string, offerId: string, input: Rese
     select: myOfferSelect,
   });
   return serialize(toResellerOffer(updated));
+}
+
+// Every offer for this reseller, unpaginated — powers the bulk-update CSV export.
+export async function listAllMyOffers(userId: string) {
+  const resellerId = await resolveResellerId(userId);
+  const rows = await prisma.productOffer.findMany({
+    where: { resellerId, ...notDeleted, product: notDeleted },
+    select: myOfferSelect,
+    orderBy: { product: { name: 'asc' } },
+  });
+  return { data: serialize(rows.map(toResellerOffer)) };
+}
+
+// Bulk stock & price update from an uploaded CSV — each row is matched to this
+// reseller's own offer by product SKU; only provided fields change. Same guards
+// as updateMyOffer (customer ≥ reseller price; pricing a DRAFT > 0 → ACTIVE).
+export async function bulkUpdateMyOffers(userId: string, rows: ResellerBulkOffersInput['rows']) {
+  const resellerId = await resolveResellerId(userId);
+  const offers = await prisma.productOffer.findMany({
+    where: { resellerId, ...notDeleted, product: notDeleted },
+    select: { id: true, eppPrice: true, resellerPrice: true, quantity: true, status: true, product: { select: { sku: true } } },
+  });
+  const bySku = new Map(offers.map((o) => [o.product.sku.trim().toLowerCase(), o]));
+
+  const errors: { sku: string; reason: string }[] = [];
+  const writes: Prisma.PrismaPromise<unknown>[] = [];
+  let skipped = 0;
+
+  const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  for (const row of rows) {
+    const offer = bySku.get(row.sku.trim().toLowerCase());
+    if (!offer) {
+      errors.push({ sku: row.sku, reason: `SKU "${row.sku}" is not in your listings` });
+      skipped += 1;
+      continue;
+    }
+    // Nothing to change on this row.
+    if (row.reseller_price === undefined && row.customer_price === undefined && row.stock_quantity === undefined) {
+      errors.push({ sku: row.sku, reason: 'No reseller_price, customer_price or stock_quantity provided' });
+      skipped += 1;
+      continue;
+    }
+    const nextEpp = row.customer_price ?? toNumber(offer.eppPrice);
+    const nextResellerPrice =
+      row.reseller_price ?? (offer.resellerPrice != null ? toNumber(offer.resellerPrice) : 0);
+    if (nextResellerPrice > 0 && nextEpp < nextResellerPrice) {
+      errors.push({
+        sku: row.sku,
+        reason: `Customer price ${inr(nextEpp)} is below your reseller price ${inr(nextResellerPrice)}`,
+      });
+      skipped += 1;
+      continue;
+    }
+    const status =
+      offer.status === ProductStatus.DRAFT && nextEpp > 0 ? ProductStatus.ACTIVE : offer.status;
+    writes.push(
+      prisma.productOffer.update({
+        where: { id: offer.id },
+        data: {
+          ...(row.customer_price !== undefined ? { eppPrice: D(row.customer_price) } : {}),
+          ...(row.reseller_price !== undefined ? { resellerPrice: D(row.reseller_price) } : {}),
+          ...(row.stock_quantity !== undefined ? { quantity: row.stock_quantity } : {}),
+          status,
+        },
+      }),
+    );
+  }
+
+  if (writes.length) await prisma.$transaction(writes);
+  return { total: rows.length, updated: writes.length, skipped, errors };
 }
 
 export async function listCoupons(userId: string) {
@@ -414,6 +495,23 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
           note: input.description ?? `Transit: ${input.status}`,
         },
       });
+    }
+
+    // On delivery, credit the order's cashback to the shopper's wallet — once
+    // (idempotent: skip if an EARN entry already references this order).
+    const cashback = toNumber(order.cashbackEarned);
+    if (isDelivered && cashback > 0) {
+      const already = await tx.walletLedgerEntry.findFirst({
+        where: { type: 'EARN', referenceType: 'ORDER', referenceId: order.id },
+        select: { id: true },
+      });
+      if (!already) {
+        await creditWallet(tx, order.employeeId, cashback, {
+          referenceType: 'ORDER',
+          referenceId: order.id,
+          note: `Cashback for delivered order ${order.orderNo}`,
+        });
+      }
     }
   });
 

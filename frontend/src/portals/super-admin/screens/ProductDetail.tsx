@@ -107,7 +107,7 @@ export function ProductDetail() {
         </div>
 
         <div className={styles.col}>
-          <SellersPanel productId={raw.id} mrp={raw.mrp} />
+          <SellersPanel productId={raw.id} />
         </div>
       </div>
     </div>
@@ -116,7 +116,7 @@ export function ProductDetail() {
 
 // ─── Sellers / offers management ──────────────────────────────────────────────
 
-function SellersPanel({ productId, mrp }: { productId: string; mrp: number | null }) {
+function SellersPanel({ productId }: { productId: string }) {
   const { flash } = useToast();
   const { data, state, reload } = useAsync(
     async () => {
@@ -142,7 +142,10 @@ function SellersPanel({ productId, mrp }: { productId: string; mrp: number | nul
           </Button>
         )}
       </div>
-      <p className={styles.sellersNote}>Each seller sets their own price &amp; stock. The cheapest in-stock offer wins the buy box.</p>
+      <p className={styles.sellersNote}>
+        Attach a seller — they set their own reseller price &amp; customer price. Commission = customer price − reseller
+        price. The cheapest in-stock customer price wins the buy box.
+      </p>
 
       {state === 'loading' && <Skeleton h={120} />}
 
@@ -164,11 +167,22 @@ function SellersPanel({ productId, mrp }: { productId: string; mrp: number | nul
         <div className={styles.sellersEmpty}>No sellers yet. Add one to make this product buyable.</div>
       )}
 
-      <div className={styles.offerList}>
-        {offers.map((o) => (
-          <OfferRow key={o.id} productId={productId} offer={o} mrp={mrp} onChanged={reload} onError={flash} />
-        ))}
-      </div>
+      {offers.length > 0 && (
+        <div className={styles.offerList}>
+          <div className={`${styles.offerRow} ${styles.offerHead}`}>
+            <span>Reseller</span>
+            <span>Reseller price</span>
+            <span>Customer price</span>
+            <span>Commission</span>
+            <span>Stock</span>
+            <span>Status</span>
+            <span />
+          </div>
+          {offers.map((o) => (
+            <OfferRow key={o.id} productId={productId} offer={o} onChanged={reload} onError={flash} />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -195,24 +209,13 @@ function AddSellerRow({
   const usedHouse = existing.some((o) => o.resellerId === null);
   const usedIds = new Set(existing.map((o) => o.resellerId));
   const [resellerId, setResellerId] = useState<string>('');
-  const [epp, setEpp] = useState('');
-  const [qty, setQty] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // The Super Admin only attaches the seller; the reseller sets its own prices.
   const submit = async () => {
-    const eppN = Number(epp) || 0;
-    if (eppN <= 0) {
-      onError('Enter an EPP price');
-      return;
-    }
     setBusy(true);
     try {
-      await attachOffer(productId, {
-        resellerId: resellerId || null,
-        eppPrice: eppN,
-        quantity: Number(qty) || 0,
-        status: 'active',
-      });
+      await attachOffer(productId, { resellerId: resellerId || null, status: 'draft' });
       onDone();
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Could not add seller');
@@ -222,7 +225,7 @@ function AddSellerRow({
   };
 
   return (
-    <div className={styles.addRow}>
+    <div className={styles.attachRow}>
       <select className={styles.offerSelect} value={resellerId} onChange={(e) => setResellerId(e.target.value)}>
         {!usedHouse && <option value="">First-party (house)</option>}
         {resellers
@@ -233,9 +236,7 @@ function AddSellerRow({
             </option>
           ))}
       </select>
-      <Input placeholder="EPP" prefix="₹" value={epp} onChange={(e) => setEpp(e.target.value)} inputMode="numeric" />
-      <Input placeholder="Stock" value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
-      <button className={styles.okBtn} onClick={submit} disabled={busy} aria-label="Add">
+      <button className={styles.okBtn} onClick={submit} disabled={busy} aria-label="Attach seller">
         <Check size={16} />
       </button>
       <button className={styles.cancelBtn} onClick={onCancel} aria-label="Cancel">
@@ -248,13 +249,11 @@ function AddSellerRow({
 function OfferRow({
   productId,
   offer,
-  mrp,
   onChanged,
   onError,
 }: {
   productId: string;
   offer: ApiOfferRow;
-  mrp: number | null;
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
@@ -297,8 +296,15 @@ function OfferRow({
   };
 
   const outOfStock = offer.quantity <= 0;
+  const isHouse = offer.resellerId === null; // house offer has no reseller to price it
+  const hasResellerPrice = offer.resellerPrice != null && offer.resellerPrice > 0;
+  const commission =
+    hasResellerPrice && offer.eppPrice >= (offer.resellerPrice ?? 0)
+      ? offer.eppPrice - (offer.resellerPrice ?? 0)
+      : null;
 
   if (editing) {
+    // Only the house offer is admin-editable (a reseller owns its own pricing).
     return (
       <div className={styles.addRow}>
         <div className={styles.offerSeller}>{sellerName(offer)}</div>
@@ -316,23 +322,25 @@ function OfferRow({
 
   return (
     <div className={styles.offerRow}>
-      <div style={{ minWidth: 0 }}>
-        <div className={styles.offerSeller}>{sellerName(offer)}</div>
-        <div className={styles.offerMeta}>
-          {inr(offer.eppPrice)} · {outOfStock ? 'Out of stock' : `${offer.quantity} in stock`}
-          {mrp && offer.eppPrice < mrp ? ` · MRP ${inr(mrp)}` : ''}
-        </div>
-      </div>
+      <div className={styles.offerSeller}>{sellerName(offer)}</div>
+      <span className={styles.offerCell}>{hasResellerPrice ? inr(offer.resellerPrice as number) : '—'}</span>
+      <span className={styles.offerCell}>{offer.eppPrice ? inr(offer.eppPrice) : '—'}</span>
+      <span className={styles.offerCell}>{commission != null ? inr(commission) : '—'}</span>
+      <span className={styles.offerCell}>{outOfStock ? '—' : offer.quantity}</span>
       <StatusPill
         label={offer.isActive && offer.status === 'ACTIVE' && !outOfStock ? 'Live' : 'Off'}
         tone={offer.isActive && offer.status === 'ACTIVE' && !outOfStock ? 'success' : 'neutral'}
       />
-      <button className={s.iconBtn} onClick={() => setEditing(true)} aria-label="Edit offer" disabled={busy}>
-        <Pencil size={15} />
-      </button>
-      <button className={s.iconBtn} onClick={remove} aria-label="Remove offer" disabled={busy}>
-        <Trash2 size={15} />
-      </button>
+      <div className={styles.offerActions}>
+        {isHouse && (
+          <button className={s.iconBtn} onClick={() => setEditing(true)} aria-label="Edit offer" disabled={busy}>
+            <Pencil size={15} />
+          </button>
+        )}
+        <button className={s.iconBtn} onClick={remove} aria-label="Remove offer" disabled={busy}>
+          <Trash2 size={15} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -103,12 +103,26 @@ export interface ApiOfferRow {
   id: string;
   resellerId: string | null;
   reseller: { id: string; name: string } | null;
-  eppPrice: number;
+  eppPrice: number; // customer price (shopper pays)
+  resellerPrice: number | null; // reseller's own price; commission = eppPrice − resellerPrice
   smartEppPrice: number | null;
   mop: number | null;
   quantity: number;
   freeGiftId: string | null;
   freeGift: { id: string; title: string; description: string | null } | null;
+  status: string;
+  isActive: boolean;
+}
+
+// One row of the global "Reseller pricing" report (every offer, all products).
+export interface AllOfferRow {
+  id: string;
+  resellerId: string | null;
+  reseller: { id: string; name: string } | null;
+  product: { id: string; name: string; sku: string };
+  eppPrice: number;
+  resellerPrice: number | null;
+  quantity: number;
   status: string;
   isActive: boolean;
 }
@@ -131,8 +145,11 @@ export interface RawProductDetail {
   categoryId: string;
   subCategory: string | null;
   status: string;
+  smartEpp: boolean;
   mrp: number | null;
   mop: number | null;
+  cashbackType: 'NONE' | 'PERCENT' | 'FIXED';
+  cashbackValue: number | null;
   familyKey: string | null;
   optionColor: string | null;
   optionVariant: string | null;
@@ -161,8 +178,11 @@ export interface ProductInput {
   categoryId: string;
   subCategory?: string;
   status?: 'active' | 'draft' | 'inactive';
+  smartEpp?: boolean;
   mrp?: number;
   mop?: number;
+  cashbackType?: 'NONE' | 'PERCENT' | 'FIXED';
+  cashbackValue?: number;
   familyKey?: string | null;
   optionColor?: string | null;
   optionVariant?: string | null;
@@ -184,8 +204,11 @@ function toProductBody(input: ProductInput) {
     categoryId: input.categoryId,
     subCategory: input.subCategory,
     status: input.status ? PRODUCT_STATUS_OUT[input.status] : undefined,
+    smartEpp: input.smartEpp,
     mrp: input.mrp,
     mop: input.mop,
+    cashbackType: input.cashbackType,
+    cashbackValue: input.cashbackValue,
     familyKey: input.familyKey,
     optionColor: input.optionColor,
     optionVariant: input.optionVariant,
@@ -251,6 +274,12 @@ export function updateOffer(productId: string, offerId: string, input: OfferInpu
 }
 export function removeOffer(productId: string, offerId: string): Promise<{ id: string; deleted: boolean }> {
   return apiFetch(`/products/${productId}/offers/${offerId}`, { method: 'DELETE' });
+}
+
+// Every offer across products — the Super-Admin "Reseller pricing" report.
+export async function getAllOffers(): Promise<AllOfferRow[]> {
+  const r = await apiFetch<Envelope<AllOfferRow[]>>('/products/offers');
+  return r.data;
 }
 
 // Reseller directory + a reseller's gifts, for the offer form dropdowns.
@@ -610,6 +639,9 @@ export function bulkImport(rows: Record<string, unknown>[]): Promise<{ total: nu
 }
 export function bulkPriceUpdate(body: { scope: 'all' | 'phones' | 'accessories' | 'bags'; adjustment: 'increasePct' | 'decreasePct' | 'setAmount'; value: number; priceType?: 'EPP' | 'SMART_EPP' }): Promise<{ scope: string; matchedProducts: number; affectedPrices: number }> {
   return apiFetch('/bulk/price-update', { method: 'POST', body });
+}
+export function bulkCashbackUpdate(body: { scope: 'all' | 'phones' | 'accessories' | 'bags'; cashbackType: 'NONE' | 'PERCENT' | 'FIXED'; cashbackValue?: number }): Promise<{ scope: string; cashbackType: string; matchedProducts: number }> {
+  return apiFetch('/bulk/cashback-update', { method: 'POST', body });
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

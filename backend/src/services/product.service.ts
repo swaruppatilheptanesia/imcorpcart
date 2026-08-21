@@ -88,8 +88,11 @@ export async function createProduct(input: CreateProductInput) {
       categoryId: rest.categoryId,
       subCategory: rest.subCategory,
       status: rest.status ?? 'DRAFT',
+      smartEpp: rest.smartEpp ?? false,
       mrp: rest.mrp !== undefined ? D(rest.mrp) : null,
       mop: rest.mop !== undefined ? D(rest.mop) : null,
+      cashbackType: rest.cashbackType ?? 'NONE',
+      cashbackValue: rest.cashbackValue !== undefined ? D(rest.cashbackValue) : null,
       familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null,
       optionColor: rest.optionColor ?? null,
       optionVariant: rest.optionVariant ?? null,
@@ -125,9 +128,12 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
         subCategory: rest.subCategory,
         status: rest.status,
         variantOptions: rest.variantOptions,
+        ...(rest.smartEpp !== undefined ? { smartEpp: rest.smartEpp } : {}),
         ...(rest.freebieText !== undefined ? { freebieText: rest.freebieText } : {}),
         ...(rest.mrp !== undefined ? { mrp: D(rest.mrp) } : {}),
         ...(rest.mop !== undefined ? { mop: D(rest.mop) } : {}),
+        ...(rest.cashbackType !== undefined ? { cashbackType: rest.cashbackType } : {}),
+        ...(rest.cashbackValue !== undefined ? { cashbackValue: D(rest.cashbackValue) } : {}),
         ...(rest.familyKey !== undefined ? { familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null } : {}),
         ...(rest.optionColor !== undefined ? { optionColor: rest.optionColor } : {}),
         ...(rest.optionVariant !== undefined ? { optionVariant: rest.optionVariant } : {}),
@@ -169,6 +175,27 @@ export async function listOffers(productId: string) {
   return { data: serialize(offers) };
 }
 
+// Every offer across all products — the Super-Admin "Reseller pricing" report.
+// Commission (eppPrice − resellerPrice) is computed on the frontend.
+export async function listAllOffers() {
+  const offers = await prisma.productOffer.findMany({
+    where: { ...notDeleted, product: notDeleted },
+    orderBy: [{ product: { name: 'asc' } }, { eppPrice: 'asc' }],
+    select: {
+      id: true,
+      resellerId: true,
+      reseller: { select: { id: true, name: true } },
+      eppPrice: true,
+      resellerPrice: true,
+      quantity: true,
+      status: true,
+      isActive: true,
+      product: { select: { id: true, name: true, sku: true } },
+    },
+  });
+  return { data: serialize(offers) };
+}
+
 // Resellers available to attach (Super-Admin picks the seller for an offer).
 export async function listResellersForOffers() {
   const rows = await prisma.reseller.findMany({
@@ -191,6 +218,7 @@ export async function listGiftsForReseller(resellerId: string) {
 function offerWriteData(input: AttachOfferInput | UpdateOfferInput, freeGiftId: string | null | undefined) {
   return {
     ...(input.eppPrice !== undefined ? { eppPrice: D(input.eppPrice) } : {}),
+    ...(input.resellerPrice !== undefined ? { resellerPrice: D(input.resellerPrice) } : {}),
     ...(input.smartEppPrice !== undefined ? { smartEppPrice: D(input.smartEppPrice) } : {}),
     ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
     ...(freeGiftId !== undefined ? { freeGiftId } : {}),

@@ -11,6 +11,7 @@ export const PAGINATION = {
 // OtpToken.purpose values (the schema stores this as a free-text string).
 export const OTP_PURPOSE = {
   LOGIN_2FA: 'LOGIN_2FA',
+  PASSWORDLESS_LOGIN: 'PASSWORDLESS_LOGIN',
   PASSWORD_RESET: 'PASSWORD_RESET',
 } as const;
 

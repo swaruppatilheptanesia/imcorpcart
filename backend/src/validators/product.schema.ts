@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductStatus } from '@prisma/client';
+import { ProductStatus, CashbackType } from '@prisma/client';
 import { money } from './common.schema';
 
 // Frontend "group" filter maps to a top-level category slug (phones/accessories/bags).
@@ -50,8 +50,11 @@ export const createProductBody = z.object({
   categoryId: z.string().min(1),
   subCategory: z.string().trim().max(60).optional(),
   status: z.nativeEnum(ProductStatus).optional(),
+  smartEpp: z.boolean().optional(), // product comes under Smart EPP (SEPP)
   mrp: money.optional(), // product-level list price
   mop: money.optional(), // public / pre-login price (admin-set; falls back to MRP)
+  cashbackType: z.nativeEnum(CashbackType).optional(), // NONE | PERCENT | FIXED
+  cashbackValue: money.optional(), // percent (PERCENT) or ₹/unit (FIXED)
   // Amazon-style variant family (separate sibling SKUs share a familyKey).
   familyKey: z.string().trim().max(80).nullable().optional(),
   optionColor: z.string().trim().max(60).nullable().optional(),
@@ -71,6 +74,7 @@ export const updateProductBody = createProductBody.partial();
 
 const offerPricing = z.object({
   eppPrice: money.optional(),
+  resellerPrice: money.optional(), // reseller's own price (commission = eppPrice − resellerPrice)
   smartEppPrice: money.optional(),
   quantity: z.number().int().nonnegative().optional(),
   freeGiftId: z.string().min(1).nullable().optional(),

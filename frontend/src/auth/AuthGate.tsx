@@ -8,8 +8,8 @@ import { Register } from './Register';
 type Stage = 'login' | 'register' | 'otp';
 
 /** The single door for all four portals, mounted at `/`. Signs the user in
- *  (password, then OTP when 2FA is enabled) and routes them to the portal
- *  their role maps to. No auto-redirect for already-signed-in visitors —
+ *  passwordlessly (email → emailed OTP) and routes them to the portal their
+ *  role maps to. No auto-redirect for already-signed-in visitors —
  *  signing out of one portal must not bounce the user into another.
  *
  *  A scanned exhibition QR lands here as `/?qr=<token>`: the gate opens the
@@ -21,6 +21,7 @@ export function AuthGate() {
 
   const [stage, setStage] = useState<Stage>(qrToken ? 'register' : 'login');
   const [challengeToken, setChallengeToken] = useState('');
+  const [email, setEmail] = useState('');
   const [campaign, setCampaign] = useState<QrCampaignInfo | null>(null);
 
   useEffect(() => {
@@ -33,8 +34,9 @@ export function AuthGate() {
   }, [qrToken]);
 
   const done = (portalPath: string) => navigate(portalPath);
-  const toOtp = (ct: string) => {
+  const toOtp = (ct: string, addr: string) => {
     setChallengeToken(ct);
+    setEmail(addr);
     setStage('otp');
   };
 
@@ -49,6 +51,6 @@ export function AuthGate() {
       />
     );
   if (stage === 'otp')
-    return <Otp challengeToken={challengeToken} onDone={done} onBack={() => setStage('login')} />;
+    return <Otp challengeToken={challengeToken} email={email} onDone={done} onBack={() => setStage('login')} />;
   return <Login onNext={toOtp} onDone={done} onRegister={() => setStage('register')} />;
 }

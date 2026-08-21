@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
+// Passwordless login: email only. The server emails a one-time code that the
+// client exchanges at /verify-otp.
 export const loginBody = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
 });
 
 export const verifyOtpBody = z.object({
@@ -16,7 +17,6 @@ export const verifyOtpBody = z.object({
 export const registerBody = z.object({
   fullName: z.string().trim().min(1),
   email: z.string().email(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
   // Mandatory Indian 10-digit mobile. Strip spaces/dashes/() then require an
   // optional +91/0 prefix followed by a 6–9 leading digit + 9 more digits.
   phone: z

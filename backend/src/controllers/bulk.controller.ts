@@ -10,3 +10,8 @@ export async function importProducts(req: Request, res: Response) {
 export async function priceUpdate(req: Request, res: Response) {
   res.json(await service.bulkPriceUpdate(req.body));
 }
+
+export async function cashbackUpdate(req: Request, res: Response) {
+  if (!req.user) throw AppError.unauthorized();
+  res.json(await service.bulkCashbackUpdate(req.body, req.user.id));
+}

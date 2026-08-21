@@ -16,7 +16,7 @@ export function Register({
   qrToken = null,
   campaign = null,
 }: {
-  onNext: (challengeToken: string) => void;
+  onNext: (challengeToken: string, email: string) => void;
   onDone: (portalPath: string) => void;
   onBack: () => void;
   /** Exhibition QR deep link (?qr=<token>) + its resolved campaign info. */
@@ -25,7 +25,6 @@ export function Register({
 }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [gstin, setGstin] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -43,7 +42,7 @@ export function Register({
 
   const submit = async () => {
     const badGstinFlow = freeMail && (!gstinOk || !companyName.trim());
-    if (!fullName.trim() || !email.trim() || !phoneOk || password.length < 6 || badGstinFlow) {
+    if (!fullName.trim() || !email.trim() || !phoneOk || badGstinFlow) {
       setError(true);
       return;
     }
@@ -53,7 +52,6 @@ export function Register({
       const res = await register({
         fullName: fullName.trim(),
         email: email.trim(),
-        password,
         phone: normalizePhone(phone),
         gstin: freeMail ? gstin.trim().toUpperCase() : undefined,
         companyName: freeMail ? companyName.trim() : undefined,
@@ -65,13 +63,13 @@ export function Register({
         setPendingMsg(res.message);
         return;
       }
-      // 2FA disabled (beta): signed in directly — route to the role's portal.
+      // Defensive: a server that returns a direct session signs in as-is.
       if (res.accessToken && res.user) {
         onDone(persistSession(res.accessToken, res.user));
         return;
       }
       if (res.devOtp) console.info(`[dev] OTP: ${res.devOtp}`);
-      onNext(res.challengeToken);
+      onNext(res.challengeToken, email.trim());
     } catch (e) {
       setApiError(e instanceof Error ? e.message : 'Registration failed');
     } finally {
@@ -144,14 +142,11 @@ export function Register({
             <Input type="email" placeholder="you@company.com" value={email} onChange={(e) => { setEmail(e.target.value); setError(false); }} />
           </Field>
           <Field label="Mobile number" error={error && !phoneOk ? 'Enter a valid 10-digit mobile number' : undefined}>
-            <Input type="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => { setPhone(e.target.value); setError(false); }} />
-          </Field>
-          <Field label="Password" error={error && password.length < 6 ? 'At least 6 characters' : undefined}>
             <Input
-              type="password"
-              placeholder="Create a password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(false); }}
+              type="tel"
+              placeholder="+91 98765 43210"
+              value={phone}
+              onChange={(e) => { setPhone(e.target.value); setError(false); }}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
             />
           </Field>

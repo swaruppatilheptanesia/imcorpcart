@@ -161,6 +161,13 @@
   color: var(--accent);
   margin-top: 2px;
 }
+.cashback {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--success);
+  margin-top: 3px;
+}
 
 /* List view (web) */
 .listCard {

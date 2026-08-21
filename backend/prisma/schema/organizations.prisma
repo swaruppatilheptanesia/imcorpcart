@@ -53,6 +53,7 @@ model Employee {
   creditLimit Decimal? @map("credit_limit") @db.Decimal(12, 2)
 
   creditAccount    CreditAccount?
+  wallet           Wallet?
   cart             Cart?
   smartEppRequests SmartEppRequest[]
   orders           Order[]

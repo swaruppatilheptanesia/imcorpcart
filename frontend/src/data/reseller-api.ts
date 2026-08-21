@@ -65,7 +65,8 @@ export interface ResellerOfferApi {
   productStatus: string;
   mrp: number | null;
   mop: number | null; // read-only — the Super Admin sets the public price
-  eppPrice: number;
+  eppPrice: number; // customer price (shopper pays)
+  resellerPrice: number | null; // reseller's own price; commission = eppPrice − resellerPrice
   smartEppPrice: number | null;
   quantity: number;
   freeGiftId: string | null;
@@ -77,6 +78,7 @@ export interface ResellerOfferApi {
 // Editable fields only (selling price + stock + gift + active). MOP is admin-owned.
 export interface ResellerOfferWrite {
   eppPrice?: number;
+  resellerPrice?: number;
   smartEppPrice?: number | null;
   quantity?: number;
   freeGiftId?: string | null;
@@ -104,6 +106,29 @@ export function getOffer(id: string): Promise<ResellerOfferApi> {
 
 export function updateOffer(id: string, body: ResellerOfferWrite): Promise<ResellerOfferApi> {
   return client.apiFetch(`/reseller/offers/${id}`, { method: 'PATCH', body });
+}
+
+// ─── Bulk stock & price update (CSV round-trip, matched by SKU) ───────────────
+
+export async function getAllOffers(): Promise<ResellerOfferApi[]> {
+  const r = await client.apiFetch<{ data: ResellerOfferApi[] }>('/reseller/offers/export');
+  return r.data;
+}
+
+export interface ResellerBulkRow {
+  sku: string;
+  reseller_price?: number;
+  customer_price?: number;
+  stock_quantity?: number;
+}
+export interface ResellerBulkResult {
+  total: number;
+  updated: number;
+  skipped: number;
+  errors: { sku: string; reason: string }[];
+}
+export function bulkUpdateOffers(rows: ResellerBulkRow[]): Promise<ResellerBulkResult> {
+  return client.apiFetch('/reseller/bulk/offers', { method: 'POST', body: { rows } });
 }
 
 export function getCoupons(): Promise<{ data: unknown[] }> {

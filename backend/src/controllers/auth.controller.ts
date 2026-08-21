@@ -4,11 +4,8 @@ import { getPublicCampaign } from '../services/campaign.service';
 import { AppError } from '../utils/AppError';
 
 export async function login(req: Request, res: Response) {
-  const { email, password } = req.body;
-  const result = await authService.login(email, password, {
-    ip: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
+  const { email } = req.body;
+  const result = await authService.login(email);
   res.json(result);
 }
 

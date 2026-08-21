@@ -16,17 +16,27 @@ const schema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
   OTP_TTL_MIN: z.coerce.number().int().positive().default(10),
 
-  // 2FA toggle. When 'false', password login/registration signs the user in
-  // directly (no OTP challenge) — used to hide 2FA for client beta testing.
-  // Defaults to enabled; z.coerce.boolean would treat "false" as true, so parse
-  // the literal string instead.
+  // Legacy 2FA toggle. Login is now passwordless (email → emailed OTP), which is
+  // always OTP-based, so this no longer gates sign-in; retained for compatibility.
+  // z.coerce.boolean would treat "false" as true, so parse the literal string.
   OTP_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+
+  // Comma-separated emails that skip the email-OTP step and sign in directly.
+  // For demo accounts on domains that can't receive real mail (e.g. the seeded
+  // Super Admin) — everyone else uses passwordless email-OTP.
+  OTP_BYPASS_EMAILS: z.string().default(''),
 
   // Master checkout switch. 'false' = browse/register only: the order-creation
   // endpoints 403 and the storefront hides every pay/checkout entry point. Set
   // 'true' (with live Razorpay keys) to open ordering. Same string-literal parse
   // as OTP_ENABLED so "false" isn't coerced to true.
   CHECKOUT_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+
+  // Resend email (passwordless login codes). Optional so the app boots without
+  // it; when absent the OTP is only logged/returned as devOtp (non-prod). From
+  // address must be on a Resend-verified domain (imcorpcart.com).
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().default('imcorpcart <no-reply@imcorpcart.com>'),
 
   // Razorpay checkout. Optional so the app can boot without payments configured;
   // the payment endpoints return a clear error when the keys are absent.
@@ -57,6 +67,11 @@ export const env = {
   corsOrigins: raw.CORS_ORIGIN.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
+  otpBypassEmails: new Set(
+    raw.OTP_BYPASS_EMAILS.split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  ),
 };
 
 export type Env = typeof env;

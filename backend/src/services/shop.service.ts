@@ -70,6 +70,20 @@ function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
   return [...elig].sort((a, b) => toNumber(a.eppPrice) - toNumber(b.eppPrice))[0];
 }
 
+// Cashback (₹) a shopper earns per unit at a given paid price. PERCENT → % of
+// price; FIXED → flat ₹/unit; NONE → 0. Line cashback = this × quantity.
+function cashbackPerUnit(
+  cashbackType: ShopProductRow['cashbackType'],
+  cashbackValue: ShopProductRow['cashbackValue'],
+  unitPrice: number,
+): number {
+  const v = toNumber(cashbackValue);
+  if (!v) return 0;
+  if (cashbackType === 'PERCENT') return Math.round((unitPrice * v) / 100);
+  if (cashbackType === 'FIXED') return Math.round(v);
+  return 0;
+}
+
 // Map a DB product (+ its seeded presentation blob + marketplace offers) to the
 // storefront's StoreProduct shape so the frontend adapter stays trivial.
 function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
@@ -102,6 +116,8 @@ function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
     price: opts.public ? mop : epp,
     mop,
     mrp,
+    // Cashback (₹/unit) earned on purchase, at the price being shown.
+    cashback: cashbackPerUnit(p.cashbackType, p.cashbackValue, opts.public ? mop : epp),
     stock: winner?.quantity ?? 0,
     // Real aggregate from approved reviews (recomputed on moderation). `reviews`
     // (count) is the source of truth for whether a rating exists — the UI hides
@@ -482,13 +498,88 @@ async function qrDiscountFor(userId: string) {
   };
 }
 
+// Credit/Debit are merged into one "Card" option (CREDIT_CARD is the canonical row).
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  [PaymentMethod.UPI]: 'UPI',
+  [PaymentMethod.NET_BANKING]: 'Net Banking',
+  [PaymentMethod.CREDIT_CARD]: 'Card',
+  [PaymentMethod.DEBIT_CARD]: 'Debit Card',
+};
+
+// Per-method surcharge (+ GST-on-surcharge) as configured by the Super Admin.
+// Returns 0/0 when the method is unset or its config row is inactive.
+async function surchargeFor(method?: PaymentMethod): Promise<{ pct: number; gstPct: number }> {
+  if (!method) return { pct: 0, gstPct: 0 };
+  const cfg = await prisma.paymentMethodConfig.findUnique({ where: { method } });
+  if (!cfg || !cfg.active) return { pct: 0, gstPct: 0 };
+  return { pct: toNumber(cfg.surchargePercent), gstPct: toNumber(cfg.gstOnSurchargePercent) };
+}
+
+// ─── Wallet (spendable cashback) ─────────────────────────────────────────────
+
+// Cached wallet balance for an employee (0 if no wallet yet).
+async function getWalletBalance(employeeId: string): Promise<number> {
+  const w = await prisma.wallet.findUnique({ where: { employeeId }, select: { balance: true } });
+  return w ? toNumber(w.balance) : 0;
+}
+
+type WalletTx = Prisma.TransactionClient;
+interface WalletRef { referenceType?: string; referenceId?: string; note?: string }
+
+// Move money into the wallet (append EARN entry + bump cached balance). Runs in
+// the caller's transaction so it commits atomically with the order/delivery.
+export async function creditWallet(tx: WalletTx, employeeId: string, amount: number, ref: WalletRef = {}) {
+  if (amount <= 0) return;
+  const wallet = await tx.wallet.upsert({
+    where: { employeeId },
+    create: { employeeId, balance: new Prisma.Decimal(0) },
+    update: {},
+  });
+  const balanceAfter = toNumber(wallet.balance) + amount;
+  await tx.wallet.update({ where: { id: wallet.id }, data: { balance: new Prisma.Decimal(balanceAfter) } });
+  await tx.walletLedgerEntry.create({
+    data: {
+      walletId: wallet.id,
+      type: 'EARN',
+      amount: new Prisma.Decimal(amount),
+      balanceAfter: new Prisma.Decimal(balanceAfter),
+      referenceType: ref.referenceType ?? null,
+      referenceId: ref.referenceId ?? null,
+      note: ref.note ?? null,
+    },
+  });
+}
+
+// Spend from the wallet (append SPEND entry + drop cached balance). Guards against
+// overspend using the live balance inside the transaction.
+async function debitWallet(tx: WalletTx, employeeId: string, amount: number, ref: WalletRef = {}) {
+  if (amount <= 0) return;
+  const wallet = await tx.wallet.findUnique({ where: { employeeId } });
+  const current = wallet ? toNumber(wallet.balance) : 0;
+  if (!wallet || current < amount) {
+    throw AppError.badRequest('Insufficient wallet balance — please retry checkout');
+  }
+  const balanceAfter = current - amount;
+  await tx.wallet.update({ where: { id: wallet.id }, data: { balance: new Prisma.Decimal(balanceAfter) } });
+  await tx.walletLedgerEntry.create({
+    data: {
+      walletId: wallet.id,
+      type: 'SPEND',
+      amount: new Prisma.Decimal(amount),
+      balanceAfter: new Prisma.Decimal(balanceAfter),
+      referenceType: ref.referenceType ?? null,
+      referenceId: ref.referenceId ?? null,
+      note: ref.note ?? null,
+    },
+  });
+}
+
 // Price the current cart authoritatively: resolve buy-box offers, validate the
-// coupon, apply exhibition + coupon discounts, split by fulfilling reseller.
-// Payment is always Razorpay (the shopper picks UPI/card/net-banking inside the
-// gateway), so there is no per-method surcharge. Backs both createPaymentOrder
-// (amount to charge) and placeOrder (the amounts written to the split orders) so
-// they can never drift.
-async function priceCart(userId: string, couponCode?: string) {
+// coupon, apply exhibition + coupon discounts, split by fulfilling reseller,
+// redeem wallet balance (when requested), then add the chosen payment method's
+// surcharge + GST-on-surcharge. Backs both createPaymentOrder (amount to charge)
+// and placeOrder (the amounts written to the split orders) so they can never drift.
+async function priceCart(userId: string, couponCode?: string, method?: PaymentMethod, useWallet?: boolean) {
   const { id: employeeId, companyId } = await resolveEmployee(userId);
 
   const cart = await loadCart(employeeId);
@@ -527,6 +618,9 @@ async function priceCart(userId: string, couponCode?: string) {
   // Exhibition (QR campaign) discount reduces subtotal first, before coupons.
   const qr = await qrDiscountFor(userId);
 
+  // Payment surcharge (+ GST on it) for the chosen method, applied per group below.
+  const { pct: surchargePct, gstPct } = await surchargeFor(method);
+
   // Group lines by fulfilling reseller (null = first-party/house) → one order each.
   const groups = new Map<string, typeof lines>();
   for (const l of lines) {
@@ -536,12 +630,13 @@ async function priceCart(userId: string, couponCode?: string) {
     else groups.set(key, [l]);
   }
 
-  // Per-group amounts. Coupon share: a reseller-scoped coupon applies only to
-  // its own group; a platform coupon splits proportionally (last group takes
-  // the rounding remainder).
+  // Per-group amounts — pass 1: coupon/exhibition discounts + the pre-wallet
+  // payable and the cashback the group earns. Coupon share: a reseller-scoped
+  // coupon applies only to its own group; a platform coupon splits proportionally
+  // (last group takes the rounding remainder).
   let couponRemainder = totalDiscount;
   const groupList = [...groups.entries()];
-  const priced = groupList.map(([key, gLines], gi) => {
+  const bases = groupList.map(([key, gLines], gi) => {
     const resellerId = key === '__house__' ? null : key;
     const gSubtotal = gLines.reduce((s, l) => s + l.unitPrice * l.it.quantity, 0);
 
@@ -563,26 +658,72 @@ async function priceCart(userId: string, couponCode?: string) {
       ? gLines.filter((l) => l.p.group === qr.categorySlug).reduce((s, l) => s + l.unitPrice * l.it.quantity, 0)
       : gSubtotal;
     const gExhibition = qr ? Math.round((gExhBase * qr.percent) / 100) : 0;
-    const gPayable = Math.max(0, gSubtotal - gExhibition - gCouponDiscount);
-    // No payment surcharge/GST — Razorpay carries any gateway fee, not the buyer.
-    const gTotal = gPayable;
+    const gPayableBeforeWallet = Math.max(0, gSubtotal - gExhibition - gCouponDiscount);
+    // Cashback earned = sum over lines of (per-unit cashback × qty), on the paid price.
+    const gCashback = gLines.reduce(
+      (s, l) => s + cashbackPerUnit(l.it.product.cashbackType, l.it.product.cashbackValue, l.unitPrice) * l.it.quantity,
+      0,
+    );
 
-    return { resellerId, gLines, gSubtotal, gCouponDiscount, gExhibition, gPayable, gTotal };
+    return { resellerId, gLines, gSubtotal, gCouponDiscount, gExhibition, gPayableBeforeWallet, gCashback };
+  });
+
+  // Wallet redemption: apply as much of the live balance as possible, capped at
+  // the total pre-wallet payable, split across groups (last group takes remainder).
+  const totalPayableBeforeWallet = bases.reduce((s, g) => s + g.gPayableBeforeWallet, 0);
+  const walletBalance = useWallet ? await getWalletBalance(employeeId) : 0;
+  const walletApplied = Math.min(walletBalance, totalPayableBeforeWallet);
+  let walletRemainder = walletApplied;
+
+  // Pass 2: allocate wallet, then surcharge + GST on the reduced payable.
+  const priced = bases.map((g, gi) => {
+    let gWalletApplied = 0;
+    if (walletApplied > 0) {
+      gWalletApplied =
+        gi === bases.length - 1
+          ? walletRemainder
+          : totalPayableBeforeWallet > 0
+            ? Math.round((walletApplied * g.gPayableBeforeWallet) / totalPayableBeforeWallet)
+            : 0;
+      gWalletApplied = Math.min(gWalletApplied, g.gPayableBeforeWallet);
+      walletRemainder -= gWalletApplied;
+    }
+    const gPayable = Math.max(0, g.gPayableBeforeWallet - gWalletApplied);
+    // Payment surcharge + GST-on-surcharge for the chosen method (0 when unset),
+    // charged only on the Razorpay-paid remainder (not the wallet-paid part).
+    const gSurcharge = Math.round((gPayable * surchargePct) / 100);
+    const gGst = Math.round((gSurcharge * gstPct) / 100);
+    const gTotal = gPayable + gSurcharge + gGst;
+
+    return {
+      resellerId: g.resellerId,
+      gLines: g.gLines,
+      gSubtotal: g.gSubtotal,
+      gCouponDiscount: g.gCouponDiscount,
+      gExhibition: g.gExhibition,
+      gWalletApplied,
+      gCashback: g.gCashback,
+      gPayable,
+      gSurcharge,
+      gGst,
+      gTotal,
+    };
   });
 
   const grandTotal = priced.reduce((s, g) => s + g.gTotal, 0);
 
-  return { employeeId, companyId, cart, subtotal, coupon, dbCoupon, qr, priced, grandTotal };
+  return { employeeId, companyId, cart, subtotal, coupon, dbCoupon, qr, priced, grandTotal, walletApplied };
 }
 
-// Razorpay reports the instrument the shopper actually used (`payment.method`);
-// map it onto our PaymentMethod enum for the recorded row.
-function mapRazorpayMethod(method?: string): PaymentMethod {
-  switch (method) {
+// Razorpay reports the instrument the shopper actually used; map it onto our
+// PaymentMethod enum. Credit/debit are merged into one "Card" (CREDIT_CARD) — the
+// modal can't separate them, so a single card rate avoids false mismatches.
+function mapRazorpayMethod(payment: { method?: string }): PaymentMethod {
+  switch (payment.method) {
     case 'netbanking':
       return PaymentMethod.NET_BANKING;
     case 'card':
-      return PaymentMethod.CREDIT_CARD; // Razorpay doesn't split credit/debit here
+      return PaymentMethod.CREDIT_CARD;
     case 'upi':
     default:
       return PaymentMethod.UPI;
@@ -605,6 +746,17 @@ function verifyRazorpaySignature(orderId: string, paymentId: string, signature: 
   }
 }
 
+// Refund a captured payment we've decided not to honour (amount/method mismatch),
+// so the shopper is never charged for an order that isn't created. Best-effort:
+// a refund failure is logged, not surfaced — the caller still rejects the order.
+async function refundQuietly(paymentId: string) {
+  try {
+    await getRazorpay().payments.refund(paymentId, {});
+  } catch (e) {
+    console.error(`[shop] refund failed for ${paymentId}:`, e);
+  }
+}
+
 // View-only demo accounts can browse/cart but never purchase — enforced
 // server-side (not just hidden in the UI) regardless of the global flag.
 async function assertNotViewOnly(userId: string) {
@@ -621,15 +773,20 @@ export async function createPaymentOrder(userId: string, input: CreatePaymentOrd
   }
   await assertNotViewOnly(userId);
   const razorpay = getRazorpay();
-  const { grandTotal } = await priceCart(userId, input.couponCode);
+  const { grandTotal, priced, walletApplied } = await priceCart(userId, input.couponCode, input.method, input.useWallet);
   if (grandTotal <= 0) throw AppError.badRequest('Nothing to pay — place the order directly');
+
+  const surcharge = priced.reduce((s, g) => s + g.gSurcharge, 0);
+  const gst = priced.reduce((s, g) => s + g.gGst, 0);
 
   const orderParams: Record<string, unknown> = {
     amount: Math.round(grandTotal * 100), // paise
     currency: 'INR',
     receipt: `imc_${nanoid(10)}`,
   };
-  // Apply the saved Checkout Configuration (e.g. Card + UPI only) when set.
+  // The account's Checkout Configuration decides which methods the modal renders
+  // (the account needs this to show any methods). Surcharge integrity is enforced
+  // server-side in placeOrder (verify captured method + auto-refund a mismatch).
   if (env.RAZORPAY_CHECKOUT_CONFIG_ID) {
     orderParams.checkout_config_id = env.RAZORPAY_CHECKOUT_CONFIG_ID;
   }
@@ -640,6 +797,10 @@ export async function createPaymentOrder(userId: string, input: CreatePaymentOrd
     rzpOrderId: rzOrder.id,
     amount: Number(rzOrder.amount),
     currency: rzOrder.currency,
+    surcharge,
+    gst,
+    walletApplied,
+    total: grandTotal,
   };
 }
 
@@ -648,8 +809,8 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     throw AppError.forbidden('Checkout is temporarily unavailable — online payments are launching soon');
   }
   await assertNotViewOnly(userId);
-  const { employeeId, companyId, cart, coupon, dbCoupon, qr, priced, grandTotal } =
-    await priceCart(userId, input.couponCode);
+  const { employeeId, companyId, cart, coupon, dbCoupon, qr, priced, grandTotal, walletApplied } =
+    await priceCart(userId, input.couponCode, input.method, input.useWallet);
 
   // Payment is always via Razorpay — a verified gateway result is required for
   // any payable checkout. Only a fully-discounted ₹0 cart places without one.
@@ -677,16 +838,26 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     if (payment.order_id !== razorpayOrderId) {
       throw AppError.badRequest('Payment does not match this order — please retry checkout');
     }
+    // A captured payment that we can't turn into an order must be refunded so the
+    // shopper is never charged for nothing.
     if (Number(payment.amount) !== Math.round(grandTotal * 100)) {
-      throw AppError.badRequest('Paid amount does not match the cart total — please retry checkout');
+      await refundQuietly(razorpayPaymentId);
+      throw AppError.badRequest('Paid amount does not match the cart total — you have been refunded, please retry checkout');
     }
     if (payment.status !== 'captured' && payment.status !== 'authorized') {
       throw AppError.badRequest('Payment was not completed — please retry checkout');
     }
+    // The instrument actually used must match the method the cart was priced for
+    // (surcharge differs by method); otherwise the paid amount would be for a
+    // different fee than we recorded. Refund the mismatch and place no order.
+    payMethod = mapRazorpayMethod(payment as { method?: string });
+    if (input.method && payMethod !== input.method) {
+      await refundQuietly(razorpayPaymentId);
+      throw AppError.badRequest('You paid with a different method than selected — you have been refunded, please retry checkout');
+    }
 
     gatewayOrderId = razorpayOrderId;
     gatewayTxnId = razorpayPaymentId;
-    payMethod = mapRazorpayMethod(payment.method);
   }
 
   const checkoutGroup = nanoid(12);
@@ -749,8 +920,10 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
           subtotal: D(g.gSubtotal),
           exhibitionDiscount: D(g.gExhibition),
           exhibitionCampaignId: g.gExhibition > 0 ? qr?.campaignId ?? null : null,
-          surcharge: D(0),
-          gst: D(0),
+          surcharge: D(g.gSurcharge),
+          gst: D(g.gGst),
+          walletUsed: D(g.gWalletApplied),
+          cashbackEarned: D(g.gCashback),
           total: D(g.gTotal),
           status: OrderStatus.PLACED,
           items: {
@@ -777,8 +950,8 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
             method: payMethod,
             gateway: GatewayProvider.RAZORPAY,
             baseAmount: D(g.gPayable),
-            surcharge: D(0),
-            gstOnSurcharge: D(0),
+            surcharge: D(g.gSurcharge),
+            gstOnSurcharge: D(g.gGst),
             total: D(g.gTotal),
             status: PaymentStatus.CAPTURED,
             gatewayOrderId,
@@ -786,6 +959,15 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
           },
         });
       }
+    }
+
+    // Spend the redeemed wallet balance (one SPEND entry for the whole checkout).
+    if (walletApplied > 0) {
+      await debitWallet(tx, employeeId, walletApplied, {
+        referenceType: 'ORDER',
+        referenceId: checkoutGroup,
+        note: 'Wallet used at checkout',
+      });
     }
 
     // Drain the cart.
@@ -947,6 +1129,22 @@ export async function getProfile(userId: string) {
   // cart/checkout preview. The authoritative math stays in placeOrder.
   const qr = await qrDiscountFor(userId);
 
+  // Active payment methods + their surcharge, for the Checkout method picker.
+  // Debit is excluded — credit/debit are one "Card" option (CREDIT_CARD row).
+  const methodRows = await prisma.paymentMethodConfig.findMany({
+    where: { active: true, method: { not: PaymentMethod.DEBIT_CARD } },
+    orderBy: { surchargePercent: 'asc' },
+  });
+  const paymentMethods = (methodRows.length ? methodRows : []).map((m) => ({
+    method: m.method,
+    label: PAYMENT_METHOD_LABELS[m.method],
+    surchargePercent: toNumber(m.surchargePercent),
+    gstOnSurchargePercent: toNumber(m.gstOnSurchargePercent),
+  }));
+  if (!paymentMethods.length) {
+    paymentMethods.push({ method: PaymentMethod.UPI, label: 'UPI', surchargePercent: 0, gstOnSurchargePercent: 0 });
+  }
+
   return serialize({
     name: employee.user.fullName,
     email: employee.user.email,
@@ -960,10 +1158,35 @@ export async function getProfile(userId: string) {
     program: employee.program,
     creditLimit: employee.creditLimit === null ? null : toNumber(employee.creditLimit),
     creditUsed: toNumber(spent._sum.total),
+    walletBalance: await getWalletBalance(employee.id),
     addresses: employee.addresses.map(toAddress),
+    paymentMethods,
     qrDiscount: qr
       ? { percent: qr.percent, campaignName: qr.campaignName, categorySlug: qr.categorySlug, categoryName: qr.categoryName }
       : null,
+  });
+}
+
+// ─── Wallet (balance + transaction history) ──────────────────────────────────
+
+export async function getWallet(userId: string) {
+  const { id: employeeId } = await resolveEmployee(userId);
+  const wallet = await prisma.wallet.findUnique({
+    where: { employeeId },
+    include: { entries: { orderBy: { createdAt: 'desc' }, take: 100 } },
+  });
+  return serialize({
+    balance: wallet ? toNumber(wallet.balance) : 0,
+    entries: (wallet?.entries ?? []).map((e) => ({
+      id: e.id,
+      type: e.type,
+      amount: toNumber(e.amount),
+      balanceAfter: toNumber(e.balanceAfter),
+      note: e.note,
+      referenceType: e.referenceType,
+      referenceId: e.referenceId,
+      createdAt: e.createdAt,
+    })),
   });
 }
 

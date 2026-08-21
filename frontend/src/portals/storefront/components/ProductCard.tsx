@@ -80,6 +80,7 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
           {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
           <span className={styles.priceTag}>{authed ? 'EPP' : 'MOP'}</span>
         </div>
+        {p.cashback > 0 && <div className={styles.cashback}>Earn {inr(p.cashback)} cashback</div>}
         {p.freebie.enabled && (
           <div className={styles.freebie}>
             <Gift size={11} /> Free gift

@@ -13,6 +13,7 @@ export const offerSelect = {
   resellerId: true,
   reseller: { select: { id: true, name: true } },
   eppPrice: true,
+  resellerPrice: true,
   smartEppPrice: true,
   mop: true,
   quantity: true,

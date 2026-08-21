@@ -85,6 +85,10 @@ export async function profile(req: Request, res: Response) {
   res.json(await service.getProfile(userId(req)));
 }
 
+export async function wallet(req: Request, res: Response) {
+  res.json(await service.getWallet(userId(req)));
+}
+
 export async function listNotifications(req: Request, res: Response) {
   res.json(await service.listNotifications(userId(req)));
 }

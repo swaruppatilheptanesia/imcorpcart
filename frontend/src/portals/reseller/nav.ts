@@ -31,5 +31,5 @@ export const titles: Record<string, RouteMeta> = {
   products: { title: 'My listings', sub: 'Set your price & stock on imcorpcart products' },
   productEdit: { title: 'Edit listing', sub: 'Update your selling price and stock' },
   coupons: { title: 'Coupons & promotions', sub: 'Discount codes for your products' },
-  bulk: { title: 'Bulk operations', sub: 'CSV import and price updates' },
+  bulk: { title: 'Bulk operations', sub: 'Update your stock & prices from a CSV' },
 };

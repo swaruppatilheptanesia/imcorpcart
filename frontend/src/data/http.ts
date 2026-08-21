@@ -140,7 +140,6 @@ export interface LoginResult {
 export interface RegisterInput {
   fullName: string;
   email: string;
-  password: string;
   phone: string;
   // Required (by the backend) when the email is a free/personal provider —
   // the company is then created keyed on GSTIN instead of the email domain.
@@ -152,10 +151,10 @@ export interface RegisterInput {
 
 export function createAuthApi(client: HttpClient, store: AuthStore) {
   return {
-    async login(email: string, password: string): Promise<LoginResult> {
+    async login(email: string): Promise<LoginResult> {
       const r = await client.apiFetch<LoginResult>('/auth/login', {
         method: 'POST',
-        body: { email, password },
+        body: { email },
         auth: false,
       });
       // 2FA disabled (beta): persist the session so the caller can go straight in.

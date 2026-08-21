@@ -355,7 +355,10 @@ async function main() {
     // resellerId is null, so find-then-write.
     const offerResellerId = p.vendor ? id('reseller', p.vendor) : null;
     const offerData = {
-      eppPrice: D(p.price),
+      eppPrice: D(p.price), // customer price (shopper pays)
+      // Reseller's own price ~3% below customer price → the difference is the
+      // platform commission (house offers keep it null).
+      resellerPrice: p.vendor ? D(Math.round(p.price * 0.97)) : null,
       smartEppPrice: D(smartOf(p.price)),
       quantity: p.stock,
       status: p.status,

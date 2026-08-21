@@ -437,6 +437,12 @@ button.varChip:hover {
   align-self: flex-start;
   margin-top: -6px;
 }
+.cashback {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--success);
+  margin-top: 2px;
+}
 .priceKind {
   font-size: 11px;
   font-weight: 700;

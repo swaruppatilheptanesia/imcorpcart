@@ -18,6 +18,9 @@ const router = Router();
 // Variant-family keys in use (for the product form's family datalist).
 router.get('/families', asyncHandler(ctrl.families));
 
+// Every offer across products — the "Reseller pricing" report (before /:id).
+router.get('/offers', asyncHandler(ctrl.listAllOffers));
+
 // Reseller directory + a reseller's gifts (for the offer form dropdowns).
 router.get('/resellers', asyncHandler(ctrl.listResellers));
 router.get(

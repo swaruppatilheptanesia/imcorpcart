@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
 import { UploadCloud, Info, FileSpreadsheet, Download } from 'lucide-react';
 import { Segmented, Card, Field, Input, Button, useToast } from '@/components';
-import { mappingRows, bulkImport, bulkPriceUpdate } from '@/data/api';
+import { mappingRows, bulkImport, bulkPriceUpdate, bulkCashbackUpdate } from '@/data/api';
 import s from './screen.module.css';
 import styles from './Bulk.module.css';
 
 const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/imcorpcart_products_template.xlsx`;
 
 // Columns whose values should be coerced to numbers before POSTing.
-const NUMERIC = new Set(['mrp', 'mop_price', 'epp_price', 'smart_epp_price', 'stock_quantity']);
+const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'epp_price', 'smart_epp_price', 'stock_quantity']);
 
 // Minimal CSV parser (handles quoted fields + commas). Returns row objects keyed
 // by the header row, with numeric columns coerced.
@@ -49,7 +49,7 @@ function parseCsv(text: string): Record<string, unknown>[] {
 
 export function Bulk() {
   const { flash } = useToast();
-  const [tab, setTab] = useState<'import' | 'price'>('import');
+  const [tab, setTab] = useState<'import' | 'price' | 'cashback'>('import');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -58,6 +58,12 @@ export function Bulk() {
   const [adjustment, setAdjustment] = useState<'increasePct' | 'decreasePct' | 'setAmount'>('increasePct');
   const [value, setValue] = useState('');
   const [applying, setApplying] = useState(false);
+
+  // Cashback-update form
+  const [cbScope, setCbScope] = useState<'all' | 'phones' | 'accessories' | 'bags'>('all');
+  const [cbType, setCbType] = useState<'NONE' | 'PERCENT' | 'FIXED'>('PERCENT');
+  const [cbValue, setCbValue] = useState('');
+  const [cbApplying, setCbApplying] = useState(false);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -96,6 +102,30 @@ export function Bulk() {
     }
   };
 
+  const applyCashback = async () => {
+    if (cbType !== 'NONE' && (!cbValue || Number.isNaN(Number(cbValue)) || Number(cbValue) <= 0)) {
+      flash('Enter a cashback value greater than 0');
+      return;
+    }
+    setCbApplying(true);
+    try {
+      const res = await bulkCashbackUpdate({
+        scope: cbScope,
+        cashbackType: cbType,
+        cashbackValue: cbType !== 'NONE' ? Number(cbValue) : undefined,
+      });
+      flash(
+        cbType === 'NONE'
+          ? `Cleared cashback on ${res.matchedProducts} product(s)`
+          : `Cashback set on ${res.matchedProducts} product(s)`,
+      );
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Cashback update failed');
+    } finally {
+      setCbApplying(false);
+    }
+  };
+
   return (
     <div className={s.narrow}>
       <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
@@ -104,6 +134,7 @@ export function Bulk() {
           options={[
             { value: 'import', label: 'Product import' },
             { value: 'price', label: 'Price update' },
+            { value: 'cashback', label: 'Cashback' },
           ]}
           value={tab}
           onChange={setTab}
@@ -160,7 +191,7 @@ export function Bulk() {
             </div>
           ))}
         </Card>
-      ) : (
+      ) : tab === 'price' ? (
         <Card pad="lg">
           <div className={styles.priceForm}>
             <div className={s.grid2}>
@@ -206,6 +237,55 @@ export function Bulk() {
             </Button>
             <Button onClick={applyPrice} disabled={applying}>
               {applying ? 'Applying…' : 'Apply'}
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <Card pad="lg">
+          <div className={styles.priceForm}>
+            <div className={s.grid2}>
+              <Field label="Apply to">
+                <select className={styles.select} value={cbScope} onChange={(e) => setCbScope(e.target.value as typeof cbScope)}>
+                  <option value="all">All products</option>
+                  <option value="phones">Phones</option>
+                  <option value="accessories">Accessories</option>
+                  <option value="bags">Bags</option>
+                </select>
+              </Field>
+              <Field label="Cashback">
+                <select className={styles.select} value={cbType} onChange={(e) => setCbType(e.target.value as typeof cbType)}>
+                  <option value="NONE">No cashback</option>
+                  <option value="PERCENT">Percent of price</option>
+                  <option value="FIXED">Fixed ₹ per unit</option>
+                </select>
+              </Field>
+            </div>
+            {cbType !== 'NONE' && (
+              <Field label={cbType === 'PERCENT' ? 'Cashback percent' : 'Cashback amount (per unit)'}>
+                <Input
+                  prefix={cbType === 'PERCENT' ? '%' : '₹'}
+                  inputMode="numeric"
+                  placeholder={cbType === 'PERCENT' ? '5' : '200'}
+                  value={cbValue}
+                  onChange={(e) => setCbValue(e.target.value)}
+                />
+              </Field>
+            )}
+          </div>
+
+          <div className={styles.info}>
+            <Info size={16} />
+            {cbType === 'NONE'
+              ? 'Clears cashback on every product in the selected scope.'
+              : 'Rewarded to the shopper’s wallet when their order is delivered. Applies to every product in the selected scope.'}
+          </div>
+
+          <div className={styles.footer}>
+            <Button variant="secondary" onClick={() => setCbValue('')} disabled={cbApplying}>
+              Reset
+            </Button>
+            <Button onClick={applyCashback} disabled={cbApplying}>
+              {cbApplying ? 'Applying…' : 'Apply'}
             </Button>
           </div>
         </Card>

@@ -53,7 +53,8 @@ export interface ResellerOfferRow {
   subCategory: string;
   productStatus: string;
   mrp: number;
-  eppPrice: number;
+  eppPrice: number; // customer price (shopper pays)
+  resellerPrice: number | null; // reseller's own price
   smartEppPrice: number | null;
   mop: number | null;
   quantity: number;
@@ -79,6 +80,7 @@ function toOfferRow(o: api.ResellerOfferApi): ResellerOfferRow {
     productStatus: o.productStatus,
     mrp: o.mrp ?? 0,
     eppPrice: o.eppPrice,
+    resellerPrice: o.resellerPrice,
     smartEppPrice: o.smartEppPrice,
     mop: o.mop,
     quantity: o.quantity,

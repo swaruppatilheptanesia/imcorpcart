@@ -98,8 +98,8 @@ export async function getQrCampaign(token: string): Promise<QrCampaignInfo | nul
   }
 }
 
-export function login(email: string, password: string): Promise<LoginResult> {
-  return apiFetch<LoginResult>('/auth/login', { method: 'POST', body: { email, password }, auth: false });
+export function login(email: string): Promise<LoginResult> {
+  return apiFetch<LoginResult>('/auth/login', { method: 'POST', body: { email }, auth: false });
 }
 
 export function register(input: RegisterInput): Promise<LoginResult> {

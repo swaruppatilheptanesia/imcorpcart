@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ImagePlus, AlertTriangle, X, Trash2, Save } from 'lucide-react';
-import { Card, Field, Input, Segmented, Chip, Button, Skeleton, EmptyState, useToast } from '@/components';
+import { Card, Field, Input, Segmented, Chip, Button, Toggle, Skeleton, EmptyState, useToast } from '@/components';
 import { useAsync } from '@/lib/useAsync';
 import {
   getCategories,
@@ -103,8 +103,11 @@ function EditForm({
   const [status, setStatus] = useState<'active' | 'draft' | 'inactive'>(
     (String(product?.status ?? 'DRAFT').toLowerCase() as 'active' | 'draft' | 'inactive'),
   );
+  const [smartEpp, setSmartEpp] = useState(product?.smartEpp ?? false);
   const [mrp, setMrp] = useState(product?.mrp != null ? String(product.mrp) : '');
   const [mop, setMop] = useState(product?.mop != null ? String(product.mop) : '');
+  const [cashbackType, setCashbackType] = useState<'NONE' | 'PERCENT' | 'FIXED'>(product?.cashbackType ?? 'NONE');
+  const [cashbackValue, setCashbackValue] = useState(product?.cashbackValue != null ? String(product.cashbackValue) : '');
   const [familyKey, setFamilyKey] = useState(product?.familyKey ?? '');
   const [optionColor, setOptionColor] = useState(product?.optionColor ?? '');
   const [optionVariant, setOptionVariant] = useState(product?.optionVariant ?? '');
@@ -160,8 +163,11 @@ function EditForm({
       categoryId,
       subCategory: subCategory.trim() || undefined,
       status,
+      smartEpp,
       mrp: mrp ? Number(mrp) : undefined,
       mop: mop ? Number(mop) : undefined,
+      cashbackType,
+      cashbackValue: cashbackType !== 'NONE' && cashbackValue ? Number(cashbackValue) : undefined,
       familyKey: familyKey.trim() || null,
       optionColor: optionColor.trim() || null,
       optionVariant: optionVariant.trim() || null,
@@ -336,6 +342,15 @@ function EditForm({
             />
           </Card>
           <Card pad="lg">
+            <div className={s.sectionTitle}>Smart EPP</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                Product comes under Smart EPP (SEPP)
+              </span>
+              <Toggle on={smartEpp} onClick={() => setSmartEpp((v) => !v)} />
+            </div>
+          </Card>
+          <Card pad="lg">
             <div className={s.sectionTitle}>Pricing &amp; extras</div>
             <div className={styles.stack}>
               <Field label="MRP" hint="List price (struck-through for customers). Selling prices are set per seller.">
@@ -344,6 +359,27 @@ function EditForm({
               <Field label="MOP price" hint="Public price shown before login (defaults to MRP if blank)">
                 <Input value={mop} onChange={(e) => setMop(e.target.value)} prefix="₹" inputMode="numeric" />
               </Field>
+              <Field label="Cashback" hint="Rewarded to the shopper's wallet when their order is delivered.">
+                <select
+                  className={styles.select}
+                  value={cashbackType}
+                  onChange={(e) => setCashbackType(e.target.value as 'NONE' | 'PERCENT' | 'FIXED')}
+                >
+                  <option value="NONE">No cashback</option>
+                  <option value="PERCENT">Percent of price</option>
+                  <option value="FIXED">Fixed ₹ per unit</option>
+                </select>
+              </Field>
+              {cashbackType !== 'NONE' && (
+                <Field label={cashbackType === 'PERCENT' ? 'Cashback percent' : 'Cashback amount (per unit)'}>
+                  <Input
+                    value={cashbackValue}
+                    onChange={(e) => setCashbackValue(e.target.value)}
+                    prefix={cashbackType === 'PERCENT' ? '%' : '₹'}
+                    inputMode="numeric"
+                  />
+                </Field>
+              )}
               <Field label="Variants" hint="Comma-separated, e.g. 128GB, 256GB">
                 <Input value={variants} onChange={(e) => setVariants(e.target.value)} placeholder="128GB, 256GB" />
               </Field>

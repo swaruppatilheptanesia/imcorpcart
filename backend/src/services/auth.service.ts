@@ -3,9 +3,9 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { OTP_PURPOSE } from '../config/constants';
 import { AppError } from '../utils/AppError';
-import { verifyPassword, hashPassword } from '../utils/password';
 import { signAccessToken } from '../utils/jwt';
 import { generateOtp, hashOtp, verifyOtp } from '../utils/otp';
+import { sendOtpEmail } from './mailer.service';
 import { isFreeMailDomain } from '../utils/freemail';
 import { userSafeSelect } from '../models/selectors';
 import { serialize } from '../models/serializers';
@@ -37,18 +37,19 @@ export interface AuthContext {
   userAgent?: string;
 }
 
-export async function login(
-  email: string,
-  password: string,
-  ctx: AuthContext = {},
-): Promise<LoginResult | SessionResult> {
+// Passwordless login: resolve the account by email, run the same status/company
+// gates as before, then email a one-time code. There is no password — the OTP is
+// the only factor. Login never auto-creates accounts (see register()).
+const OTP_COOLDOWN_MS = 30_000;
+const otpCooldown = new Map<string, number>(); // lowercased email -> last-send epoch ms
+
+export async function login(email: string): Promise<LoginResult | SessionResult> {
+  const normalized = email.toLowerCase();
   const user = await prisma.user.findFirst({
-    where: { email: email.toLowerCase(), deletedAt: null },
+    where: { email: normalized, deletedAt: null },
   });
 
-  // Uniform error to avoid leaking which accounts exist.
-  const invalid = AppError.unauthorized('Invalid email or password');
-  if (!user || !user.passwordHash) throw invalid;
+  if (!user) throw AppError.notFound('No account found for this email');
   if (user.status === 'PENDING') {
     throw new AppError(
       403,
@@ -60,15 +61,11 @@ export async function login(
     throw AppError.forbidden('Account is not active');
   }
 
-  const ok = await verifyPassword(password, user.passwordHash);
-  if (!ok) throw invalid;
-
   // Company-level approval gate: no user may sign in until a Super Admin has
   // approved (activated) their company. Resolved via the employee relation or
   // the company admin link — Super Admins / resellers have no company row and
-  // pass through. Checked after the password so company state isn't leaked to
-  // unauthenticated probers; before any session/OTP is issued (so the OTP path
-  // never mints a challenge for a non-approved company).
+  // pass through. Checked before any OTP is issued (so the code is never emailed
+  // for a non-approved company).
   const company = await prisma.company.findFirst({
     where: {
       deletedAt: null,
@@ -89,17 +86,33 @@ export async function login(
     throw AppError.forbidden('Your company account is not active. Please contact support.');
   }
 
-  // Beta convenience: when 2FA is disabled, sign the user in directly.
-  if (!env.OTP_ENABLED) return issueSession(user, ctx);
+  // Direct sign-in for allow-listed demo accounts (OTP_BYPASS_EMAILS) — e.g. the
+  // seeded Super Admin, whose fake domain can't receive a real email. Everyone
+  // else goes through the emailed OTP below.
+  if (env.otpBypassEmails.has(normalized)) {
+    return issueSession(user);
+  }
+
+  // Per-email cooldown to prevent email-bombing (the IP-level authLimiter is the
+  // other guard). A legitimate resend just waits out the short window.
+  const last = otpCooldown.get(normalized);
+  if (last && Date.now() - last < OTP_COOLDOWN_MS) {
+    throw new AppError(
+      429,
+      'OTP_COOLDOWN',
+      'A sign-in code was just sent. Please wait a moment before requesting another.',
+    );
+  }
+  otpCooldown.set(normalized, Date.now());
+
   return issueLoginOtp(user);
 }
 
-// Mint a Session + JWT for an already-authenticated user. This mirrors the tail
-// of verifyLoginOtp (kept separate so the OTP path stays atomic and untouched);
-// used by the beta OTP-bypass in login/register.
+// Mint a Session + JWT for a user directly (no OTP). Used only by the
+// OTP_BYPASS_EMAILS allow-list in login(); mirrors the tail of verifyLoginOtp.
 async function issueSession(
   user: { id: string; role: Role; status: string },
-  ctx: AuthContext,
+  ctx: AuthContext = {},
 ): Promise<SessionResult> {
   const sessionTtlHours = 12;
   const [session] = await prisma.$transaction([
@@ -127,25 +140,27 @@ async function issueSession(
   return { accessToken, user: serialize(safeUser) };
 }
 
-// Issue an OTP (second factor) for a user and return the challenge. Shared by
-// password login and self-registration. Stores only the hash.
+// Issue a passwordless-login OTP for a user and return the challenge. Stores only
+// the hash; emails the code (best-effort) and, in dev, logs + returns it.
 async function issueLoginOtp(user: { id: string; email: string }): Promise<LoginResult> {
   const code = generateOtp();
   const codeHash = await hashOtp(code);
   const expiresAt = new Date(Date.now() + env.OTP_TTL_MIN * 60_000);
 
   const token = await prisma.otpToken.create({
-    data: { userId: user.id, codeHash, purpose: OTP_PURPOSE.LOGIN_2FA, expiresAt },
+    data: { userId: user.id, codeHash, purpose: OTP_PURPOSE.PASSWORDLESS_LOGIN, expiresAt },
   });
 
-  // In production the code goes out via the notification bus; here we log + return it.
+  // Dev convenience: log + return the code so the flow is testable without a real
+  // inbox. Email delivery is best-effort and never blocks sign-in.
   // eslint-disable-next-line no-console
   console.log(`[auth] OTP for ${user.email}: ${code} (expires ${expiresAt.toISOString()})`);
+  await sendOtpEmail(user.email, code, env.OTP_TTL_MIN);
 
   return {
     challengeToken: token.id,
     devOtp: env.isProd ? undefined : code,
-    message: 'OTP sent. Verify to complete sign-in.',
+    message: 'We emailed you a 6-digit sign-in code. Enter it to continue.',
   };
 }
 
@@ -193,8 +208,6 @@ export async function register(
       })
     : null;
 
-  const passwordHash = await hashPassword(input.password);
-
   await prisma.$transaction(async (tx) => {
     // Free mail: the company is keyed on GSTIN (no email domain). Corporate
     // mail: keyed on the email domain, as before.
@@ -213,7 +226,8 @@ export async function register(
       data: {
         email,
         phone: input.phone,
-        passwordHash,
+        // Passwordless: accounts have no password; sign-in is email → OTP.
+        passwordHash: null,
         fullName: input.fullName,
         role: Role.EMPLOYEE_EPP,
         // Self-registrations start PENDING and cannot sign in until a Super Admin
@@ -251,7 +265,9 @@ export async function verifyLoginOtp(
     include: { user: true },
   });
 
-  if (!token || token.consumed || token.purpose !== OTP_PURPOSE.LOGIN_2FA) {
+  const validPurpose =
+    token?.purpose === OTP_PURPOSE.PASSWORDLESS_LOGIN || token?.purpose === OTP_PURPOSE.LOGIN_2FA;
+  if (!token || token.consumed || !validPurpose) {
     throw AppError.unauthorized('Invalid or used verification token');
   }
   if (token.expiresAt < new Date()) {

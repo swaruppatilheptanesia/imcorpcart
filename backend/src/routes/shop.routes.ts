@@ -50,6 +50,7 @@ router.delete('/wishlist/:id', validate({ params: idParam }), asyncHandler(ctrl.
 
 // Profile
 router.get('/profile', asyncHandler(ctrl.profile));
+router.get('/wallet', asyncHandler(ctrl.wallet));
 
 // Addresses (shipping list + one billing)
 router.get('/addresses', asyncHandler(ctrl.listAddresses));

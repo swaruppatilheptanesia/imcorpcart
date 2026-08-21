@@ -34,11 +34,21 @@ model Product {
   subCategory String?       @map("sub_category") // e.g. flagship / audio / backpacks
   status      ProductStatus @default(DRAFT)
 
+  // Whether this product comes under Smart EPP (SEPP). Authoring flag set by the
+  // Super Admin (product form / bulk import); Smart-EPP checkout itself is not
+  // yet wired, so this is currently a data attribute.
+  smartEpp Boolean @default(false) @map("smart_epp")
+
   // Product-level list price (MRP) + public/pre-login MOP, authored by the Super
   // Admin (single published prices). Per-reseller EPP/Smart-EPP selling prices +
   // stock live on ProductOffer. MOP null falls back to MRP for the public catalog.
   mrp Decimal? @db.Decimal(12, 2)
   mop Decimal? @db.Decimal(12, 2)
+
+  // Cashback the shopper earns on purchase (credited to their wallet on delivery).
+  // PERCENT → cashbackValue is a % of the paid item price; FIXED → ₹ per unit.
+  cashbackType  CashbackType @default(NONE) @map("cashback_type")
+  cashbackValue Decimal?     @db.Decimal(12, 2) @map("cashback_value")
 
   // Legacy single-seller FK. DEPRECATED by the marketplace ProductOffer model
   // (a product can have many resellers). Kept nullable for back-compat; new
@@ -176,7 +186,10 @@ model ProductOffer {
   resellerId String?
   reseller   Reseller? @relation(fields: [resellerId], references: [id])
 
-  eppPrice      Decimal  @db.Decimal(12, 2) // corporate EPP selling price
+  eppPrice      Decimal  @db.Decimal(12, 2) // customer EPP price (what the shopper pays; drives the buy box)
+  // Reseller's own selling price (what the reseller receives). Platform
+  // commission = eppPrice − resellerPrice. Null until the reseller sets it.
+  resellerPrice Decimal? @db.Decimal(12, 2) @map("reseller_price")
   smartEppPrice Decimal? @db.Decimal(12, 2) // Smart-EPP selling price (optional)
   mop           Decimal? @db.Decimal(12, 2) // DEPRECATED — public MOP is now Product.mop (admin-set)
   quantity      Int      @default(0)

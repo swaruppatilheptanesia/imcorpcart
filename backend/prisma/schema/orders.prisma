@@ -76,6 +76,10 @@ model Order {
   exhibitionCampaign   ExhibitionCampaign? @relation(fields: [exhibitionCampaignId], references: [id])
   surcharge            Decimal             @default(0) @db.Decimal(12, 2)
   gst                  Decimal             @default(0) @db.Decimal(12, 2)
+  // Wallet money spent on this order (reduces payable); cashback earned on it
+  // (credited to the wallet when the order is delivered).
+  walletUsed           Decimal             @default(0) @map("wallet_used") @db.Decimal(12, 2)
+  cashbackEarned       Decimal             @default(0) @map("cashback_earned") @db.Decimal(12, 2)
   total                Decimal             @db.Decimal(12, 2)
 
   status OrderStatus @default(PLACED)

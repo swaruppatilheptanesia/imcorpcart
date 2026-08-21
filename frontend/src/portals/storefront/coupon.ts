@@ -18,6 +18,7 @@ export function computeDiscount(coupon: StoreCoupon | null, subtotal: number): n
 export interface Totals {
   exhibition: number;
   discount: number;
+  walletApplied: number;
   payable: number;
   surcharge: number;
   gst: number;
@@ -35,13 +36,19 @@ export function computeTotals(
   methodPct: number,
   qrPct = 0,
   qrBase = subtotal,
+  gstPct = 18,
+  walletBalance = 0, // available wallet balance to redeem (0 = don't redeem)
 ): Totals {
   const exhibition = Math.round((qrBase * qrPct) / 100);
   const discount = computeDiscount(coupon, subtotal);
-  const payable = subtotal - exhibition - discount;
+  const payableBeforeWallet = subtotal - exhibition - discount;
+  // Wallet redeems as much as possible, capped at the payable (never negative).
+  const walletApplied = Math.min(Math.max(0, walletBalance), Math.max(0, payableBeforeWallet));
+  const payable = payableBeforeWallet - walletApplied;
+  // Surcharge applies only to the Razorpay-paid remainder (not wallet-paid money).
   const surcharge = Math.round((payable * methodPct) / 100);
-  const gst = Math.round(surcharge * 0.18);
-  return { exhibition, discount, payable, surcharge, gst, total: payable + surcharge + gst };
+  const gst = Math.round((surcharge * gstPct) / 100);
+  return { exhibition, discount, walletApplied, payable, surcharge, gst, total: payable + surcharge + gst };
 }
 
 // EMI for the Smart EPP option (beyond-handoff): flat rate over the tenure.

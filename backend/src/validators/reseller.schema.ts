@@ -14,11 +14,28 @@ export const resellerListQuery = z.object({
 // product master) ────────────────────────────────────────────────────────────
 
 export const resellerOfferUpdateBody = z.object({
-  eppPrice: z.number().nonnegative().optional(),
+  eppPrice: z.number().nonnegative().optional(), // customer price (shopper pays)
+  resellerPrice: z.number().nonnegative().optional(), // reseller's own price; commission = eppPrice − resellerPrice
   smartEppPrice: z.number().nonnegative().optional(),
   quantity: z.number().int().nonnegative().optional(),
   freeGiftId: z.string().trim().min(1).nullable().optional(), // one of the reseller's gifts
   isActive: z.boolean().optional(),
+});
+
+// ─── Reseller bulk stock & price update (CSV round-trip; matched by SKU) ──────
+
+export const resellerBulkOffersBody = z.object({
+  rows: z
+    .array(
+      z.object({
+        sku: z.string().trim().min(1),
+        reseller_price: z.coerce.number().nonnegative().optional(),
+        customer_price: z.coerce.number().nonnegative().optional(),
+        stock_quantity: z.coerce.number().int().nonnegative().optional(),
+      }),
+    )
+    .min(1)
+    .max(5000),
 });
 
 // ─── Reseller free gifts (managed complimentary items) ───────────────────────
@@ -39,6 +56,7 @@ export const transitUpdateBody = z.object({
   description: z.string().trim().optional(),
 });
 
+export type ResellerBulkOffersInput = z.infer<typeof resellerBulkOffersBody>;
 export type ResellerListQuery = z.infer<typeof resellerListQuery>;
 export type TransitUpdateInput = z.infer<typeof transitUpdateBody>;
 export type ResellerOfferUpdateInput = z.infer<typeof resellerOfferUpdateBody>;

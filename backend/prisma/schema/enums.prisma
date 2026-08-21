@@ -259,3 +259,16 @@ enum ReportFormat {
   CSV
   PDF
 }
+
+// ── Cashback / wallet ────────────────────────────────────────────────────────
+enum CashbackType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+enum WalletLedgerType {
+  EARN
+  SPEND
+  ADJUST
+}

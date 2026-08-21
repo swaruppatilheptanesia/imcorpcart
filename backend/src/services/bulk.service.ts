@@ -1,10 +1,16 @@
-import { Prisma, PriceType, ProductStatus } from '@prisma/client';
+import { Prisma, PriceType, ProductStatus, CashbackType } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { AppError } from '../utils/AppError';
 import { serialize } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
 import { slugify } from '../utils/slug';
 import { slugishFamily } from './product-write';
-import type { BulkImportInput, BulkPriceUpdateInput, BulkImportRow } from '../validators/bulk.schema';
+import type {
+  BulkImportInput,
+  BulkPriceUpdateInput,
+  BulkCashbackUpdateInput,
+  BulkImportRow,
+} from '../validators/bulk.schema';
 
 const D = (n: number) => new Prisma.Decimal(n);
 
@@ -98,8 +104,11 @@ async function createOneImportedProduct(row: BulkImportRow, categoryId: string) 
       categoryId,
       subCategory: row.sub_category,
       status,
+      smartEpp: row.smart_epp ?? false, // Smart EPP (SEPP) eligibility (Y/N column)
       mrp: D(row.mrp), // product-level list price
       mop: row.mop_price !== undefined ? D(row.mop_price) : null, // public price (admin-set)
+      cashbackType: row.cashback_type ?? 'NONE', // NONE | PERCENT | FIXED
+      cashbackValue: row.cashback_value !== undefined ? D(row.cashback_value) : null,
       colorOptions: row.color_options,
       variantOptions: row.variant_options,
       // Variant family: siblings sharing family_key collapse to one storefront
@@ -171,4 +180,35 @@ export async function bulkPriceUpdate(input: BulkPriceUpdateInput) {
   });
 
   return serialize({ scope: input.scope, priceType, matchedProducts: ids.length, affectedPrices: affected });
+}
+
+// Set cashback (type + value) on every product in a scope. Mirrors bulkPriceUpdate's
+// scope resolution; NONE clears the value.
+export async function bulkCashbackUpdate(input: BulkCashbackUpdateInput, actorId: string) {
+  const where: Prisma.ProductWhereInput = { ...notDeleted };
+  if (input.scope !== 'all') {
+    where.category = { slug: input.scope };
+  }
+
+  const isNone = input.cashbackType === 'NONE';
+  if (!isNone && (input.cashbackValue === undefined || input.cashbackValue <= 0)) {
+    throw AppError.badRequest('A cashback value greater than 0 is required for PERCENT or FIXED.');
+  }
+
+  const data: Prisma.ProductUpdateManyMutationInput = isNone
+    ? { cashbackType: CashbackType.NONE, cashbackValue: null }
+    : { cashbackType: input.cashbackType as CashbackType, cashbackValue: D(input.cashbackValue!) };
+
+  const { count } = await prisma.product.updateMany({ where, data });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action: 'catalog.bulk_cashback',
+      entityType: 'Product',
+      after: { scope: input.scope, cashbackType: input.cashbackType, cashbackValue: input.cashbackValue ?? null, matched: count },
+    },
+  });
+
+  return serialize({ scope: input.scope, cashbackType: input.cashbackType, matchedProducts: count });
 }

@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { Card, Field, Input, Toggle, Radio, Button, Skeleton, EmptyState, useToast } from '@/components';
+import { Card, Field, Input, Radio, Button, Skeleton, EmptyState, useToast } from '@/components';
 import { getPaymentConfig, updatePaymentConfig, type PaymentConfig } from '@/data/api';
 import { useAsync } from '@/lib/useAsync';
 import s from './screen.module.css';
 import styles from './Payments.module.css';
 
+// Credit & Debit are one "Card" rate (the modal can't separate them) — the
+// CREDIT_CARD row is that rate; DEBIT_CARD is hidden from configuration.
 const METHOD_LABELS: Record<string, { label: string; note: string }> = {
   UPI: { label: 'UPI', note: 'Google Pay, PhonePe, Paytm' },
   NET_BANKING: { label: 'Net Banking', note: 'All major banks' },
-  CREDIT_CARD: { label: 'Credit Card', note: 'Visa, Mastercard, Amex, RuPay' },
+  CREDIT_CARD: { label: 'Card', note: 'Credit & debit — Visa, Mastercard, RuPay, Amex' },
   DEBIT_CARD: { label: 'Debit Card', note: 'Visa, Mastercard, RuPay' },
 };
+// Methods the Super Admin configures (Debit folds into Card).
+const CONFIGURABLE = new Set(['UPI', 'NET_BANKING', 'CREDIT_CARD']);
 
 export function Payments() {
   const { flash } = useToast();
@@ -43,7 +47,7 @@ function PaymentsForm({ config, flash, onSaved }: { config: PaymentConfig; flash
   const [surcharges, setSurcharges] = useState<Record<string, string>>(
     Object.fromEntries(config.methods.map((m) => [m.method, String(m.surchargePercent)])),
   );
-  const [gst, setGst] = useState(config.methods.some((m) => m.gstOnSurchargePercent > 0));
+  const [gst, setGst] = useState(String(config.methods[0]?.gstOnSurchargePercent ?? 18));
   const [gateway, setGateway] = useState(config.gateways.find((g) => g.active)?.provider ?? 'RAZORPAY');
   const [apiKey, setApiKey] = useState('');
   const [webhook, setWebhook] = useState('');
@@ -57,11 +61,13 @@ function PaymentsForm({ config, flash, onSaved }: { config: PaymentConfig; flash
     setSaving(true);
     try {
       await updatePaymentConfig({
-        methods: config.methods.map((m) => ({
-          method: m.method,
-          surchargePercent: Number(surcharges[m.method] ?? m.surchargePercent) || 0,
-          gstOnSurchargePercent: gst ? 18 : 0,
-        })),
+        methods: config.methods
+          .filter((m) => CONFIGURABLE.has(m.method))
+          .map((m) => ({
+            method: m.method,
+            surchargePercent: Number(surcharges[m.method] ?? m.surchargePercent) || 0,
+            gstOnSurchargePercent: Number(gst) || 0,
+          })),
         gateways: [
           {
             provider: gateway,
@@ -87,7 +93,7 @@ function PaymentsForm({ config, flash, onSaved }: { config: PaymentConfig; flash
       <Card pad="lg" className={styles.card}>
         <div className={s.sectionTitle}>Surcharge per payment method</div>
         <div className={styles.methods}>
-          {config.methods.map((m) => (
+          {config.methods.filter((m) => CONFIGURABLE.has(m.method)).map((m) => (
             <div key={m.method} className={styles.method}>
               <div>
                 <div className={styles.methodLabel}>{METHOD_LABELS[m.method]?.label ?? m.method}</div>
@@ -106,10 +112,12 @@ function PaymentsForm({ config, flash, onSaved }: { config: PaymentConfig; flash
         </div>
         <div className={styles.gstRow}>
           <div>
-            <div className={styles.methodLabel}>Charge GST on surcharge</div>
-            <div className={styles.methodNote}>Adds 18% GST on the payment surcharge.</div>
+            <div className={styles.methodLabel}>GST on surcharge</div>
+            <div className={styles.methodNote}>Applied on the payment surcharge for every method (e.g. 18).</div>
           </div>
-          <Toggle on={gst} onClick={() => setGst(!gst)} />
+          <div className={styles.methodInput}>
+            <Input value={gst} onChange={(e) => setGst(e.target.value)} prefix="%" inputSize="sm" />
+          </div>
         </div>
       </Card>
 

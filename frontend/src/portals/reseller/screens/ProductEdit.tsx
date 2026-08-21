@@ -75,21 +75,30 @@ function OfferForm({
 }) {
   const { flash } = useToast();
   const [epp, setEpp] = useState(String(offer.eppPrice || ''));
-  const [smart, setSmart] = useState(offer.smartEppPrice != null ? String(offer.smartEppPrice) : '');
+  const [resellerPrice, setResellerPrice] = useState(offer.resellerPrice != null ? String(offer.resellerPrice) : '');
   const [stock, setStock] = useState(String(offer.quantity ?? 0));
   const [freeGiftId, setFreeGiftId] = useState<string | null>(offer.freeGiftId ?? null);
   const [active, setActive] = useState(offer.isActive);
   const [busy, setBusy] = useState(false);
 
+  const eppN = Number(epp) || 0;
+  const resellerN = Number(resellerPrice) || 0;
+  // Platform commission = customer price − reseller price (only when both valid).
+  const commission = resellerN > 0 && eppN >= resellerN ? eppN - resellerN : null;
+  const priceInvalid = resellerN > 0 && eppN > 0 && eppN < resellerN;
+
   const save = async () => {
-    const eppN = Number(epp) || 0;
     if (eppN <= 0) {
-      flash('EPP price is required');
+      flash('Customer price is required');
+      return;
+    }
+    if (priceInvalid) {
+      flash('Customer price must be at least your price');
       return;
     }
     const body: ResellerOfferWrite = {
       eppPrice: eppN,
-      smartEppPrice: smart ? Number(smart) : null,
+      resellerPrice: resellerN || undefined,
       quantity: Number(stock) || 0,
       freeGiftId,
       isActive: active,
@@ -165,12 +174,25 @@ function OfferForm({
           <Card pad="lg">
             <div className={s.sectionTitle}>Your pricing &amp; stock</div>
             <div className={styles.stack}>
-              <Field label="EPP price" hint="Shown to signed-in employees (cheapest seller wins)">
+              <Field label="Your price (you receive)" hint="What you keep on each sale">
+                <Input
+                  value={resellerPrice}
+                  onChange={(e) => setResellerPrice(e.target.value)}
+                  prefix="₹"
+                  inputMode="numeric"
+                />
+              </Field>
+              <Field
+                label="Customer price (shopper pays)"
+                hint="Shown to signed-in employees (cheapest seller wins)"
+              >
                 <Input value={epp} onChange={(e) => setEpp(e.target.value)} prefix="₹" accent inputMode="numeric" />
               </Field>
-              <Field label="Smart EPP price" hint="Optional">
-                <Input value={smart} onChange={(e) => setSmart(e.target.value)} prefix="₹" inputMode="numeric" />
-              </Field>
+              {priceInvalid ? (
+                <div className={styles.commissionBad}>Customer price must be at least your price.</div>
+              ) : commission != null ? (
+                <div className={styles.commissionNote}>Platform commission: {inr(commission)}</div>
+              ) : null}
               <Field label="Stock quantity">
                 <Input value={stock} onChange={(e) => setStock(e.target.value)} inputMode="numeric" />
               </Field>
@@ -195,7 +217,7 @@ function OfferForm({
           <Button variant="secondary" size="sm" onClick={onDone} disabled={busy}>
             Discard
           </Button>
-          <Button size="sm" icon={<Save size={14} />} onClick={save} disabled={busy}>
+          <Button size="sm" icon={<Save size={14} />} onClick={save} disabled={busy || priceInvalid}>
             {busy ? 'Saving…' : 'Save listing'}
           </Button>
         </div>

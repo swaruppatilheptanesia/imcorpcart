@@ -30,6 +30,15 @@ export async function updateOffer(req: Request, res: Response) {
   res.json(await service.updateMyOffer(userId(req), getParam(req, 'id'), req.body));
 }
 
+// Bulk stock & price update: download all my offers (export), edit, re-upload.
+export async function exportOffers(req: Request, res: Response) {
+  res.json(await service.listAllMyOffers(userId(req)));
+}
+
+export async function bulkUpdateOffers(req: Request, res: Response) {
+  res.json(await service.bulkUpdateMyOffers(userId(req), req.body.rows));
+}
+
 export async function listCoupons(req: Request, res: Response) {
   res.json(await service.listCoupons(userId(req)));
 }

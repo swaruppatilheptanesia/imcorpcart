@@ -128,9 +128,13 @@ export interface PaymentOrder {
   rzpOrderId: string;
   amount: number; // paise
   currency: string;
+  surcharge: number;
+  gst: number;
+  walletApplied: number;
+  total: number; // rupees, incl. surcharge + GST, net of wallet
 }
-export function createPaymentOrder(couponCode?: string): Promise<PaymentOrder> {
-  return client.apiFetch('/shop/payments/order', { method: 'POST', body: { couponCode } });
+export function createPaymentOrder(couponCode?: string, method?: string, useWallet?: boolean): Promise<PaymentOrder> {
+  return client.apiFetch('/shop/payments/order', { method: 'POST', body: { couponCode, method, useWallet } });
 }
 
 // The signed Razorpay result, passed back so the server can verify it before
@@ -145,10 +149,12 @@ export function placeOrder(
   addressId?: string,
   billingAddressId?: string,
   payment?: RazorpayHandoff,
+  method?: string,
+  useWallet?: boolean,
 ): Promise<PlacedOrder> {
   return client.apiFetch('/shop/orders', {
     method: 'POST',
-    body: { couponCode, addressId, billingAddressId, ...payment },
+    body: { couponCode, addressId, billingAddressId, method, useWallet, ...payment },
   });
 }
 
@@ -234,12 +240,41 @@ export interface ShopProfileApi {
   program: string;
   creditLimit: number | null;
   creditUsed: number;
+  walletBalance: number; // spendable cashback balance
   addresses: ShopAddress[];
+  // Active payment methods + their surcharge, for the Checkout method picker.
+  paymentMethods: PaymentMethodOption[];
   // Exhibition (QR campaign) discount currently applicable to this shopper.
   qrDiscount: { percent: number; campaignName: string; categorySlug: string | null; categoryName: string | null } | null;
 }
+export interface PaymentMethodOption {
+  method: string;
+  label: string;
+  surchargePercent: number;
+  gstOnSurchargePercent: number;
+}
 export function getProfile(): Promise<ShopProfileApi> {
   return client.apiFetch('/shop/profile');
+}
+
+// ─── Wallet (balance + transaction history) ──────────────────────────────────
+
+export interface WalletEntry {
+  id: string;
+  type: 'EARN' | 'SPEND' | 'ADJUST';
+  amount: number;
+  balanceAfter: number;
+  note: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  createdAt: string;
+}
+export interface WalletState {
+  balance: number;
+  entries: WalletEntry[];
+}
+export function getWallet(): Promise<WalletState> {
+  return client.apiFetch('/shop/wallet');
 }
 
 // ─── Addresses (shipping list + one billing) ─────────────────────────────────

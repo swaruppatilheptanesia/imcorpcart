@@ -15,11 +15,18 @@ import styles from './Checkout.module.css';
 const fmtAddr = (a: ShopAddress) =>
   [a.line1, a.line2, `${a.city}, ${a.state}`, a.pincode].filter(Boolean).join(', ');
 
+// Our PaymentMethod → the Razorpay instrument key used to lock the modal.
+const razorpayMethod = (method: string): string =>
+  method === 'NET_BANKING' ? 'netbanking' : method === 'UPI' ? 'upi' : 'card';
+
 export function Checkout() {
   const navigate = useNavigate();
   const { flash } = useToast();
-  const { cart, subtotal, appliedCoupon, cartCount, placeOrder, qrDiscount, checkoutEnabled, viewOnly } = useStore();
+  const { cart, subtotal, appliedCoupon, cartCount, placeOrder, paymentMethods, walletBalance, qrDiscount, checkoutEnabled, viewOnly } =
+    useStore();
   const [busy, setBusy] = useState(false);
+  const [methodKey, setMethodKey] = useState<string | null>(null);
+  const [useWallet, setUseWallet] = useState(false);
 
   const [addresses, setAddresses] = useState<ShopAddress[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -43,6 +50,11 @@ export function Checkout() {
   useEffect(() => {
     if (cart.length === 0) navigate('/shop/cart');
   }, [cart.length, navigate]);
+
+  // Default to the first (lowest-surcharge) active method once the profile loads.
+  useEffect(() => {
+    if (methodKey === null && paymentMethods.length) setMethodKey(paymentMethods[0].method);
+  }, [paymentMethods, methodKey]);
 
   // Launch gate: online checkout is closed until live payments go live. Covers
   // any direct navigation to /shop/checkout (buttons are hidden elsewhere).
@@ -69,24 +81,49 @@ export function Checkout() {
   const selected = shipping.find((a) => a.id === selectedId) ?? null;
   const billingReady = billingSame || Boolean(billingAddr);
 
-  // Payment is via Razorpay only — no per-method surcharge (pass 0). A
-  // category-scoped QR campaign discounts only that category's items.
+  // Surcharge depends on the chosen payment method. A category-scoped QR campaign
+  // discounts only that category's items.
+  const selectedMethod = paymentMethods.find((m) => m.method === methodKey) ?? paymentMethods[0] ?? null;
   const qrBase = qrDiscount?.categorySlug
     ? cart.filter((l) => l.group === qrDiscount.categorySlug).reduce((s, l) => s + l.price * l.qty, 0)
     : subtotal;
-  const t = computeTotals(subtotal, appliedCoupon, 0, qrDiscount?.percent ?? 0, qrBase);
+  const t = computeTotals(
+    subtotal,
+    appliedCoupon,
+    selectedMethod?.surchargePercent ?? 0,
+    qrDiscount?.percent ?? 0,
+    qrBase,
+    selectedMethod?.gstOnSurchargePercent ?? 18,
+    useWallet ? walletBalance : 0,
+  );
 
   const submit = async () => {
     if (!selected) {
       flash('Add a delivery address first');
       return;
     }
+    if (!selectedMethod) {
+      flash('Choose a payment method');
+      return;
+    }
     setBusy(true);
+    const method = selectedMethod.method;
     const billingId = billingSame ? undefined : billingAddr?.id;
     try {
-      // Open a Razorpay order for the server-priced total, take the payment in
-      // the modal, then place the order with the signed result.
-      const po = await createPaymentOrder(appliedCoupon?.code);
+      // Wallet balance fully covers the order → no gateway payment needed; place
+      // it directly (same as a fully-discounted ₹0 cart).
+      if (t.total <= 0) {
+        const order = await placeOrder(appliedCoupon?.code, selected.id, billingId, undefined, method, useWallet);
+        navigate('/shop/success', { state: { orderNo: order.orderNo } });
+        return;
+      }
+      // Open a Razorpay order for the server-priced total (incl. the method's
+      // surcharge), pre-select the chosen method, then place the order with the
+      // signed result. Surcharge integrity is enforced server-side (placeOrder
+      // verifies the captured method and refunds a mismatch) — we don't hard-lock
+      // the modal, which would conflict with the account's Checkout Configuration.
+      const po = await createPaymentOrder(appliedCoupon?.code, method, useWallet);
+      const rzpMethod = razorpayMethod(method);
       let paid = false;
       await openRazorpay({
         key: po.keyId,
@@ -96,15 +133,23 @@ export function Checkout() {
         name: 'imcorpcart',
         description: `${cartCount} item${cartCount > 1 ? 's' : ''}`,
         theme: { color: '#0071e3' },
+        prefill: { method: rzpMethod },
         handler: (r) => {
           paid = true;
           void (async () => {
             try {
-              const order = await placeOrder(appliedCoupon?.code, selected.id, billingId, {
-                razorpayOrderId: r.razorpay_order_id,
-                razorpayPaymentId: r.razorpay_payment_id,
-                razorpaySignature: r.razorpay_signature,
-              });
+              const order = await placeOrder(
+                appliedCoupon?.code,
+                selected.id,
+                billingId,
+                {
+                  razorpayOrderId: r.razorpay_order_id,
+                  razorpayPaymentId: r.razorpay_payment_id,
+                  razorpaySignature: r.razorpay_signature,
+                },
+                method,
+                useWallet,
+              );
               navigate('/shop/success', { state: { orderNo: order.orderNo } });
             } catch (e) {
               setBusy(false);
@@ -224,15 +269,45 @@ export function Checkout() {
           )}
         </section>
 
+        {/* ── Wallet ── */}
+        {walletBalance > 0 && (
+          <section className={styles.card}>
+            <div className={styles.cardHead}>
+              <div>
+                <div className={styles.cardTitle}>imcorpcart Wallet</div>
+                <div className={styles.muted}>Balance {inr(walletBalance)} · applied to this order</div>
+              </div>
+              <Toggle on={useWallet} onClick={() => setUseWallet((v) => !v)} />
+            </div>
+          </section>
+        )}
+
         {/* ── Payment ── */}
         <section className={styles.card}>
-          <div className={styles.cardTitle}>Payment</div>
+          <div className={styles.cardTitle}>Payment method</div>
+          <div className={styles.payMethods}>
+            {paymentMethods.map((m) => (
+              <button
+                key={m.method}
+                className={cn(styles.payOption, m.method === methodKey && styles.payOptionOn)}
+                onClick={() => setMethodKey(m.method)}
+              >
+                <Radio checked={m.method === methodKey} />
+                <div className={styles.payOptionBody}>
+                  <div className={styles.payOptionLabel}>{m.label}</div>
+                  <div className={styles.payOptionFee}>
+                    {m.surchargePercent > 0 ? `+${m.surchargePercent}% fee` : 'No fee'}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
           <div className={styles.payNote}>
             <ShieldCheck size={18} />
             <div>
               <div className={styles.payNoteTitle}>Secure payment via Razorpay</div>
               <div className={styles.payNoteSub}>
-                Pay with UPI, credit/debit card, net banking, or wallets. You'll choose how to pay in the next step.
+                You'll complete payment with your selected method in the Razorpay window.
               </div>
             </div>
           </div>
@@ -259,14 +334,32 @@ export function Checkout() {
             <span className={styles.discount}>−{inr(t.discount)}</span>
           </div>
         )}
+        {t.walletApplied > 0 && (
+          <div className={styles.sumRow}>
+            <span className={styles.discount}>Wallet applied</span>
+            <span className={styles.discount}>−{inr(t.walletApplied)}</span>
+          </div>
+        )}
+        {t.surcharge > 0 && selectedMethod && (
+          <div className={styles.sumRow}>
+            <span>Payment surcharge ({selectedMethod.label} · {selectedMethod.surchargePercent}%)</span>
+            <span className={styles.tabular}>{inr(t.surcharge)}</span>
+          </div>
+        )}
+        {t.gst > 0 && (
+          <div className={styles.sumRow}>
+            <span>GST on surcharge</span>
+            <span className={styles.tabular}>{inr(t.gst)}</span>
+          </div>
+        )}
         <div className={styles.divider} />
         <div className={styles.total}>
           <span>Total</span>
           <span className={styles.tabular}>{inr(t.total)}</span>
         </div>
 
-        <Button size="lg" block onClick={submit} disabled={busy || !selected || !billingReady} style={{ marginTop: 16 }}>
-          {busy ? 'Processing…' : `Pay ${inr(t.total)}`}
+        <Button size="lg" block onClick={submit} disabled={busy || !selected || !billingReady || !selectedMethod} style={{ marginTop: 16 }}>
+          {busy ? 'Processing…' : t.total <= 0 ? 'Place order' : `Pay ${inr(t.total)}`}
         </Button>
       </aside>
 

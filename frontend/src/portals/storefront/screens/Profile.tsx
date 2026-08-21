@@ -4,7 +4,7 @@ import { MapPin, LogOut, ChevronRight, AlertTriangle, Plus, Pencil, Trash2 } fro
 import { Card, Avatar, Button, Skeleton, EmptyState, StatusPill, useToast } from '@/components';
 import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
-import { getProfile, deleteAddress } from '@/data/shop-api';
+import { getProfile, deleteAddress, getWallet } from '@/data/shop-api';
 import type { ShopAddress } from '@/data/store-types';
 import { ApiError } from '@/data/http';
 import { AddressModal } from '../overlays/AddressModal';
@@ -19,6 +19,7 @@ const addrLine = (a: ShopAddress) =>
 export function Profile({ onSignOut }: { onSignOut: () => void }) {
   const navigate = useNavigate();
   const { data: p, state, error, reload } = useAsync(() => getProfile(), []);
+  const { data: wallet } = useAsync(() => getWallet(), []);
   const [editing, setEditing] = useState<{ address: ShopAddress | null; billing: boolean } | null>(null);
 
   if (state === 'loading') return <Skeleton h={420} />;
@@ -52,6 +53,36 @@ export function Profile({ onSignOut }: { onSignOut: () => void }) {
             {p.company} · <span className={styles.program}>{p.program}</span>
           </div>
         </div>
+      </Card>
+
+      {/* imcorpcart Wallet — spendable cashback */}
+      <Card pad="lg" className={styles.wallet}>
+        <div className={styles.walletHead}>
+          <div>
+            <div className={styles.cardTitle} style={{ marginBottom: 4 }}>imcorpcart Wallet</div>
+            <div className={styles.walletBalance}>{inr(p.walletBalance)}</div>
+            <div className={styles.creditNote}>Cashback from delivered orders — spend it at checkout.</div>
+          </div>
+        </div>
+        {wallet && wallet.entries.length > 0 ? (
+          <div className={styles.walletList}>
+            {wallet.entries.slice(0, 8).map((e) => (
+              <div key={e.id} className={styles.walletRow}>
+                <div>
+                  <div className={styles.walletRowLabel}>{e.type === 'EARN' ? 'Cashback earned' : e.type === 'SPEND' ? 'Used at checkout' : 'Adjustment'}</div>
+                  <div className={styles.walletRowDate}>{new Date(e.createdAt).toLocaleDateString('en-IN')}</div>
+                </div>
+                <span className={e.type === 'SPEND' ? styles.walletSpend : styles.walletEarn}>
+                  {e.type === 'SPEND' ? '−' : '+'}{inr(e.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.creditNote} style={{ marginTop: 10 }}>
+            No wallet activity yet. Buy a product with cashback and it lands here once delivered.
+          </div>
+        )}
       </Card>
 
       {onboarding && (

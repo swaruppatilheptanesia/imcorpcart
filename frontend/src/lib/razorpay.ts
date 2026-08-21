@@ -15,6 +15,8 @@ export interface RazorpayOptions {
   description?: string;
   prefill?: { name?: string; email?: string; contact?: string; method?: string };
   theme?: { color?: string };
+  // Restrict which instruments the modal offers (locks it to the chosen method).
+  config?: unknown;
   handler: (result: RazorpayPaymentResult) => void;
   modal?: { ondismiss?: () => void };
 }

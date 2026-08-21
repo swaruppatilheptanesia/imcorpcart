@@ -51,6 +51,11 @@ export async function listOffers(req: Request, res: Response) {
   res.json(await service.listOffers(getParam(req, 'id')));
 }
 
+// All offers across products — the "Reseller pricing" report.
+export async function listAllOffers(_req: Request, res: Response) {
+  res.json(await service.listAllOffers());
+}
+
 export async function attachOffer(req: Request, res: Response) {
   res.status(201).json(await service.attachOffer(getParam(req, 'id'), req.body));
 }

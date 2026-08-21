@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as shop from '@/data/shop-api';
-import type { CartLineView, PlacedOrder, RazorpayHandoff, ShopNotificationApi } from '@/data/shop-api';
+import type { CartLineView, PlacedOrder, RazorpayHandoff, ShopNotificationApi, PaymentMethodOption } from '@/data/shop-api';
 import type { FilterState, SortKey, StoreCoupon, StoreProduct } from '@/data/store-types';
 import { DEFAULT_FILTERS, PRICE_FLOOR, PRICE_CEIL } from '@/data/store-types';
 import { loadCatalog, coupons as catalogCoupons, priceCeil as catalogPriceCeil } from './data';
@@ -24,7 +24,13 @@ interface StoreCtxValue {
     addressId?: string,
     billingAddressId?: string,
     payment?: RazorpayHandoff,
+    method?: string,
+    useWallet?: boolean,
   ) => Promise<PlacedOrder>;
+  // Active payment methods + surcharge, for the Checkout picker.
+  paymentMethods: PaymentMethodOption[];
+  // Spendable wallet (cashback) balance.
+  walletBalance: number;
   // Exhibition (QR campaign) discount the shopper is currently entitled to.
   qrDiscount: { percent: number; campaignName: string; categorySlug: string | null; categoryName: string | null } | null;
   // Alerts (derived server-side from the shopper's own order history).
@@ -75,6 +81,8 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
   // confirms checkout is open.
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [notifs, setNotifs] = useState<ShopNotificationApi[]>([]);
   const [notifsSeenAt, setNotifsSeenAt] = useState<string>(() => {
     try {
@@ -119,6 +127,8 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
         setSmartEppEnabled(p?.smartEppEnabled ?? false);
         setCheckoutEnabled(p?.checkoutEnabled ?? false);
         setViewOnly(p?.viewOnly ?? false);
+        setPaymentMethods(p?.paymentMethods ?? []);
+        setWalletBalance(p?.walletBalance ?? 0);
         setNotifs(n);
       } finally {
         if (!cancelled) setReady(true);
@@ -158,16 +168,22 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
       addressId?: string,
       billingAddressId?: string,
       payment?: RazorpayHandoff,
+      method?: string,
+      useWallet?: boolean,
     ) => {
-      const order = await shop.placeOrder(couponCode, addressId, billingAddressId, payment);
+      const order = await shop.placeOrder(couponCode, addressId, billingAddressId, payment, method, useWallet);
       applyCartState({ lines: [], subtotal: 0 });
       setAppliedCoupon(null);
       setCouponError(null);
       // A FIRST_ORDER exhibition discount is consumed by this order — refresh,
-      // and the new order produces a fresh "order placed" alert.
+      // and the new order produces a fresh "order placed" alert. Wallet balance
+      // changes too (redeemed now; cashback lands on delivery).
       shop
         .getProfile()
-        .then((p) => setQrDiscount(p.qrDiscount ?? null))
+        .then((p) => {
+          setQrDiscount(p.qrDiscount ?? null);
+          setWalletBalance(p.walletBalance ?? 0);
+        })
         .catch(() => undefined);
       shop
         .getNotifications()
@@ -247,7 +263,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     smartEppEnabled,
     checkoutEnabled,
     viewOnly,
-    cart, addToCart, setLineQty, removeLine, cartCount, subtotal, placeOrder, qrDiscount,
+    cart, addToCart, setLineQty, removeLine, cartCount, subtotal, placeOrder, paymentMethods, walletBalance, qrDiscount,
     notifs, notifsUnread, markNotifsSeen,
     wishlist, toggleWishlist, isWished,
     coupons, appliedCoupon, couponError, applyCoupon, removeCoupon, clearCouponError,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PaymentMethod } from '@prisma/client';
 
 export const shopProductListQuery = z.object({
   category: z.string().trim().optional(),
@@ -23,6 +24,10 @@ export const placeOrderBody = z.object({
   couponCode: z.string().trim().optional(),
   addressId: z.string().optional(), // chosen shipping address; falls back to default
   billingAddressId: z.string().optional(), // null/absent = same as shipping
+  // Chosen payment method — decides the surcharge; verified against the captured
+  // instrument in placeOrder.
+  method: z.nativeEnum(PaymentMethod),
+  useWallet: z.boolean().optional(), // redeem wallet balance against the total
   // Razorpay handoff — required for any payable checkout; the service verifies
   // the signature + amount before creating the orders.
   razorpayOrderId: z.string().optional(),
@@ -32,6 +37,8 @@ export const placeOrderBody = z.object({
 
 export const createPaymentOrderBody = z.object({
   couponCode: z.string().trim().optional(),
+  method: z.nativeEnum(PaymentMethod),
+  useWallet: z.boolean().optional(),
 });
 
 export const wishlistBody = z.object({

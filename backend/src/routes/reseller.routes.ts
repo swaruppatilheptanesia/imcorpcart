@@ -9,6 +9,7 @@ import {
   resellerListQuery,
   transitUpdateBody,
   resellerOfferUpdateBody,
+  resellerBulkOffersBody,
   resellerFreeGiftBody,
   resellerFreeGiftUpdateBody,
 } from '../validators/reseller.schema';
@@ -21,6 +22,9 @@ router.get('/dashboard', asyncHandler(ctrl.dashboard));
 // Marketplace offers — the reseller edits only price + stock; the Super Admin
 // authors the product master.
 router.get('/offers', validate({ query: resellerListQuery }), asyncHandler(ctrl.listOffers));
+// Bulk stock/price CSV round-trip. `/offers/export` must precede `/offers/:id`.
+router.get('/offers/export', asyncHandler(ctrl.exportOffers));
+router.post('/bulk/offers', validate({ body: resellerBulkOffersBody }), asyncHandler(ctrl.bulkUpdateOffers));
 router.get('/offers/:id', validate({ params: idParam }), asyncHandler(ctrl.getOffer));
 router.patch(
   '/offers/:id',

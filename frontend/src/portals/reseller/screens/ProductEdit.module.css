@@ -26,6 +26,18 @@
   flex-direction: column;
   gap: 14px;
 }
+.commissionNote {
+  margin-top: -4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--success);
+}
+.commissionBad {
+  margin-top: -4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--error);
+}
 .pair {
   display: grid;
   grid-template-columns: 1fr 1fr;

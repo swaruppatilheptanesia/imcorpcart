@@ -354,6 +354,9 @@ function Detail({ p }: { p: ProductDetail }) {
             <span className={styles.priceKind}>{authed ? 'EPP price' : 'MOP'}</span>
           </div>
           {authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
+          {p.cashback > 0 && (
+            <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
+          )}
           <div className={styles.priceCaption}>
             {authed ? 'Inclusive of taxes · corporate rate' : 'Market operating price · inclusive of taxes'}
           </div>
