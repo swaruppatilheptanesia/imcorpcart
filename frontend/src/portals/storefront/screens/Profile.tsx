@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, LogOut, ChevronRight, AlertTriangle, Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  MapPin,
+  LogOut,
+  ChevronRight,
+  AlertTriangle,
+  Plus,
+  Pencil,
+  Trash2,
+  Building2,
+  Wallet,
+  Landmark,
+  ArrowDownLeft,
+  ArrowUpRight,
+} from 'lucide-react';
 import { Card, Avatar, Button, Skeleton, EmptyState, StatusPill, useToast } from '@/components';
 import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
@@ -45,134 +58,165 @@ export function Profile({ onSignOut }: { onSignOut: () => void }) {
   return (
     <div className={styles.wrap}>
       <Card pad="lg" className={styles.header}>
-        <Avatar initials={initialsOf(p.name)} size={54} />
-        <div>
+        <Avatar initials={initialsOf(p.name)} size={60} />
+        <div className={styles.headerBody}>
           <div className={styles.name}>{p.name}</div>
           <div className={styles.sub}>{p.email}</div>
-          <div className={styles.company}>
-            {p.company} · <span className={styles.program}>{p.program}</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* imcorpcart Wallet — spendable cashback */}
-      <Card pad="lg" className={styles.wallet}>
-        <div className={styles.walletHead}>
-          <div>
-            <div className={styles.cardTitle} style={{ marginBottom: 4 }}>imcorpcart Wallet</div>
-            <div className={styles.walletBalance}>{inr(p.walletBalance)}</div>
-            <div className={styles.creditNote}>Cashback from delivered orders — spend it at checkout.</div>
-          </div>
-        </div>
-        {wallet && wallet.entries.length > 0 ? (
-          <div className={styles.walletList}>
-            {wallet.entries.slice(0, 8).map((e) => (
-              <div key={e.id} className={styles.walletRow}>
-                <div>
-                  <div className={styles.walletRowLabel}>{e.type === 'EARN' ? 'Cashback earned' : e.type === 'SPEND' ? 'Used at checkout' : 'Adjustment'}</div>
-                  <div className={styles.walletRowDate}>{new Date(e.createdAt).toLocaleDateString('en-IN')}</div>
-                </div>
-                <span className={e.type === 'SPEND' ? styles.walletSpend : styles.walletEarn}>
-                  {e.type === 'SPEND' ? '−' : '+'}{inr(e.amount)}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className={styles.creditNote} style={{ marginTop: 10 }}>
-            No wallet activity yet. Buy a product with cashback and it lands here once delivered.
-          </div>
-        )}
-      </Card>
-
-      {onboarding && (
-        <Card pad="lg">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <StatusPill label="Onboarding" tone="warning" />
-            <span style={{ fontSize: 13, color: 'var(--text2)' }}>
-              Your company is pending a company-admin assignment by the platform team.
+          <div className={styles.metaRow}>
+            <span className={styles.metaChip}>
+              <Building2 size={13} /> {p.company}
             </span>
+            <StatusPill label={p.program} tone="info" />
           </div>
+        </div>
+      </Card>
+
+      {/* Left column — editable details + account actions */}
+      <div className={styles.main}>
+        {onboarding && (
+          <Card pad="lg">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <StatusPill label="Onboarding" tone="warning" />
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                Your company is pending a company-admin assignment by the platform team.
+              </span>
+            </div>
+          </Card>
+        )}
+
+        {/* Shipping addresses */}
+        <Card pad="lg">
+          <div className={styles.sectionHead}>
+            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Shipping addresses</div>
+            <Button size="sm" variant="ghost" icon={<Plus size={15} />} onClick={() => setEditing({ address: null, billing: false })}>
+              Add
+            </Button>
+          </div>
+          {shipping.length === 0 && <div className={styles.creditNote}>No saved addresses yet.</div>}
+          {shipping.map((a) => (
+            <AddressRow
+              key={a.id}
+              a={a}
+              onEdit={() => setEditing({ address: a, billing: false })}
+              onDeleted={reload}
+            />
+          ))}
         </Card>
-      )}
 
-      {/* Credit limit — only when the Super Admin has enabled Smart EPP for the company */}
-      {p.smartEppEnabled && (
-      <Card pad="lg">
-        <div className={styles.cardTitle}>Smart EPP credit limit</div>
-        {limit > 0 ? (
-          <>
-            <div className={styles.creditRow}>
-              <span className={styles.creditAvailable}>{inr(available)}</span>
-              <span className={styles.creditOf}>available of {inr(limit)}</span>
-            </div>
-            <div className={styles.bar}>
-              <span className={styles.barFill} style={{ width: `${usedPct}%` }} />
-            </div>
-            <div className={styles.creditNote}>{inr(p.creditUsed)} used</div>
-          </>
-        ) : (
-          <div className={styles.creditNote}>No credit limit set. Ask your HR admin to enable Smart EPP financing.</div>
-        )}
-      </Card>
-      )}
-
-      {/* Shipping addresses */}
-      <Card pad="lg">
-        <div className={styles.sectionHead}>
-          <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Shipping addresses</div>
-          <Button size="sm" variant="ghost" icon={<Plus size={15} />} onClick={() => setEditing({ address: null, billing: false })}>
-            Add
-          </Button>
-        </div>
-        {shipping.length === 0 && <div className={styles.creditNote}>No saved addresses yet.</div>}
-        {shipping.map((a) => (
-          <AddressRow
-            key={a.id}
-            a={a}
-            onEdit={() => setEditing({ address: a, billing: false })}
-            onDeleted={reload}
-          />
-        ))}
-      </Card>
-
-      {/* Billing address */}
-      <Card pad="lg">
-        <div className={styles.sectionHead}>
-          <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Billing address</div>
+        {/* Billing address */}
+        <Card pad="lg">
+          <div className={styles.sectionHead}>
+            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Billing address</div>
+            {billing ? (
+              <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => setEditing({ address: billing, billing: true })}>
+                Edit
+              </Button>
+            ) : (
+              <Button size="sm" variant="ghost" icon={<Plus size={15} />} onClick={() => setEditing({ address: null, billing: true })}>
+                Add separate
+              </Button>
+            )}
+          </div>
           {billing ? (
-            <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => setEditing({ address: billing, billing: true })}>
-              Edit
-            </Button>
+            <AddressRow a={billing} onEdit={() => setEditing({ address: billing, billing: true })} onDeleted={reload} deleteLabel="Same as shipping" />
           ) : (
-            <Button size="sm" variant="ghost" icon={<Plus size={15} />} onClick={() => setEditing({ address: null, billing: true })}>
-              Add separate
-            </Button>
+            <div className={styles.creditNote}>Same as your default shipping address.</div>
           )}
-        </div>
-        {billing ? (
-          <AddressRow a={billing} onEdit={() => setEditing({ address: billing, billing: true })} onDeleted={reload} deleteLabel="Same as shipping" />
-        ) : (
-          <div className={styles.creditNote}>Same as your default shipping address.</div>
+        </Card>
+
+        <Card pad="none">
+          {[
+            { label: 'Notifications', path: 'notifs' },
+            { label: 'About imcorpcart', path: 'about' },
+            { label: 'Contact us', path: 'contact' },
+          ].map((row) => (
+            <button key={row.label} className={styles.settingRow} onClick={() => navigate(`/shop/${row.path}`)}>
+              <span>{row.label}</span>
+              <ChevronRight size={17} />
+            </button>
+          ))}
+        </Card>
+
+        <Button variant="secondary" block icon={<LogOut size={16} />} onClick={onSignOut}>
+          Sign out
+        </Button>
+      </div>
+
+      {/* Right column — account & money summary */}
+      <div className={styles.rail}>
+        {/* imcorpcart Wallet — spendable cashback */}
+        <Card pad="lg" className={styles.wallet}>
+          <div className={styles.walletHead}>
+            <div className={styles.walletTitleRow}>
+              <span className={`${styles.iconTile} ${styles.iconTileWallet}`}>
+                <Wallet size={19} />
+              </span>
+              <div>
+                <div className={styles.cardTitle} style={{ marginBottom: 0 }}>imcorpcart Wallet</div>
+                <div className={styles.walletOverline}>Spendable balance</div>
+              </div>
+            </div>
+            <span className={styles.spendPill}>Use at checkout</span>
+          </div>
+          <div className={styles.walletBalance}>{inr(p.walletBalance)}</div>
+          <div className={styles.creditNote} style={{ marginTop: 6 }}>
+            Cashback from delivered orders — spend it at checkout.
+          </div>
+          {wallet && wallet.entries.length > 0 ? (
+            <div className={styles.walletList}>
+              {wallet.entries.slice(0, 8).map((e) => {
+                const spend = e.type === 'SPEND';
+                return (
+                  <div key={e.id} className={styles.walletRow}>
+                    <span className={`${styles.walletRowIcon} ${spend ? styles.walletRowIconSpend : styles.walletRowIconEarn}`}>
+                      {spend ? <ArrowUpRight size={16} /> : <ArrowDownLeft size={16} />}
+                    </span>
+                    <div className={styles.walletRowMeta}>
+                      <div className={styles.walletRowLabel}>
+                        {spend ? 'Used at checkout' : e.type === 'EARN' ? 'Cashback earned' : 'Adjustment'}
+                      </div>
+                      <div className={styles.walletRowDate}>{new Date(e.createdAt).toLocaleDateString('en-IN')}</div>
+                    </div>
+                    <span className={spend ? styles.walletSpend : styles.walletEarn}>
+                      {spend ? '−' : '+'}{inr(e.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={styles.creditNote} style={{ marginTop: 12 }}>
+              No wallet activity yet. Buy a product with cashback and it lands here once delivered.
+            </div>
+          )}
+        </Card>
+
+        {/* Credit limit — only when the Super Admin has enabled Smart EPP for the company */}
+        {p.smartEppEnabled && (
+          <Card pad="lg">
+            <div className={styles.cardTitleRow}>
+              <span className={`${styles.iconTile} ${styles.iconTileCredit}`}>
+                <Landmark size={18} />
+              </span>
+              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Smart EPP credit limit</div>
+            </div>
+            {limit > 0 ? (
+              <>
+                <div className={styles.creditRow}>
+                  <span className={styles.creditAvailable}>{inr(available)}</span>
+                  <span className={styles.creditOf}>available of {inr(limit)}</span>
+                </div>
+                <div className={styles.bar}>
+                  <span className={styles.barFill} style={{ width: `${usedPct}%` }} />
+                </div>
+                <div className={styles.creditNote}>{inr(p.creditUsed)} used</div>
+              </>
+            ) : (
+              <div className={styles.creditNote}>No credit limit set. Ask your HR admin to enable Smart EPP financing.</div>
+            )}
+          </Card>
         )}
-      </Card>
-
-      <Card pad="none">
-        {[
-          { label: 'Notifications', path: 'notifs' },
-          { label: 'About imcorpcart', path: 'about' },
-          { label: 'Contact us', path: 'contact' },
-        ].map((row) => (
-          <button key={row.label} className={styles.settingRow} onClick={() => navigate(`/shop/${row.path}`)}>
-            <span>{row.label}</span>
-            <ChevronRight size={17} />
-          </button>
-        ))}
-      </Card>
-
-      <Button variant="secondary" block icon={<LogOut size={16} />} onClick={onSignOut}>
-        Sign out
-      </Button>
+      </div>
 
       {editing && (
         <AddressModal
