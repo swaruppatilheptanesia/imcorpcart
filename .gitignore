@@ -45,6 +45,8 @@ backend/docs/
 *.docx
 *.pdf
 *.sql
+# …but Prisma migrations MUST be version-controlled (they define the DB schema history)
+!backend/prisma/migrations/**/*.sql
 
 # Root tooling folder (out of frontend/backend scope)
 /scripts/
