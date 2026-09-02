@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
-import { UploadCloud, Info, FileSpreadsheet, Download } from 'lucide-react';
+import { UploadCloud, Info, FileSpreadsheet, Download, AlertTriangle } from 'lucide-react';
 import { Segmented, Card, Field, Input, Button, useToast } from '@/components';
-import { mappingRows, bulkImport, bulkPriceUpdate, bulkCashbackUpdate } from '@/data/api';
+import { mappingRows, bulkImport, bulkPriceUpdate, bulkCashbackUpdate, type BulkImportResult } from '@/data/api';
 import s from './screen.module.css';
 import styles from './Bulk.module.css';
 
 const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/imcorpcart_products_template.xlsx`;
 
 // Columns whose values should be coerced to numbers before POSTing.
-const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'epp_price', 'smart_epp_price', 'stock_quantity']);
+const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'gst_percent', 'epp_price', 'smart_epp_price', 'stock_quantity']);
 
 // Minimal CSV parser (handles quoted fields + commas). Returns row objects keyed
 // by the header row, with numeric columns coerced.
@@ -52,6 +52,7 @@ export function Bulk() {
   const [tab, setTab] = useState<'import' | 'price' | 'cashback'>('import');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<BulkImportResult | null>(null);
 
   // Price-update form
   const [scope, setScope] = useState<'all' | 'phones' | 'accessories' | 'bags'>('all');
@@ -70,6 +71,7 @@ export function Bulk() {
     e.target.value = '';
     if (!file) return;
     setImporting(true);
+    setImportResult(null);
     try {
       const text = await file.text();
       const rows = parseCsv(text);
@@ -78,7 +80,10 @@ export function Bulk() {
         return;
       }
       const res = await bulkImport(rows);
-      flash(`Imported ${res.created} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} errors` : ''}`);
+      setImportResult(res);
+      flash(
+        `${res.created} created · ${res.updated} updated${res.errors.length ? ` · ${res.errors.length} error${res.errors.length === 1 ? '' : 's'}` : ''}`,
+      );
     } catch (err) {
       flash(err instanceof Error ? err.message : 'Import failed');
     } finally {
@@ -175,6 +180,32 @@ export function Bulk() {
             <div className={styles.dropTitle}>{importing ? 'Importing…' : 'Upload a filled CSV'}</div>
             <div className={styles.dropSub}>.csv · header row required · max 5MB</div>
           </button>
+
+          {importResult && (
+            <div className={styles.resultBox}>
+              <div className={styles.resultLine}>
+                {importResult.created} created · {importResult.updated} updated · {importResult.total} row
+                {importResult.total === 1 ? '' : 's'}
+              </div>
+              {importResult.errors.length > 0 && (
+                <>
+                  <div className={styles.errorHead}>
+                    <AlertTriangle size={14} />
+                    {importResult.errors.length} problem{importResult.errors.length === 1 ? '' : 's'} — fix and re-upload
+                  </div>
+                  <ul className={styles.errorList}>
+                    {importResult.errors.map((er, i) => (
+                      <li key={`${er.sku}-${er.field}-${i}`} className={styles.errorItem}>
+                        <span className={styles.errSku}>{er.sku}</span>
+                        {er.field && er.field !== '—' && <span className={styles.errField}>{er.field}</span>}
+                        <span>{er.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
 
           <div className={s.sectionTitle} style={{ marginTop: 22 }}>
             Column mapping

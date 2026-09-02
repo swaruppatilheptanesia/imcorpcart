@@ -194,6 +194,14 @@ enum CourierCode {
   INDIA_POST
 }
 
+// Courier service mode for pincode TAT (Blue Dart: APEX = air/priority,
+// DP = domestic priority, SURFACE = ground).
+enum DeliveryMode {
+  APEX
+  DP
+  SURFACE
+}
+
 enum CourierPriority {
   HIGH
   MEDIUM

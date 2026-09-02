@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 // One product row from the client XLSX/CSV upload. Mirrors the columns of the
 // bulk-import template (products + product_prices + inventory + product_images).
-const importRow = z.object({
+// Exported so the importer can validate each row individually (per-field errors).
+export const importRow = z.object({
   sku: z.string().trim().min(1),
   name: z.string().trim().min(1),
   brand: z.string().trim().optional(),
@@ -43,14 +44,22 @@ const importRow = z.object({
     }, z.enum(['NONE', 'PERCENT', 'FIXED']))
     .optional(),
   cashback_value: z.coerce.number().nonnegative().optional(),
+  // Tax + policy attributes (master-level).
+  hsn_code: z.string().trim().max(20).optional(),
+  gst_percent: z.coerce.number().min(0).max(100).optional(),
+  terms_text: z.string().max(4000).optional(),
+  warranty_text: z.string().max(2000).optional(),
   epp_price: z.coerce.number().nonnegative(),
   smart_epp_price: z.coerce.number().nonnegative().optional(),
   stock_quantity: z.coerce.number().int().nonnegative().default(0),
   image_urls: z.string().optional(), // comma/pipe separated
 });
 
+// The import endpoint accepts loose rows (raw key/value cells) and validates each
+// row individually in the service, so one bad row surfaces a per-field error
+// instead of 422-ing the whole file.
 export const bulkImportBody = z.object({
-  rows: z.array(importRow).min(1).max(5000),
+  rows: z.array(z.record(z.string(), z.unknown())).min(1).max(5000),
 });
 
 export const bulkPriceUpdateBody = z.object({

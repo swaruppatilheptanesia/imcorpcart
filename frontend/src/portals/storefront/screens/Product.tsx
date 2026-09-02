@@ -6,8 +6,8 @@ import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { useStore } from '../store-context';
-import { getProductById, getRelated, deliveryEstimate, type ProductDetail } from '../data';
-import { submitReview } from '@/data/shop-api';
+import { getProductById, getRelated, type ProductDetail } from '../data';
+import { submitReview, getDeliveryEstimate, type DeliveryEstimate } from '@/data/shop-api';
 import { QtyStepper } from '../components/QtyStepper';
 import { ProductGrid } from '../components/ProductGrid';
 import { RatingStars, StarInput } from '../components/RatingStars';
@@ -15,6 +15,8 @@ import s from './store-screen.module.css';
 import styles from './Product.module.css';
 
 const PINCODE_KEY = 'imc_pincode';
+const fmtEtaDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 // Amazon-style: cap the thumbnail rail; extra images go behind a "+N / View more"
 // tile that opens the full-view lightbox.
 const MAX_THUMBS = 5;
@@ -156,10 +158,27 @@ function Detail({ p }: { p: ProductDetail }) {
     [cart, p.id, shade],
   );
 
-  // Delivery estimate (feature 5) — client-side heuristic.
-  const eta = /^\d{6}$/.test(pincode) ? deliveryEstimate(pincode) : null;
+  // Delivery estimate — real Blue Dart TAT lookup, debounced on a valid pincode.
+  const [eta, setEta] = useState<DeliveryEstimate | null>(null);
+  const [etaLoading, setEtaLoading] = useState(false);
   useEffect(() => {
-    if (/^\d{6}$/.test(pincode)) localStorage.setItem(PINCODE_KEY, pincode);
+    if (!/^\d{6}$/.test(pincode)) {
+      setEta(null);
+      return;
+    }
+    localStorage.setItem(PINCODE_KEY, pincode);
+    let cancelled = false;
+    setEtaLoading(true);
+    const t = setTimeout(() => {
+      getDeliveryEstimate(pincode)
+        .then((r) => !cancelled && setEta(r))
+        .catch(() => !cancelled && setEta(null))
+        .finally(() => !cancelled && setEtaLoading(false));
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [pincode]);
 
   const add = (buyNow = false) => {
@@ -322,7 +341,7 @@ function Detail({ p }: { p: ProductDetail }) {
             </div>
           )}
 
-          {p.specs.length > 0 && (
+          {(p.specs.length > 0 || p.hsnCode || p.gstPercent != null) && (
             <div className={styles.specs}>
               <div className={styles.blockTitle}>Specifications</div>
               {p.specs.map((sp) => (
@@ -331,6 +350,18 @@ function Detail({ p }: { p: ProductDetail }) {
                   <span className={styles.specV}>{sp.v}</span>
                 </div>
               ))}
+              {p.hsnCode && (
+                <div className={styles.specRow}>
+                  <span className={styles.specK}>HSN Code</span>
+                  <span className={styles.specV}>{p.hsnCode}</span>
+                </div>
+              )}
+              {p.gstPercent != null && (
+                <div className={styles.specRow}>
+                  <span className={styles.specK}>GST</span>
+                  <span className={styles.specV}>{p.gstPercent}%</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -342,6 +373,20 @@ function Detail({ p }: { p: ProductDetail }) {
                   <li key={b}>{b}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {p.warrantyText && (
+            <div className={styles.policy}>
+              <div className={styles.blockTitle}>Warranty</div>
+              <p className={styles.policyText}>{p.warrantyText}</p>
+            </div>
+          )}
+
+          {p.termsText && (
+            <div className={styles.policy}>
+              <div className={styles.blockTitle}>Terms &amp; Conditions</div>
+              <p className={styles.policyText}>{p.termsText}</p>
             </div>
           )}
         </div>
@@ -382,11 +427,21 @@ function Detail({ p }: { p: ProductDetail }) {
                 maxLength={6}
               />
             </div>
-            {eta ? (
+            {etaLoading ? (
+              <div className={styles.etaHint}>Checking delivery…</div>
+            ) : eta && eta.serviceable && eta.etaDate ? (
               <div className={styles.etaText}>
-                Delivery by <strong>{eta.label}</strong>
-                <span className={styles.etaDays}> · {eta.days} day{eta.days > 1 ? 's' : ''}</span>
+                Get it by <strong>{fmtEtaDate(eta.etaDate)}</strong>
+                <span className={styles.etaDays}>
+                  {' '}· {eta.tatDays} day{(eta.tatDays ?? 1) > 1 ? 's' : ''}
+                  {eta.courier ? ` · ${eta.courier}` : ''}
+                </span>
+                {eta.edl && (
+                  <div className={styles.etaHint}>Extended delivery area — may take a little longer.</div>
+                )}
               </div>
+            ) : eta && !eta.serviceable ? (
+              <div className={styles.etaHint}>Sorry, not serviceable to this pincode.</div>
             ) : (
               <div className={styles.etaHint}>Enter a 6-digit pincode to see the delivery date.</div>
             )}

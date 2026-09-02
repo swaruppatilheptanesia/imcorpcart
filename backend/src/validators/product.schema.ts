@@ -55,6 +55,11 @@ export const createProductBody = z.object({
   mop: money.optional(), // public / pre-login price (admin-set; falls back to MRP)
   cashbackType: z.nativeEnum(CashbackType).optional(), // NONE | PERCENT | FIXED
   cashbackValue: money.optional(), // percent (PERCENT) or ₹/unit (FIXED)
+  // Tax + policy attributes (master-level, admin-set).
+  hsnCode: z.string().trim().max(20).optional(),
+  gstPercent: z.number().min(0).max(100).optional(),
+  termsText: z.string().max(4000).optional(),
+  warrantyText: z.string().max(2000).optional(),
   // Amazon-style variant family (separate sibling SKUs share a familyKey).
   familyKey: z.string().trim().max(80).nullable().optional(),
   optionColor: z.string().trim().max(60).nullable().optional(),

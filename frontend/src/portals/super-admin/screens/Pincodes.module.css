@@ -1,0 +1,246 @@
+/* Filter/select controls (matches the Bulk screen select styling). */
+.select {
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 0 32px 0 12px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2398989d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.select:focus {
+  border-color: var(--accent);
+}
+.select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Global service/mode availability card ── */
+.settings {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.settingsHead {
+  margin-bottom: 14px;
+}
+.settingsTitle {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.settingsSub {
+  font-size: 12.5px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+.settingsGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+.settingsGroup {
+  min-width: 0;
+}
+.groupLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+  margin-bottom: 9px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+}
+.chipOn {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
+}
+
+/* ── Table cells ── */
+.pin {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.tat {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.modeBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--hair);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text2);
+}
+.edlBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+}
+.toggleCell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.yes {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--success, #1e9e6a);
+}
+.no {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text3);
+}
+.rowActions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* ── Pager ── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+.pageInfo {
+  font-size: 12.5px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.pagerBtns {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Modal toggle rows ── */
+.toggleRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+}
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.toggleRow:last-child {
+  border-bottom: none;
+}
+.toggleLabel {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.toggleHint {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+
+/* ── Import result panel (shared shape with the Bulk screen) ── */
+.resultBox {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface2);
+}
+.resultLine {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 700;
+}
+.errorHead {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--error);
+}
+.errorList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.errorItem {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+  color: var(--text2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.errorItem:last-child {
+  border-bottom: none;
+}
+.errSku {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text);
+  flex: none;
+  min-width: 120px;
+}
+.errField {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--surface));
+  border-radius: 5px;
+  padding: 1px 6px;
+  flex: none;
+}

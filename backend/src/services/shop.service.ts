@@ -118,6 +118,11 @@ function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
     mrp,
     // Cashback (₹/unit) earned on purchase, at the price being shown.
     cashback: cashbackPerUnit(p.cashbackType, p.cashbackValue, opts.public ? mop : epp),
+    // Tax + policy attributes (shown Amazon-style on the product page).
+    hsnCode: p.hsnCode ?? null,
+    gstPercent: p.gstPercent != null ? toNumber(p.gstPercent) : null,
+    termsText: p.termsText ?? '',
+    warrantyText: p.warrantyText ?? '',
     stock: winner?.quantity ?? 0,
     // Real aggregate from approved reviews (recomputed on moderation). `reviews`
     // (count) is the source of truth for whether a rating exists — the UI hides

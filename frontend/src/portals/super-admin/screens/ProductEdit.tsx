@@ -108,6 +108,10 @@ function EditForm({
   const [mop, setMop] = useState(product?.mop != null ? String(product.mop) : '');
   const [cashbackType, setCashbackType] = useState<'NONE' | 'PERCENT' | 'FIXED'>(product?.cashbackType ?? 'NONE');
   const [cashbackValue, setCashbackValue] = useState(product?.cashbackValue != null ? String(product.cashbackValue) : '');
+  const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
+  const [gstPercent, setGstPercent] = useState(product?.gstPercent != null ? String(product.gstPercent) : '');
+  const [warrantyText, setWarrantyText] = useState(product?.warrantyText ?? '');
+  const [termsText, setTermsText] = useState(product?.termsText ?? '');
   const [familyKey, setFamilyKey] = useState(product?.familyKey ?? '');
   const [optionColor, setOptionColor] = useState(product?.optionColor ?? '');
   const [optionVariant, setOptionVariant] = useState(product?.optionVariant ?? '');
@@ -168,6 +172,10 @@ function EditForm({
       mop: mop ? Number(mop) : undefined,
       cashbackType,
       cashbackValue: cashbackType !== 'NONE' && cashbackValue ? Number(cashbackValue) : undefined,
+      hsnCode: hsnCode.trim() || undefined,
+      gstPercent: gstPercent ? Number(gstPercent) : undefined,
+      warrantyText: warrantyText.trim() || undefined,
+      termsText: termsText.trim() || undefined,
       familyKey: familyKey.trim() || null,
       optionColor: optionColor.trim() || null,
       optionVariant: optionVariant.trim() || null,
@@ -392,6 +400,37 @@ function EditForm({
               )}
               <Field label="Freebie text" hint="First-party freebie badge (sellers can attach their own gift)">
                 <Input value={freebieText} onChange={(e) => setFreebieText(e.target.value)} placeholder="Free case + glass" />
+              </Field>
+            </div>
+          </Card>
+          <Card pad="lg">
+            <div className={s.sectionTitle}>Tax &amp; policies</div>
+            <div className={styles.stack}>
+              <div className={styles.pair}>
+                <Field label="HSN code" hint="HSN / SAC code (for GST)">
+                  <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="8517" />
+                </Field>
+                <Field label="GST %" hint="Tax rate">
+                  <Input value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} prefix="%" inputMode="numeric" placeholder="18" />
+                </Field>
+              </div>
+              <Field label="Warranty" hint="Shown as the Warranty section on the product page">
+                <textarea
+                  className={styles.textarea}
+                  rows={3}
+                  value={warrantyText}
+                  onChange={(e) => setWarrantyText(e.target.value)}
+                  placeholder="1 year manufacturer warranty…"
+                />
+              </Field>
+              <Field label="Terms &amp; Conditions" hint="Shown as the T&C section on the product page">
+                <textarea
+                  className={styles.textarea}
+                  rows={4}
+                  value={termsText}
+                  onChange={(e) => setTermsText(e.target.value)}
+                  placeholder="Return &amp; replacement terms, eligibility…"
+                />
               </Field>
             </div>
           </Card>

@@ -11,6 +11,7 @@ import {
   GalleryHorizontalEnd,
   Star,
   IndianRupee,
+  MapPin,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ export const navDefs: NavDef[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'products', label: 'Products', icon: Package },
   { key: 'categories', label: 'Categories', icon: FolderTree },
+  { key: 'pincodes', label: 'Pincodes', icon: MapPin },
   { key: 'orders', label: 'Orders', icon: ShoppingBag },
   { key: 'users', label: 'Users & companies', icon: Users },
   { key: 'reseller-pricing', label: 'Reseller pricing', icon: IndianRupee },
@@ -53,6 +55,7 @@ export const titles: Record<string, RouteMeta> = {
   productDetail: { title: 'Product detail', sub: 'Master record + sellers' },
   productEdit: { title: 'Product', sub: 'Author the product master' },
   categories: { title: 'Categories', sub: 'Category & sub-category master' },
+  pincodes: { title: 'Pincodes', sub: 'Courier delivery TAT & serviceability per pincode' },
   orders: { title: 'Orders', sub: 'All orders across every company' },
   orderDetail: { title: 'Order detail', sub: 'Manifest, timeline, and documents' },
   users: { title: 'Users & companies', sub: 'Companies, employees, resellers, partners' },

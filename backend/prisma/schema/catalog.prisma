@@ -48,7 +48,14 @@ model Product {
   // Cashback the shopper earns on purchase (credited to their wallet on delivery).
   // PERCENT → cashbackValue is a % of the paid item price; FIXED → ₹ per unit.
   cashbackType  CashbackType @default(NONE) @map("cashback_type")
-  cashbackValue Decimal?     @db.Decimal(12, 2) @map("cashback_value")
+  cashbackValue Decimal?     @map("cashback_value") @db.Decimal(12, 2)
+
+  // Tax + policy attributes (Super-Admin set on the master; shown on the product
+  // page and used for partner catalog feeds / tax-correct invoices).
+  hsnCode      String?  @map("hsn_code") // HSN/SAC code
+  gstPercent   Decimal? @map("gst_percent") @db.Decimal(5, 2) // GST rate %
+  termsText    String?  @map("terms_text") // Terms & Conditions
+  warrantyText String?  @map("warranty_text") // Warranty T&C
 
   // Legacy single-seller FK. DEPRECATED by the marketplace ProductOffer model
   // (a product can have many resellers). Kept nullable for back-compat; new
@@ -189,7 +196,7 @@ model ProductOffer {
   eppPrice      Decimal  @db.Decimal(12, 2) // customer EPP price (what the shopper pays; drives the buy box)
   // Reseller's own selling price (what the reseller receives). Platform
   // commission = eppPrice − resellerPrice. Null until the reseller sets it.
-  resellerPrice Decimal? @db.Decimal(12, 2) @map("reseller_price")
+  resellerPrice Decimal? @map("reseller_price") @db.Decimal(12, 2)
   smartEppPrice Decimal? @db.Decimal(12, 2) // Smart-EPP selling price (optional)
   mop           Decimal? @db.Decimal(12, 2) // DEPRECATED — public MOP is now Product.mop (admin-set)
   quantity      Int      @default(0)
@@ -239,4 +246,40 @@ model Inventory {
   updatedAt DateTime @updatedAt
 
   @@map("inventory")
+}
+
+// Courier delivery TAT (turnaround time) per destination pincode, used for the
+// storefront delivery-estimate + serviceability. Seeded from the courier TAT
+// sheet (currently Blue Dart only) and editable via the Super-Admin "Manage
+// Pincodes" screen: one row per (pincode × courier × mode). The delivery engine
+// picks the fastest row that is Active + serviceable + not globally disabled.
+model PincodeTat {
+  id          String       @id @default(cuid())
+  pincode     String
+  courier     CourierCode  @default(BLUEDART)
+  mode        DeliveryMode
+  tatDays     Int          @map("tat_days") // serviceable TAT (days) for this mode; 0 when not serviceable
+  serviceable Boolean      @default(true) // "Is deliverable" for this mode
+  edl         Boolean      @default(false) // reachable only via EDL/ODA (extended delivery area)
+  isActive    Boolean      @default(true) @map("is_active") // Status (Active/Inactive)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([pincode, courier, mode])
+  @@index([pincode])
+  @@index([courier])
+  @@index([mode])
+  @@map("pincode_tat")
+}
+
+// Global courier/mode kill-switches for the delivery engine. A row keyed
+// `courier:BLUEDART` or `mode:SURFACE` with enabled=false excludes every matching
+// pincode row platform-wide. Absence of a row = enabled.
+model DeliverySetting {
+  id        String   @id @default(cuid())
+  key       String   @unique // "courier:BLUEDART" | "mode:SURFACE" | ...
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("delivery_settings")
 }

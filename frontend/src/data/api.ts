@@ -150,6 +150,10 @@ export interface RawProductDetail {
   mop: number | null;
   cashbackType: 'NONE' | 'PERCENT' | 'FIXED';
   cashbackValue: number | null;
+  hsnCode: string | null;
+  gstPercent: number | null;
+  termsText: string | null;
+  warrantyText: string | null;
   familyKey: string | null;
   optionColor: string | null;
   optionVariant: string | null;
@@ -183,6 +187,10 @@ export interface ProductInput {
   mop?: number;
   cashbackType?: 'NONE' | 'PERCENT' | 'FIXED';
   cashbackValue?: number;
+  hsnCode?: string;
+  gstPercent?: number;
+  termsText?: string;
+  warrantyText?: string;
   familyKey?: string | null;
   optionColor?: string | null;
   optionVariant?: string | null;
@@ -209,6 +217,10 @@ function toProductBody(input: ProductInput) {
     mop: input.mop,
     cashbackType: input.cashbackType,
     cashbackValue: input.cashbackValue,
+    hsnCode: input.hsnCode,
+    gstPercent: input.gstPercent,
+    termsText: input.termsText,
+    warrantyText: input.warrantyText,
     familyKey: input.familyKey,
     optionColor: input.optionColor,
     optionVariant: input.optionVariant,
@@ -500,6 +512,97 @@ export function deleteCategory(id: string): Promise<{ ok: boolean }> {
   return apiFetch(`/categories/${id}`, { method: 'DELETE' });
 }
 
+// ─── Pincode / delivery-TAT master ───────────────────────────────────────────
+
+export type CourierCode = 'BLUEDART' | 'DELHIVERY' | 'DTDC' | 'EKART' | 'INDIA_POST';
+export type DeliveryMode = 'APEX' | 'DP' | 'SURFACE';
+
+export interface AdminPincode {
+  id: string;
+  pincode: string;
+  courier: CourierCode;
+  mode: DeliveryMode;
+  tatDays: number;
+  serviceable: boolean;
+  edl: boolean;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface PincodeQuery {
+  q?: string;
+  courier?: CourierCode;
+  mode?: DeliveryMode;
+  serviceable?: boolean;
+  isActive?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PincodeWrite {
+  pincode: string;
+  courier?: CourierCode;
+  mode: DeliveryMode;
+  tatDays: number;
+  serviceable?: boolean;
+  edl?: boolean;
+  isActive?: boolean;
+}
+
+export interface DeliveryChannel {
+  key: string;
+  value: string;
+  label: string;
+  enabled: boolean;
+}
+export interface DeliverySettings {
+  couriers: DeliveryChannel[];
+  modes: DeliveryChannel[];
+}
+
+// The list/export filters serialize the same way (booleans → 'true'/'false').
+function pincodeFilterQuery(q: PincodeQuery): Record<string, string | number | undefined> {
+  return {
+    q: q.q || undefined,
+    courier: q.courier,
+    mode: q.mode,
+    serviceable: q.serviceable === undefined ? undefined : String(q.serviceable),
+    isActive: q.isActive === undefined ? undefined : String(q.isActive),
+  };
+}
+
+export async function getPincodes(query: PincodeQuery = {}): Promise<{ items: AdminPincode[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<AdminPincode[]>>('/pincodes', {
+    query: { ...pincodeFilterQuery(query), page: query.page, pageSize: query.pageSize },
+  });
+  return { items: r.data, meta: r.meta };
+}
+export function createPincode(body: PincodeWrite): Promise<AdminPincode> {
+  return apiFetch('/pincodes', { method: 'POST', body });
+}
+export function updatePincode(
+  id: string,
+  body: Partial<Pick<AdminPincode, 'tatDays' | 'serviceable' | 'edl' | 'isActive'>>,
+): Promise<AdminPincode> {
+  return apiFetch(`/pincodes/${id}`, { method: 'PATCH', body });
+}
+export function deletePincode(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/pincodes/${id}`, { method: 'DELETE' });
+}
+export function importPincodes(rows: Record<string, unknown>[]): Promise<BulkImportResult> {
+  return apiFetch('/pincodes/import', { method: 'POST', body: { rows } });
+}
+export async function getPincodesForExport(query: PincodeQuery = {}): Promise<AdminPincode[]> {
+  const r = await apiFetch<{ data: AdminPincode[] }>('/pincodes/export', { query: pincodeFilterQuery(query) });
+  return r.data;
+}
+export function getDeliverySettings(): Promise<DeliverySettings> {
+  return apiFetch('/pincodes/settings');
+}
+export function updateDeliverySetting(key: string, enabled: boolean): Promise<DeliverySettings> {
+  return apiFetch('/pincodes/settings', { method: 'PATCH', body: { key, enabled } });
+}
+
 // ─── QR exhibition campaigns ─────────────────────────────────────────────────
 
 export type CampaignDiscountMode = 'FIRST_ORDER' | 'WHILE_ACTIVE' | 'FOREVER';
@@ -634,7 +737,13 @@ export function exportReport(type: string, format: 'CSV' | 'PDF'): Promise<{ id:
 
 // ─── Bulk ────────────────────────────────────────────────────────────────────
 
-export function bulkImport(rows: Record<string, unknown>[]): Promise<{ total: number; created: number; skipped: number; errors: { sku: string; reason: string }[] }> {
+export interface BulkImportResult {
+  total: number;
+  created: number;
+  updated: number;
+  errors: { sku: string; field: string; message: string }[];
+}
+export function bulkImport(rows: Record<string, unknown>[]): Promise<BulkImportResult> {
   return apiFetch('/bulk/import', { method: 'POST', body: { rows } });
 }
 export function bulkPriceUpdate(body: { scope: 'all' | 'phones' | 'accessories' | 'bags'; adjustment: 'increasePct' | 'decreasePct' | 'setAmount'; value: number; priceType?: 'EPP' | 'SMART_EPP' }): Promise<{ scope: string; matchedProducts: number; affectedPrices: number }> {

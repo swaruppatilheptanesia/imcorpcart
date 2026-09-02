@@ -825,3 +825,15 @@ button.varChip:hover {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Warranty / Terms & Conditions prose sections (Amazon-style) */
+.policy {
+  margin-top: 24px;
+}
+.policyText {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text2);
+  white-space: pre-wrap;
+}

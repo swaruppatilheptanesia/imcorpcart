@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as shop from '../services/shop.service';
 import { listActiveBanners } from '../services/banner.service';
+import { estimateDelivery } from '../services/delivery.service';
 import { getParam } from '../middleware/validate';
 
 // Unauthenticated storefront catalog. Prices are MOP (market operating price);
@@ -16,4 +17,9 @@ export async function getProduct(req: Request, res: Response) {
 
 export async function listBanners(_req: Request, res: Response) {
   res.json(await listActiveBanners());
+}
+
+// Delivery estimate for a pincode (Blue Dart TAT). Public.
+export async function deliveryEstimate(req: Request, res: Response) {
+  res.json(await estimateDelivery(String(req.query.pincode ?? '')));
 }

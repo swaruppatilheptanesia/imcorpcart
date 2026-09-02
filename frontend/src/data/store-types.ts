@@ -50,6 +50,11 @@ export interface StoreProduct extends Product {
   mrp: number; // struck-through list price; savings = mrp - price
   mop: number; // market operating (public/pre-login) price
   cashback: number; // ₹ earned per unit on purchase (credited to wallet on delivery); 0 = none
+  // Tax + policy attributes (shown Amazon-style on the product page).
+  hsnCode?: string | null;
+  gstPercent?: number | null;
+  termsText?: string;
+  warrantyText?: string;
   rating: number; // 0..5
   reviews: number;
   desc: string;

@@ -10,5 +10,6 @@ const router = Router();
 router.get('/products', asyncHandler(ctrl.listProducts));
 router.get('/products/:id', validate({ params: idParam }), asyncHandler(ctrl.getProduct));
 router.get('/banners', asyncHandler(ctrl.listBanners));
+router.get('/delivery', asyncHandler(ctrl.deliveryEstimate));
 
 export default router;

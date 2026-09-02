@@ -53,6 +53,20 @@ export async function getPublicBanners(): Promise<ShopBanner[]> {
   return r.data;
 }
 
+// Delivery estimate for a destination pincode (fastest courier TAT). Public.
+export interface DeliveryEstimate {
+  pincode: string;
+  courier: string; // winning courier label ('' when not serviceable)
+  mode: string | null; // winning mode label
+  serviceable: boolean;
+  tatDays: number | null;
+  edl: boolean;
+  etaDate: string | null; // ISO date
+}
+export function getDeliveryEstimate(pincode: string): Promise<DeliveryEstimate> {
+  return client.apiFetch(`/catalog/delivery?pincode=${encodeURIComponent(pincode)}`, { auth: false });
+}
+
 export async function getCoupons(): Promise<StoreCoupon[]> {
   const r = await client.apiFetch<{ data: StoreCoupon[] }>('/shop/coupons');
   return r.data;

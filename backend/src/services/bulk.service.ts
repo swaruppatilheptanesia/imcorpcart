@@ -5,6 +5,7 @@ import { serialize } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
 import { slugify } from '../utils/slug';
 import { slugishFamily } from './product-write';
+import { importRow } from '../validators/bulk.schema';
 import type {
   BulkImportInput,
   BulkPriceUpdateInput,
@@ -38,14 +39,17 @@ function parseSpecRows(raw?: string): { k: string; v: string }[] {
     .filter((r): r is { k: string; v: string } => r !== null);
 }
 
-// Import product rows from the client spreadsheet. Categories are free-text and
-// created on demand. Bulk-imported products are first-party (resellerId null).
+// Import product rows from the client spreadsheet. Each raw row is validated
+// individually (per-field errors, one bad row never fails the whole file), then
+// UPSERTED — a new SKU is created, an existing SKU is updated. Categories are
+// free-text and created on demand. Bulk-imported products are first-party
+// (the house offer, resellerId null, carries the selling price + stock).
 export async function importProducts(input: BulkImportInput, actorId: string) {
   const result = {
     total: input.rows.length,
     created: 0,
-    skipped: 0,
-    errors: [] as { sku: string; reason: string }[],
+    updated: 0,
+    errors: [] as { sku: string; field: string; message: string }[],
   };
 
   // Resolve/create categories once, up front.
@@ -54,92 +58,129 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
     const slug = slugify(name);
     const cached = categoryCache.get(slug);
     if (cached) return cached;
-    const cat = await prisma.category.upsert({
-      where: { slug },
-      create: { name, slug },
-      update: {},
-    });
+    const cat = await prisma.category.upsert({ where: { slug }, create: { name, slug }, update: {} });
     categoryCache.set(slug, cat.id);
     return cat.id;
   }
 
-  for (const row of input.rows) {
-    try {
-      const exists = await prisma.product.findUnique({ where: { sku: row.sku } });
-      if (exists) {
-        result.skipped += 1;
-        continue;
+  for (let i = 0; i < input.rows.length; i++) {
+    const raw = input.rows[i];
+    const rawSku = typeof raw.sku === 'string' ? raw.sku.trim() : String(raw.sku ?? '');
+    const label = rawSku || `(row ${i + 2})`; // +2 = header row + 1-based
+
+    // Per-row validation → per-field errors.
+    const parsed = importRow.safeParse(raw);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        result.errors.push({ sku: label, field: String(issue.path[0] ?? '—'), message: issue.message });
       }
+      continue;
+    }
+    const row = parsed.data;
+
+    try {
       const catId = await categoryId(row.category);
-      await createOneImportedProduct(row, catId);
-      result.created += 1;
+      const existing = await prisma.product.findUnique({ where: { sku: row.sku }, select: { id: true } });
+      if (existing) {
+        await updateImportedProduct(existing.id, row, catId);
+        result.updated += 1;
+      } else {
+        await createOneImportedProduct(row, catId);
+        result.created += 1;
+      }
     } catch (e) {
-      result.errors.push({ sku: row.sku, reason: e instanceof Error ? e.message : 'unknown' });
+      result.errors.push({ sku: label, field: '—', message: e instanceof Error ? e.message : 'unknown' });
     }
   }
 
-  // Audit the import.
   await prisma.auditLog.create({
     data: {
       actorId,
       action: 'catalog.bulk_import',
       entityType: 'Product',
-      after: { created: result.created, skipped: result.skipped, errors: result.errors.length },
+      after: { created: result.created, updated: result.updated, errors: result.errors.length },
     },
   });
 
   return result;
 }
 
+// Shared master-scalar mapping so create + update stay in sync.
+function productScalars(row: BulkImportRow, categoryId: string) {
+  const status = (row.status as ProductStatus) ?? ProductStatus.DRAFT;
+  return {
+    name: row.name,
+    brand: row.brand,
+    description: row.description,
+    categoryId,
+    subCategory: row.sub_category,
+    status,
+    smartEpp: row.smart_epp ?? false,
+    mrp: D(row.mrp),
+    mop: row.mop_price !== undefined ? D(row.mop_price) : null,
+    cashbackType: row.cashback_type ?? 'NONE',
+    cashbackValue: row.cashback_value !== undefined ? D(row.cashback_value) : null,
+    hsnCode: row.hsn_code ?? null,
+    gstPercent: row.gst_percent !== undefined ? D(row.gst_percent) : null,
+    termsText: row.terms_text ?? null,
+    warrantyText: row.warranty_text ?? null,
+    colorOptions: row.color_options,
+    variantOptions: row.variant_options,
+    familyKey: row.family_key ? slugishFamily(row.family_key) : null,
+    optionColor: row.option_color ?? null,
+    optionVariant: row.option_variant ?? null,
+    freebieText: row.freebie_text ?? null,
+  };
+}
+
+function houseOfferData(row: BulkImportRow, status: ProductStatus) {
+  return {
+    eppPrice: D(row.epp_price),
+    smartEppPrice: row.smart_epp_price !== undefined ? D(row.smart_epp_price) : null,
+    quantity: row.stock_quantity ?? 0,
+    status,
+    isActive: status === ProductStatus.ACTIVE,
+  };
+}
+
 async function createOneImportedProduct(row: BulkImportRow, categoryId: string) {
   const images = parseImageUrls(row.image_urls);
   const specRows = parseSpecRows(row.spec_rows);
-  const status = (row.status as ProductStatus) ?? ProductStatus.DRAFT;
+  const scal = productScalars(row, categoryId);
   await prisma.product.create({
     data: {
       sku: row.sku,
-      name: row.name,
-      brand: row.brand,
-      description: row.description,
-      categoryId,
-      subCategory: row.sub_category,
-      status,
-      smartEpp: row.smart_epp ?? false, // Smart EPP (SEPP) eligibility (Y/N column)
-      mrp: D(row.mrp), // product-level list price
-      mop: row.mop_price !== undefined ? D(row.mop_price) : null, // public price (admin-set)
-      cashbackType: row.cashback_type ?? 'NONE', // NONE | PERCENT | FIXED
-      cashbackValue: row.cashback_value !== undefined ? D(row.cashback_value) : null,
-      colorOptions: row.color_options,
-      variantOptions: row.variant_options,
-      // Variant family: siblings sharing family_key collapse to one storefront
-      // card. family_key is slug-normalised (same as admin authoring) so bulk +
-      // admin siblings group together. option_color/option_variant are this SKU's
-      // colour + storage/size on the family selectors.
-      familyKey: row.family_key ? slugishFamily(row.family_key) : null,
-      optionColor: row.option_color ?? null,
-      optionVariant: row.option_variant ?? null,
-      freebieText: row.freebie_text ?? null,
-      // Presentation blob the storefront reads (rows → spec table). Gradient/shades
-      // are left default for bulk products; only the spec rows are authored here.
+      ...scal,
       ...(specRows.length ? { specs: { rows: specRows } } : {}),
-      // Bulk products are first-party: one house offer (resellerId null) carries
-      // the selling prices + stock.
-      offers: {
-        create: [
-          {
-            resellerId: null,
-            eppPrice: D(row.epp_price),
-            smartEppPrice: row.smart_epp_price !== undefined ? D(row.smart_epp_price) : null,
-            quantity: row.stock_quantity ?? 0,
-            status,
-            isActive: status === ProductStatus.ACTIVE,
-          },
-        ],
-      },
-      ...(images.length
-        ? { images: { create: images.map((url, i) => ({ url, position: i })) } }
-        : {}),
+      offers: { create: [{ resellerId: null, ...houseOfferData(row, scal.status) }] },
+      ...(images.length ? { images: { create: images.map((url, i) => ({ url, position: i })) } } : {}),
     },
+  });
+}
+
+// Update an existing SKU from an import row: master scalars + specs/images (when
+// provided) + the house offer's price/stock.
+async function updateImportedProduct(id: string, row: BulkImportRow, categoryId: string) {
+  const images = parseImageUrls(row.image_urls);
+  const specRows = parseSpecRows(row.spec_rows);
+  const scal = productScalars(row, categoryId);
+  await prisma.$transaction(async (tx) => {
+    await tx.product.update({
+      where: { id },
+      data: {
+        ...scal,
+        ...(specRows.length ? { specs: { rows: specRows } } : {}),
+        ...(images.length
+          ? { images: { deleteMany: {}, create: images.map((url, i) => ({ url, position: i })) } }
+          : {}),
+      },
+    });
+    const house = await tx.productOffer.findFirst({ where: { productId: id, resellerId: null } });
+    if (house) {
+      await tx.productOffer.update({ where: { id: house.id }, data: houseOfferData(row, scal.status) });
+    } else {
+      await tx.productOffer.create({ data: { productId: id, resellerId: null, ...houseOfferData(row, scal.status) } });
+    }
   });
 }
 
