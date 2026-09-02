@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const catalogScope = z.object({ categorySlugs: z.array(z.string().trim()).optional() });
 const partnerStatus = z.enum(['ACTIVE', 'ONBOARDING', 'SUSPENDED']);
+const priceBasis = z.enum(['MRP', 'MOP', 'EPP']);
 
 // ── Admin: partner registry ──────────────────────────────────────────────────
 export const createPartnerBody = z.object({
@@ -12,7 +12,7 @@ export const createPartnerBody = z.object({
   active: z.boolean().optional(),
   webhookUrl: z.string().url().max(500).optional(),
   ipAllowlist: z.array(z.string().trim().min(1)).optional(),
-  catalogScope: catalogScope.nullish(),
+  priceField: priceBasis.optional(), // default price basis for new catalogue entries
   commissionPct: z.number().min(0).max(100).optional(),
   features: z.record(z.string(), z.unknown()).nullish(),
 });
@@ -25,9 +25,40 @@ export const updatePartnerBody = z.object({
   active: z.boolean().optional(),
   webhookUrl: z.string().url().max(500).nullish(),
   ipAllowlist: z.array(z.string().trim().min(1)).optional(),
-  catalogScope: catalogScope.nullish(),
+  priceField: priceBasis.optional(),
   commissionPct: z.number().min(0).max(100).optional(),
   features: z.record(z.string(), z.unknown()).nullish(),
+});
+
+// ── Admin: partner catalogue ─────────────────────────────────────────────────
+export const catalogueCandidatesQuery = z.object({
+  q: z.string().trim().optional(),
+  categoryId: z.string().trim().optional(),
+  subCategory: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(1000).optional(),
+});
+
+export const addCatalogueBody = z
+  .object({
+    productIds: z.array(z.string().min(1)).max(1000).optional(),
+    categoryId: z.string().trim().optional(),
+    subCategory: z.string().trim().optional(),
+    priceBasis: priceBasis.optional(),
+    commissionPct: z.number().min(0).max(100).optional(),
+  })
+  .refine((v) => (v.productIds && v.productIds.length > 0) || Boolean(v.categoryId), {
+    message: 'Provide productIds or a categoryId',
+  });
+
+export const updateCatalogueEntryBody = z.object({
+  priceBasis: priceBasis.optional(),
+  commissionPct: z.number().min(0).max(100).optional(),
+});
+
+export const partnerOrdersQuery = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
 
 // ── Partner API ──────────────────────────────────────────────────────────────
@@ -66,3 +97,7 @@ export type CreatePartnerInput = z.infer<typeof createPartnerBody>;
 export type UpdatePartnerInput = z.infer<typeof updatePartnerBody>;
 export type PartnerCatalogueQuery = z.infer<typeof partnerCatalogueQuery>;
 export type AcceptOrderInput = z.infer<typeof acceptOrderBody>;
+export type CatalogueCandidatesQuery = z.infer<typeof catalogueCandidatesQuery>;
+export type AddCatalogueInput = z.infer<typeof addCatalogueBody>;
+export type UpdateCatalogueEntryInput = z.infer<typeof updateCatalogueEntryBody>;
+export type PartnerOrdersQuery = z.infer<typeof partnerOrdersQuery>;

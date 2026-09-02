@@ -216,7 +216,7 @@ export function toCoupon(c: ApiCoupon): Coupon & { id: string } {
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
-const ORDER_STATUS_IN: Record<string, OrderStatus> = {
+export const ORDER_STATUS_IN: Record<string, OrderStatus> = {
   PLACED: 'Processing',
   CONFIRMED: 'Processing',
   DISPATCHED: 'In transit',

@@ -94,9 +94,10 @@ model Product {
 
   cartItems     CartItem[]
   smartEppItems SmartEppRequestItem[]
-  orderItems    OrderItem[]
-  wishlistItems WishlistItem[]
-  reviews       ProductReview[]
+  orderItems     OrderItem[]
+  wishlistItems  WishlistItem[]
+  reviews        ProductReview[]
+  partnerEntries PartnerCatalogueEntry[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

@@ -78,3 +78,23 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
   @@map("webhook_deliveries")
 }
+
+// A single product exposed to a partner (curated by the admin), with the price
+// basis the vendor pays and a commission % added on top. The vendor price =
+// base(priceBasis) × (1 + commissionPct/100). One row per (partner × product).
+model PartnerCatalogueEntry {
+  id            String            @id @default(cuid())
+  partnerId     String
+  partner       Partner           @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceBasis    PartnerPriceBasis @default(MOP) @map("price_basis")
+  commissionPct Decimal?          @default(0) @map("commission_pct") @db.Decimal(5, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partnerId, productId])
+  @@index([partnerId])
+  @@map("partner_catalogue_entries")
+}

@@ -5,7 +5,7 @@
 
 import { apiFetch, apiUpload, type PageMeta } from './http';
 import { setToken, setUser, clearAuth, type AuthUser } from './auth-store';
-import type { Coupon, DateRange, Order, Product, UserDataset, UserTab } from './types';
+import type { Coupon, DateRange, Order, OrderStatus, Product, UserDataset, UserTab } from './types';
 import {
   toProduct,
   toCoupon,
@@ -15,6 +15,7 @@ import {
   PRODUCT_STATUS_OUT,
   COUPON_TYPE_OUT,
   COUPON_STATUS_OUT,
+  ORDER_STATUS_IN,
   ORDER_STATUS_OUT,
   USER_TAB_TO_TYPE,
 } from './map';
@@ -606,6 +607,7 @@ export function updateDeliverySetting(key: string, enabled: boolean): Promise<De
 // ─── Integration partners ────────────────────────────────────────────────────
 
 export type PartnerStatus = 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED';
+export type PartnerPriceBasis = 'MRP' | 'MOP' | 'EPP';
 
 export interface AdminPartner {
   id: string;
@@ -619,8 +621,7 @@ export interface AdminPartner {
   contactPhone: string | null;
   ipAllowlist: string[];
   webhookUrl: string | null;
-  catalogScope: { categorySlugs?: string[] } | null;
-  priceField: string;
+  priceField: PartnerPriceBasis; // default basis for new catalogue entries
   commissionPct: number | null;
   features: Record<string, unknown> | null;
   createdAt: string;
@@ -636,9 +637,109 @@ export interface PartnerWrite {
   active?: boolean;
   webhookUrl?: string | null;
   ipAllowlist?: string[];
-  catalogScope?: { categorySlugs?: string[] } | null;
+  priceField?: PartnerPriceBasis;
   commissionPct?: number;
   features?: Record<string, unknown> | null;
+}
+
+// ── Partner catalogue (per-product pricing) ──
+export interface CatalogueEntry {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  brand: string;
+  category: string;
+  categorySlug: string;
+  subCategory: string;
+  image: string | null;
+  mrp: number;
+  mop: number;
+  epp: number | null;
+  priceBasis: PartnerPriceBasis;
+  commissionPct: number;
+  vendorPrice: number;
+}
+export interface CatalogueCandidate {
+  productId: string;
+  sku: string;
+  name: string;
+  category: string;
+  subCategory: string;
+  image: string | null;
+  mrp: number;
+  mop: number;
+  epp: number | null;
+  inCatalogue: boolean;
+}
+export interface CatalogueQuery {
+  q?: string;
+  categoryId?: string;
+  subCategory?: string;
+  page?: number;
+  pageSize?: number;
+}
+export interface AddCatalogueBody {
+  productIds?: string[];
+  categoryId?: string;
+  subCategory?: string;
+  priceBasis?: PartnerPriceBasis;
+  commissionPct?: number;
+}
+function catalogueQuery(q: CatalogueQuery): Record<string, string | number | undefined> {
+  return { q: q.q, categoryId: q.categoryId, subCategory: q.subCategory, page: q.page, pageSize: q.pageSize };
+}
+export async function getPartnerCatalogue(id: string, query: CatalogueQuery = {}): Promise<{ items: CatalogueEntry[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<CatalogueEntry[]>>(`/partners/${id}/catalogue`, { query: catalogueQuery(query) });
+  return { items: r.data, meta: r.meta };
+}
+export async function getCatalogueCandidates(id: string, query: CatalogueQuery = {}): Promise<{ items: CatalogueCandidate[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<CatalogueCandidate[]>>(`/partners/${id}/catalogue/candidates`, { query: catalogueQuery(query) });
+  return { items: r.data, meta: r.meta };
+}
+export function addPartnerCatalogue(id: string, body: AddCatalogueBody): Promise<{ added: number }> {
+  return apiFetch(`/partners/${id}/catalogue`, { method: 'POST', body });
+}
+export function updateCatalogueEntry(id: string, entryId: string, body: { priceBasis?: PartnerPriceBasis; commissionPct?: number }): Promise<CatalogueEntry> {
+  return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'PATCH', body });
+}
+export function removeCatalogueEntry(id: string, entryId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'DELETE' });
+}
+
+// Orders a partner has sent us (admin view). Self-contained — each row carries its
+// items, so no separate order-detail fetch is needed (the admin order mapping
+// assumes a company/employee buyer, which partner orders don't have).
+export interface PartnerOrderItem {
+  name: string;
+  sku: string;
+  image: string | null;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+export interface PartnerOrderRow {
+  id: string;
+  orderNo: string;
+  externalRef: string | null;
+  checkoutGroup: string | null;
+  status: OrderStatus; // display label
+  subtotal: number;
+  total: number;
+  itemCount: number;
+  items: PartnerOrderItem[];
+  createdAt: string;
+  dispatchedAt: string | null;
+  awb: string | null;
+  courier: string | null;
+}
+interface ApiPartnerOrderRow extends Omit<PartnerOrderRow, 'status'> {
+  status: string; // raw enum from the API
+}
+export async function getPartnerOrders(id: string, query: { page?: number; pageSize?: number } = {}): Promise<{ items: PartnerOrderRow[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<ApiPartnerOrderRow[]>>(`/partners/${id}/orders`, { query: { page: query.page, pageSize: query.pageSize } });
+  const items = r.data.map((o) => ({ ...o, status: ORDER_STATUS_IN[o.status] ?? 'Processing' }));
+  return { items, meta: r.meta };
 }
 
 // Secret is returned only once, at create/rotate.

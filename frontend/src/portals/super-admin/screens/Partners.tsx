@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plug, Plus, Copy, Check, AlertTriangle, KeyRound } from 'lucide-react';
 import { Button, DataTable, Row, StatusPill, Field, Input, Modal, EmptyState, Skeleton, useToast } from '@/components';
 import type React from 'react';
-import { getPartners, createPartner, type PartnerCredentials } from '@/data/api';
+import { getPartners, createPartner, type PartnerCredentials, type PartnerPriceBasis } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
 import type { SemanticTone } from '@/data/types';
@@ -61,7 +61,7 @@ export function Partners() {
       )}
 
       {state === 'live' && data && (
-        <DataTable cols={COLS} headers={['Partner', 'API key', 'Scope', 'Commission', 'Webhook', '']}>
+        <DataTable cols={COLS} headers={['Partner', 'API key', 'Default basis', 'Commission', 'Webhook', '']}>
           {data.map((p) => (
             <Row key={p.id} cols={COLS} onClick={() => navigate(`/super-admin/partnerDetail/${p.id}`)}>
               <div className={styles.nameCell}>
@@ -69,9 +69,7 @@ export function Partners() {
                 <StatusPill label={p.active ? p.status : 'Disabled'} tone={p.active ? statusTone[p.status] : 'neutral'} />
               </div>
               <div className={styles.key}>{p.apiKey}</div>
-              <div className={s.muted}>
-                {p.catalogScope?.categorySlugs?.length ? `${p.catalogScope.categorySlugs.length} categories` : 'All categories'}
-              </div>
+              <div className={s.muted}>{p.priceField}</div>
               <div className={s.muted}>{p.commissionPct != null ? `${p.commissionPct}%` : '—'}</div>
               <div>
                 <span className={p.webhookUrl ? styles.dotOn : styles.dotOff} />
@@ -109,7 +107,7 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
   const [contactEmail, setContactEmail] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [ips, setIps] = useState('');
-  const [scope, setScope] = useState('');
+  const [basis, setBasis] = useState<PartnerPriceBasis>('MOP');
   const [commission, setCommission] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -122,7 +120,7 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
         contactEmail: contactEmail.trim() || undefined,
         webhookUrl: webhookUrl.trim() || undefined,
         ipAllowlist: ips.split(',').map((x) => x.trim()).filter(Boolean),
-        catalogScope: scope.trim() ? { categorySlugs: scope.split(',').map((x) => x.trim()).filter(Boolean) } : undefined,
+        priceField: basis,
         commissionPct: commission ? Number(commission) : undefined,
       });
       onCreated(c);
@@ -153,17 +151,24 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
       <Field label="Webhook URL (optional)">
         <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://partner.com/hooks/imcorpcart" />
       </Field>
+      <Field label="IP allowlist (comma-separated)">
+        <Input value={ips} onChange={(e) => setIps(e.target.value)} placeholder="Blank = any IP" />
+      </Field>
       <div className={s.formRow2}>
-        <Field label="IP allowlist (comma-separated)">
-          <Input value={ips} onChange={(e) => setIps(e.target.value)} placeholder="Blank = any IP" />
+        <Field label="Default price basis">
+          <select className={styles.select} value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
+            <option value="MRP">MRP</option>
+            <option value="MOP">MOP</option>
+            <option value="EPP">EPP (cheapest offer)</option>
+          </select>
         </Field>
-        <Field label="Commission %">
+        <Field label="Default commission %">
           <Input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="numeric" placeholder="0" />
         </Field>
       </div>
-      <Field label="Catalogue scope — category slugs (optional, blank = all)">
-        <Input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="phones, accessories" />
-      </Field>
+      <p className={s.muted} style={{ fontSize: 12.5, margin: '4px 2px 0' }}>
+        You'll pick which products this partner sells (and fine-tune per-product pricing) in the partner's <strong>Catalogue</strong> tab.
+      </p>
     </Modal>
   );
 }
@@ -184,6 +189,10 @@ function CredentialsModal({ credentials, onClose }: { credentials: PartnerCreden
       </div>
       <CopyRow label="API key" value={credentials.apiKey} />
       <CopyRow label="Secret" value={credentials.secret} mono icon={<KeyRound size={14} />} />
+      <p className={s.muted} style={{ fontSize: 12.5, margin: '10px 2px 0' }}>
+        The partner sends the API key as the <code>X-Api-Key</code> header and the secret as{' '}
+        <code>Authorization: Bearer &lt;secret&gt;</code> over HTTPS — no request signing.
+      </p>
     </Modal>
   );
 }

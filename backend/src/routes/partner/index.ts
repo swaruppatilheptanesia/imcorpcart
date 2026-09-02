@@ -7,7 +7,7 @@ import { asyncHandler } from '../../utils/asyncHandler';
 import { partnerCatalogueQuery, acceptOrderBody } from '../../validators/partner.schema';
 
 // Machine-to-machine partner API, mounted at /partner-api/v1. Every route is
-// key + HMAC + IP authenticated and rate-limited per partner.
+// key + bearer secret + IP authenticated and rate-limited per partner.
 const router = Router();
 
 router.use(partnerLimiter, asyncHandler(requirePartner));

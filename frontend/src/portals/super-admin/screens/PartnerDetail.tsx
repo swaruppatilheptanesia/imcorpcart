@@ -1,23 +1,29 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook } from 'lucide-react';
-import { Card, Button, Field, Input, Toggle, StatusPill, EmptyState, Skeleton, useToast } from '@/components';
+import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook, Eye, ShoppingBag } from 'lucide-react';
+import { Card, Button, Field, Input, Toggle, Segmented, StatusPill, DataTable, Row, ProductThumb, Drawer, EmptyState, Skeleton, useToast } from '@/components';
+import { PartnerCatalogue } from './PartnerCatalogue';
 import {
   getPartner,
-  getPartnerWebhooks,
   getPartnerActivity,
+  getPartnerOrders,
   updatePartner,
   deletePartner,
   rotatePartnerSecret,
   testPartnerWebhook,
   resendPartnerWebhook,
+  orderStatusTone,
   type AdminPartner,
   type WebhookDeliveryRow,
   type PartnerActivityRow,
+  type PartnerOrderRow,
   type PartnerStatus,
+  type PartnerPriceBasis,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
+import { inr } from '@/lib/format';
+import { fmtDate } from '@/data/map';
 import type { SemanticTone } from '@/data/types';
 import { statusTone, CopyRow } from './Partners';
 import s from './screen.module.css';
@@ -26,15 +32,21 @@ import styles from './Partners.module.css';
 const BASE_URL = `${window.location.origin}/partner-api/v1`;
 const webhookTone: Record<string, SemanticTone> = { DELIVERED: 'success', PENDING: 'warning', FAILED: 'error' };
 
+// Hidden for now — flip to true to bring back the IP allowlist + webhook card.
+// When re-enabling, also restore getPartnerWebhooks in the useAsync fetch above.
+const SHOW_ACCESS_CARD = false;
+
 export function PartnerDetail() {
   const navigate = useNavigate();
   const { id = '' } = useParams();
   const { flash } = useToast();
   const { data, state, error, reload } = useAsync(
-    () => Promise.all([getPartner(id), getPartnerWebhooks(id), getPartnerActivity(id)]),
+    () => Promise.all([getPartner(id), getPartnerActivity(id), getPartnerOrders(id)]),
     [id],
   );
   const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [tab, setTab] = useState<'overview' | 'catalogue'>('overview');
+  const [orderRow, setOrderRow] = useState<PartnerOrderRow | null>(null);
 
   if (state === 'loading') {
     return (
@@ -56,7 +68,7 @@ export function PartnerDetail() {
     );
   }
 
-  const [partner, webhooks, activity] = data;
+  const [partner, activity, orders] = data;
 
   const toggleActive = async () => {
     try {
@@ -79,7 +91,7 @@ export function PartnerDetail() {
   };
 
   const rotate = async () => {
-    if (!window.confirm('Regenerate the signing secret? The current secret stops working immediately.')) return;
+    if (!window.confirm('Regenerate the secret? The current secret stops working immediately.')) return;
     try {
       const { secret } = await rotatePartnerSecret(id);
       setNewSecret(secret);
@@ -111,16 +123,33 @@ export function PartnerDetail() {
         </div>
       </div>
 
-      <div className={styles.detailGrid}>
-        <IntegrationCard partner={partner} onRotate={rotate} />
-        <AccessCard partner={partner} webhooks={webhooks} onSaved={reload} onReloadWebhooks={reload} />
-        <CommercialsCard partner={partner} onSaved={reload} />
-        <ActivityCard activity={activity} />
+      <div className={styles.tabsRow}>
+        <Segmented
+          options={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'catalogue', label: 'Catalogue' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
+
+      {tab === 'overview' ? (
+        <div className={styles.detailGrid}>
+          <IntegrationCard partner={partner} onRotate={rotate} />
+          {SHOW_ACCESS_CARD && <AccessCard partner={partner} webhooks={[]} onSaved={reload} onReloadWebhooks={reload} />}
+          <OrdersCard orders={orders.items} total={orders.meta.total} onView={setOrderRow} />
+          <CommercialsCard partner={partner} onSaved={reload} />
+          <ActivityCard activity={activity} />
+        </div>
+      ) : (
+        <PartnerCatalogue partnerId={id} defaultBasis={partner.priceField} defaultCommission={partner.commissionPct ?? 0} />
+      )}
 
       {newSecret && (
         <SecretModal secret={newSecret} onClose={() => setNewSecret(null)} />
       )}
+      {orderRow && <PartnerOrderDrawer order={orderRow} onClose={() => setOrderRow(null)} />}
     </div>
   );
 }
@@ -131,15 +160,15 @@ function IntegrationCard({ partner, onRotate }: { partner: AdminPartner; onRotat
   return (
     <Card pad="lg">
       <div className={styles.cardTitle}>Integration</div>
-      <p className={styles.cardHint}>Share these with the vendor. Requests are signed with the secret (shown once).</p>
+      <p className={styles.cardHint}>Share these with the vendor. The secret is shown once — keep it server-side only.</p>
       <CopyRow label="Base URL" value={BASE_URL} mono />
       <CopyRow label="API key" value={partner.apiKey} mono />
       <div className={styles.signBox}>
-        <div className={styles.signTitle}>Request signing</div>
+        <div className={styles.signTitle}>Authentication</div>
         <p className={styles.signText}>
-          Send headers <code>X-Api-Key</code>, <code>X-Timestamp</code> (unix seconds), and{' '}
-          <code>X-Signature</code> = HMAC-SHA256(secret, <code>{'`${timestamp}.${rawBody}`'}</code>) as hex. Order posts
-          also need an <code>Idempotency-Key</code>.
+          Send two headers over HTTPS: <code>X-Api-Key</code> (the key above) and{' '}
+          <code>Authorization: Bearer &lt;secret&gt;</code>. No request signing. Order posts also need an{' '}
+          <code>Idempotency-Key</code>.
         </p>
       </div>
       <div className={styles.cardFoot}>
@@ -250,7 +279,7 @@ function AccessCard({
 
 function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved: () => void }) {
   const { flash } = useToast();
-  const [scope, setScope] = useState((partner.catalogScope?.categorySlugs ?? []).join(', '));
+  const [basis, setBasis] = useState<PartnerPriceBasis>(partner.priceField);
   const [commission, setCommission] = useState(partner.commissionPct != null ? String(partner.commissionPct) : '');
   const [status, setStatus] = useState<PartnerStatus>(partner.status);
   const [busy, setBusy] = useState(false);
@@ -259,7 +288,7 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
     setBusy(true);
     try {
       await updatePartner(partner.id, {
-        catalogScope: scope.trim() ? { categorySlugs: scope.split(',').map((x) => x.trim()).filter(Boolean) } : null,
+        priceField: basis,
         commissionPct: commission ? Number(commission) : undefined,
         status,
       });
@@ -274,15 +303,17 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
 
   return (
     <Card pad="lg">
-      <div className={styles.cardTitle}>Catalogue &amp; commercials</div>
-      <Field label="Catalogue scope — category slugs (blank = all)">
-        <Input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="phones, accessories" />
-      </Field>
+      <div className={styles.cardTitle}>Commercials</div>
+      <p className={styles.cardHint}>Defaults applied when adding products in the Catalogue tab (each product can be overridden there).</p>
       <div className={s.formRow2}>
-        <Field label="Price field">
-          <Input value="MOP" disabled />
+        <Field label="Default price basis">
+          <select className={styles.select} value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
+            <option value="MRP">MRP</option>
+            <option value="MOP">MOP</option>
+            <option value="EPP">EPP (cheapest offer)</option>
+          </select>
         </Field>
-        <Field label="Commission %">
+        <Field label="Default commission %">
           <Input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="numeric" placeholder="0" />
         </Field>
       </div>
@@ -302,15 +333,31 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 
+// Dev-only placeholder so the empty Activity UI is reviewable. Never shown in a
+// production build, and only when the partner has no real activity yet.
+const ago = (mins: number) => new Date(Date.now() - mins * 60_000).toISOString();
+const DEMO_ACTIVITY: PartnerActivityRow[] = [
+  { id: 'demo-1', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(12) },
+  { id: 'demo-2', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(74) },
+  { id: 'demo-3', action: 'partner.auth.fail', ipAddress: '203.0.113.42', after: null, createdAt: ago(190) },
+  { id: 'demo-4', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(320) },
+  { id: 'demo-5', action: 'partner.auth.fail', ipAddress: '198.51.100.7', after: null, createdAt: ago(1500) },
+];
+
 function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
+  const usingDemo = activity.length === 0 && import.meta.env.DEV;
+  const rows = usingDemo ? DEMO_ACTIVITY : activity;
   return (
     <Card pad="lg">
-      <div className={styles.cardTitle}>Activity</div>
-      {activity.length === 0 ? (
+      <div className={styles.cardTitle}>
+        Activity
+        {usingDemo && <span className={s.muted} style={{ fontWeight: 400, fontSize: 12 }}> · sample data</span>}
+      </div>
+      {rows.length === 0 ? (
         <div className={s.muted} style={{ padding: '8px 0' }}>No recorded activity yet.</div>
       ) : (
         <ul className={styles.actList}>
-          {activity.slice(0, 12).map((a) => (
+          {rows.slice(0, 12).map((a) => (
             <li key={a.id} className={styles.actItem}>
               <span className={styles.actAction}>{a.action.replace('partner.', '')}</span>
               <span className={s.muted}>{new Date(a.createdAt).toLocaleString()}</span>
@@ -320,6 +367,126 @@ function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
         </ul>
       )}
     </Card>
+  );
+}
+
+// ── Orders received ──────────────────────────────────────────────────────────
+
+const ORDER_COLS = '1.4fr 0.9fr 1.6fr 1fr 0.9fr 40px';
+
+// Dev-only sample so the empty Orders UI is reviewable (never in production).
+const DEMO_ORDERS: PartnerOrderRow[] = [
+  {
+    id: 'demo-o1', orderNo: 'IMC-84213007', externalRef: 'GM-9921', checkoutGroup: null, status: 'Processing',
+    subtotal: 3299, total: 3299, itemCount: 1, createdAt: ago(38), dispatchedAt: null, awb: null, courier: null,
+    items: [{ name: 'Galaxy A15 5G', sku: 'GP-AN-1000', image: null, qty: 1, unitPrice: 3299, lineTotal: 3299 }],
+  },
+  {
+    id: 'demo-o2', orderNo: 'IMC-84119221', externalRef: 'GM-9907', checkoutGroup: null, status: 'In transit',
+    subtotal: 12980, total: 12980, itemCount: 2, createdAt: ago(300), dispatchedAt: ago(90), awb: 'BD1234567', courier: 'Bluedart',
+    items: [
+      { name: 'Anker PowerCore 20K', sku: 'AC-PC-2000', image: null, qty: 2, unitPrice: 3990, lineTotal: 7980 },
+      { name: 'USB-C Cable 100W', sku: 'AC-CB-1010', image: null, qty: 1, unitPrice: 5000, lineTotal: 5000 },
+    ],
+  },
+  {
+    id: 'demo-o3', orderNo: 'IMC-83911772', externalRef: 'GM-9880', checkoutGroup: null, status: 'Delivered',
+    subtotal: 74999, total: 74999, itemCount: 1, createdAt: ago(2880), dispatchedAt: ago(2600), awb: 'DL9988776', courier: 'Delhivery',
+    items: [{ name: 'Galaxy S24 Ultra', sku: 'GP-SS-9000', image: null, qty: 1, unitPrice: 74999, lineTotal: 74999 }],
+  },
+];
+
+function OrdersCard({ orders, total, onView }: { orders: PartnerOrderRow[]; total: number; onView: (o: PartnerOrderRow) => void }) {
+  const usingDemo = orders.length === 0 && import.meta.env.DEV;
+  const rows = usingDemo ? DEMO_ORDERS : orders;
+  const count = usingDemo ? DEMO_ORDERS.length : total;
+  return (
+    <Card pad="lg">
+      <div className={styles.cardTitle}>
+        Orders received{count ? ` · ${count}` : ''}
+        {usingDemo && <span className={s.muted} style={{ fontWeight: 400, fontSize: 12 }}> · sample data</span>}
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState icon={<ShoppingBag size={22} />} title="No orders received yet" body="Orders this partner posts through the API will appear here." />
+      ) : (
+        <DataTable cols={ORDER_COLS} headers={['Order', 'Date', 'Product', 'Status', 'Total', '']}>
+          {rows.slice(0, 10).map((o) => (
+            <Row key={o.id} cols={ORDER_COLS} onClick={() => onView(o)}>
+              <div className={styles.ordId}>
+                <span>{o.orderNo}</span>
+                {o.externalRef && <span className={s.mono}>{o.externalRef}</span>}
+              </div>
+              <div className={s.muted}>{fmtDate(o.createdAt)}</div>
+              <div className={styles.ordProduct}>
+                {o.items[0]?.name ?? '—'}
+                {o.itemCount > 1 && <span className={s.muted}> +{o.itemCount - 1} more</span>}
+              </div>
+              <div><StatusPill label={o.status} tone={orderStatusTone[o.status]} /></div>
+              <div className={s.price}>{inr(o.total)}</div>
+              <button className={s.iconBtn} onClick={(e) => { e.stopPropagation(); onView(o); }} aria-label="View order"><Eye size={15} /></button>
+            </Row>
+          ))}
+        </DataTable>
+      )}
+    </Card>
+  );
+}
+
+function OrderLine({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className={styles.ordLine}>
+      <span className={strong ? undefined : s.muted}>{label}</span>
+      <span className={strong ? styles.ordLineStrong : undefined}>{value}</span>
+    </div>
+  );
+}
+
+function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClose: () => void }) {
+  return (
+    <Drawer open onClose={onClose} title={order.orderNo} width={460}>
+      <div className={styles.pdWrap}>
+        <div className={styles.pdHead}>
+          <div className={s.muted} style={{ fontSize: 12.5 }}>
+            {order.externalRef ? `Ref ${order.externalRef} · ` : ''}{fmtDate(order.createdAt)}
+          </div>
+          <StatusPill label={order.status} tone={orderStatusTone[order.status]} />
+        </div>
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Items</div>
+          <ul className={styles.ordItems}>
+            {order.items.map((it, i) => (
+              <li key={i} className={styles.ordItem}>
+                <ProductThumb g1={it.image ?? '#dfe3ea'} g2="#b3b9c4" w={34} h={42} />
+                <div className={styles.ordItemName}>
+                  <span>{it.name}</span>
+                  <span className={s.mono}>{it.sku}</span>
+                </div>
+                <div className={styles.ordItemQty}>{it.qty} × {inr(it.unitPrice)}</div>
+                <div className={styles.ordItemTotal}>{inr(it.lineTotal)}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {(order.courier || order.awb || order.dispatchedAt) && (
+          <div className={styles.pdSection}>
+            <div className={styles.pdSectionTitle}>Shipping</div>
+            <dl className={styles.pdMeta}>
+              {order.courier && <div><dt>Courier</dt><dd>{order.courier}</dd></div>}
+              {order.awb && <div><dt>AWB</dt><dd>{order.awb}</dd></div>}
+              {order.dispatchedAt && <div><dt>Dispatched</dt><dd>{fmtDate(order.dispatchedAt)}</dd></div>}
+            </dl>
+          </div>
+        )}
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Total</div>
+          <OrderLine label="Subtotal" value={inr(order.subtotal)} />
+          <OrderLine label="Amount payable" value={inr(order.total)} strong />
+        </div>
+      </div>
+    </Drawer>
   );
 }
 

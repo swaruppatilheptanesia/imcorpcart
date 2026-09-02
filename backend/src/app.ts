@@ -29,15 +29,7 @@ export function createApp(): Application {
       credentials: true,
     }),
   );
-  app.use(
-    express.json({
-      limit: '5mb', // 5mb headroom for bulk-import payloads
-      // Stash the raw body so the partner API can HMAC-verify the exact bytes.
-      verify: (req, _res, buf) => {
-        (req as express.Request).rawBody = buf.toString('utf8');
-      },
-    }),
-  );
+  app.use(express.json({ limit: '5mb' })); // 5mb headroom for bulk-import payloads
   app.use(express.urlencoded({ extended: true }));
   app.use(requestContext);
 
@@ -47,7 +39,7 @@ export function createApp(): Application {
   app.use(API_PREFIX, routes);
 
   // Machine-to-machine partner integration API (separate front door, its own
-  // key/HMAC auth — a sibling to /api, not under it).
+  // key + bearer-secret auth — a sibling to /api, not under it).
   app.use('/partner-api/v1', partnerRoutes);
 
   // 404 + centralised error handling (must be last).

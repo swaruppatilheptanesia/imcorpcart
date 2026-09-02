@@ -1,10 +1,11 @@
 import { WebhookStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { decryptSecret, signPayload } from '../utils/secretbox';
+import { decryptSecret } from '../utils/secretbox';
 
 // Lightweight, in-process outbound webhook delivery. Each event is logged to
-// `webhook_deliveries` and POSTed to the partner's URL (HMAC-signed); failures
-// retry with backoff via a 60s reprocess loop. No external queue.
+// `webhook_deliveries` and POSTed to the partner's URL (authenticated with the
+// partner's bearer secret); failures retry with backoff via a 60s reprocess
+// loop. No external queue.
 
 const MAX_ATTEMPTS = 6;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 360]; // delay after attempt 1..5 (attempt 6 = final)
@@ -33,7 +34,6 @@ export async function attemptDelivery(id: string): Promise<void> {
   const d = await prisma.webhookDelivery.findUnique({ where: { id }, include: { partner: true } });
   if (!d || d.status === WebhookStatus.DELIVERED) return;
   const attempts = d.attempts + 1;
-  const ts = Math.floor(Date.now() / 1000);
   const body = JSON.stringify(d.payload);
   try {
     const secret = decryptSecret(d.partner.apiSecretEnc);
@@ -42,8 +42,7 @@ export async function attemptDelivery(id: string): Promise<void> {
       headers: {
         'Content-Type': 'application/json',
         'X-Event': d.event,
-        'X-Timestamp': String(ts),
-        'X-Signature': signPayload(secret, ts, body),
+        Authorization: `Bearer ${secret}`,
       },
       body,
       signal: AbortSignal.timeout(TIMEOUT_MS),

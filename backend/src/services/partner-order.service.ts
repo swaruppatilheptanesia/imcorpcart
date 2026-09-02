@@ -4,14 +4,15 @@ import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { serialize, toNumber } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
-import { pickBuyBox } from './shop.service';
+import { pickBuyBox, shopProductInclude } from './shop.service';
+import { resolveBasePrice, vendorPrice } from './partner.service';
 import { estimateDelivery } from './delivery.service';
 import { enqueueWebhook } from './webhook.service';
 import type { PartnerPrincipal } from '../types/express';
 import type { AcceptOrderInput } from '../validators/partner.schema';
 
 const D = (n: number) => new Prisma.Decimal(n);
-const PRICE_TOLERANCE = 1; // ₹ — posted price may differ from our EPP by at most this
+const PRICE_TOLERANCE = 1; // ₹ — posted price may differ from our configured price by at most this
 
 interface PricedLine {
   productId: string;
@@ -42,29 +43,26 @@ export async function acceptOrder(partner: PartnerPrincipal, key: string, input:
     }
   }
 
-  // 3. Validate + price each line against the current buy box.
-  const scopeSlugs = partner.catalogScope?.categorySlugs;
+  // 3. Validate + price each line against the partner's catalogue entry (the
+  // configured basis + commission), and check availability.
   const lines: PricedLine[] = [];
   const rejections: string[] = [];
   for (const item of input.items) {
-    const product = await prisma.product.findFirst({
-      where: { sku: item.sku, status: ProductStatus.ACTIVE, ...notDeleted },
-      include: { category: { select: { slug: true } }, offers: { where: notDeleted, include: { reseller: { select: { name: true } }, freeGift: { select: { title: true } } } } },
+    const entry = await prisma.partnerCatalogueEntry.findFirst({
+      where: { partnerId: partner.id, product: { sku: item.sku, status: ProductStatus.ACTIVE, ...notDeleted } },
+      include: { product: { include: shopProductInclude } },
     });
-    if (!product) {
-      rejections.push(`Unknown or inactive SKU: ${item.sku}`);
+    if (!entry) {
+      rejections.push(`SKU not in your catalogue: ${item.sku}`);
       continue;
     }
-    if (scopeSlugs && scopeSlugs.length && !scopeSlugs.includes(product.category.slug)) {
-      rejections.push(`SKU not in your catalogue scope: ${item.sku}`);
-      continue;
-    }
+    const product = entry.product;
     const winner = pickBuyBox(product.offers);
     if (!winner || winner.quantity < item.qty) {
       rejections.push(`Out of stock: ${item.sku}`);
       continue;
     }
-    const unitPrice = toNumber(winner.eppPrice);
+    const unitPrice = vendorPrice(resolveBasePrice(product, entry.priceBasis), entry.commissionPct);
     if (item.price !== undefined && Math.abs(item.price - unitPrice) > PRICE_TOLERANCE) {
       rejections.push(`Price mismatch for ${item.sku}: expected ₹${unitPrice}, got ₹${item.price}`);
       continue;

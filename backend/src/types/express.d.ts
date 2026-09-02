@@ -14,7 +14,6 @@ export interface PartnerPrincipal {
   id: string;
   name: string;
   slug: string;
-  catalogScope: { categorySlugs?: string[] } | null;
   commissionPct: number | null;
   webhookUrl: string | null;
   features: Record<string, unknown> | null;
@@ -26,7 +25,6 @@ declare global {
     interface Request {
       user?: AuthUser;
       partner?: PartnerPrincipal;
-      rawBody?: string; // raw request body, captured for HMAC signature verification
       id?: string; // request id
     }
   }

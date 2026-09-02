@@ -3,9 +3,7 @@ import { OrgStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { AppError } from '../utils/AppError';
-import { decryptSecret, verifySignature } from '../utils/secretbox';
-
-const MAX_SKEW_SECONDS = 300; // 5-minute replay window
+import { decryptSecret, verifySecret } from '../utils/secretbox';
 
 // Normalise an IPv6-mapped IPv4 (::ffff:127.0.0.1 → 127.0.0.1) for allowlist match.
 function normalizeIp(ip: string | undefined): string {
@@ -21,8 +19,8 @@ function auditFail(partnerId: string | undefined, ip: string, reason: string) {
     .catch(() => undefined);
 }
 
-// Authenticate an integration partner: API key → IP allowlist → HMAC signature
-// (with a replay window). Attaches req.partner. Any failure → 401/403.
+// Authenticate an integration partner: API key (identifies) → IP allowlist →
+// bearer secret (authenticates). Attaches req.partner. Any failure → 401/403.
 export async function requirePartner(req: Request, _res: Response, next: NextFunction) {
   const ip = normalizeIp(req.ip);
   let partnerId: string | undefined;
@@ -44,24 +42,20 @@ export async function requirePartner(req: Request, _res: Response, next: NextFun
       throw AppError.forbidden('IP not allowed');
     }
 
-    // HMAC signature over `${timestamp}.${rawBody}`, within the replay window.
-    const timestamp = req.header('x-timestamp');
-    const signature = req.header('x-signature');
-    if (!timestamp || !signature) throw AppError.unauthorized('Missing X-Timestamp or X-Signature');
-    const ts = Number(timestamp);
-    if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > MAX_SKEW_SECONDS) {
-      throw AppError.unauthorized('Stale or invalid timestamp');
-    }
+    // Bearer secret: `Authorization: Bearer <secret>`, timing-safe compared to
+    // our decrypted copy. HTTPS protects it in transit (no request signing).
+    const authHeader = req.header('authorization') ?? '';
+    const presented = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
+    if (!presented) throw AppError.unauthorized('Missing bearer token');
     const secret = decryptSecret(partner.apiSecretEnc);
-    if (!verifySignature(secret, timestamp, req.rawBody ?? '', signature)) {
-      throw AppError.unauthorized('Signature verification failed');
+    if (!verifySecret(secret, presented)) {
+      throw AppError.unauthorized('Invalid credentials');
     }
 
     req.partner = {
       id: partner.id,
       name: partner.name,
       slug: partner.slug,
-      catalogScope: (partner.catalogScope as { categorySlugs?: string[] } | null) ?? null,
       commissionPct: partner.commissionPct ? Number(partner.commissionPct) : null,
       webhookUrl: partner.webhookUrl,
       features: (partner.features as Record<string, unknown> | null) ?? null,

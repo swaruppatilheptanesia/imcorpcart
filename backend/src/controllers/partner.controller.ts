@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
-import { getParam } from '../middleware/validate';
+import { getParam, getQuery } from '../middleware/validate';
 import * as service from '../services/partner.service';
 import { resendDelivery, sendTestWebhook } from '../services/webhook.service';
+import type { CatalogueCandidatesQuery, PartnerOrdersQuery } from '../validators/partner.schema';
 
 export async function list(_req: Request, res: Response) {
   res.json(await service.listPartners());
@@ -35,10 +36,36 @@ export async function activity(req: Request, res: Response) {
   res.json(await service.listPartnerActivity(getParam(req, 'id')));
 }
 
+export async function orders(req: Request, res: Response) {
+  res.json(await service.listPartnerOrders(getParam(req, 'id'), getQuery<PartnerOrdersQuery>(req)));
+}
+
 export async function testWebhook(req: Request, res: Response) {
   res.status(201).json(await sendTestWebhook(getParam(req, 'id')));
 }
 
 export async function resendWebhook(req: Request, res: Response) {
   res.json(await resendDelivery(getParam(req, 'deliveryId')));
+}
+
+// ── Catalogue ────────────────────────────────────────────────────────────────
+
+export async function catalogue(req: Request, res: Response) {
+  res.json(await service.listCatalogue(getParam(req, 'id'), getQuery<CatalogueCandidatesQuery>(req)));
+}
+
+export async function candidates(req: Request, res: Response) {
+  res.json(await service.listCandidates(getParam(req, 'id'), getQuery<CatalogueCandidatesQuery>(req)));
+}
+
+export async function addCatalogue(req: Request, res: Response) {
+  res.status(201).json(await service.addCatalogue(getParam(req, 'id'), req.body));
+}
+
+export async function updateCatalogueEntry(req: Request, res: Response) {
+  res.json(await service.updateCatalogueEntry(getParam(req, 'id'), getParam(req, 'entryId'), req.body));
+}
+
+export async function removeCatalogueEntry(req: Request, res: Response) {
+  res.json(await service.removeCatalogueEntry(getParam(req, 'id'), getParam(req, 'entryId')));
 }

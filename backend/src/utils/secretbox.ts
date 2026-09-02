@@ -1,10 +1,10 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { env } from '../config/env';
 import { AppError } from './AppError';
 
 // Symmetric secret handling for partner integration credentials. Unlike passwords
-// (hashed one-way), a partner's HMAC secret must be recoverable — we need the raw
-// key both to verify inbound request signatures and to sign outbound webhooks — so
+// (hashed one-way), a partner's secret must be recoverable — we need the raw key
+// both to verify inbound bearer tokens and to authenticate outbound webhooks — so
 // it is AES-256-GCM encrypted at rest with a master key from the environment.
 
 const ALGO = 'aes-256-gcm';
@@ -47,14 +47,8 @@ export function generateSecret(): string {
   return `imcsk_${randomBytes(32).toString('base64url')}`;
 }
 
-/** HMAC-SHA256 of `${timestamp}.${rawBody}` with the partner secret (hex). */
-export function signPayload(secret: string, timestamp: string | number, rawBody: string): string {
-  return createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
-}
-
-/** Timing-safe verification of a provided signature (mirrors the Razorpay check). */
-export function verifySignature(secret: string, timestamp: string | number, rawBody: string, provided: string): boolean {
-  const expected = signPayload(secret, timestamp, rawBody);
+/** Timing-safe equality of a presented bearer secret against the expected one. */
+export function verifySecret(expected: string, provided: string): boolean {
   const a = Buffer.from(expected);
   const b = Buffer.from(provided ?? '');
   return a.length === b.length && timingSafeEqual(a, b);
