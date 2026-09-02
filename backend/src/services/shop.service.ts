@@ -32,7 +32,7 @@ const PRODUCT_STATUS_OUT: Record<ProductStatus, string> = {
   INACTIVE: 'inactive',
 };
 
-const shopProductInclude = {
+export const shopProductInclude = {
   category: { select: { slug: true, name: true } },
   offers: {
     where: notDeleted,
@@ -64,7 +64,7 @@ function eligibleOffers(offers: ShopOfferRow[]): ShopOfferRow[] {
 
 // The winning offer: the cheapest eligible one by EPP price. (Public MOP is a
 // single admin-set product price, so the buy box is always chosen by EPP.)
-function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
+export function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
   const elig = eligibleOffers(offers);
   if (!elig.length) return null;
   return [...elig].sort((a, b) => toNumber(a.eppPrice) - toNumber(b.eppPrice))[0];
@@ -86,7 +86,7 @@ function cashbackPerUnit(
 
 // Map a DB product (+ its seeded presentation blob + marketplace offers) to the
 // storefront's StoreProduct shape so the frontend adapter stays trivial.
-function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
+export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
   const pres = (p.specs ?? {}) as Presentation;
   const mrp = toNumber(p.mrp);
   const elig = eligibleOffers(p.offers);
@@ -161,7 +161,7 @@ function winningOfferFor(p: ShopProductRow): ShopOfferRow | null {
 // The storefront filters/sorts/facets client-side over the full active catalog
 // (only ~22 SKUs), so we return everything active in one shot.
 // Products with at least one active, in-stock offer are the buyable catalog.
-const HAS_LIVE_OFFER = {
+export const HAS_LIVE_OFFER = {
   offers: { some: { isActive: true, status: ProductStatus.ACTIVE, quantity: { gt: 0 }, deletedAt: null } },
 } satisfies Prisma.ProductWhereInput;
 

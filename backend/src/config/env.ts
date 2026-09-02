@@ -45,6 +45,14 @@ const schema = z.object({
   // Optional saved Checkout Configuration id (dashboard → Payment methods config,
   // e.g. "config_XXXX") — restricts/orders the methods shown in the modal.
   RAZORPAY_CHECKOUT_CONFIG_ID: z.string().optional(),
+
+  // Partner integration API (/partner-api/v1). Master switch parsed as a literal
+  // string (same reason as CHECKOUT_ENABLED). PARTNER_SECRET_ENC_KEY is the master
+  // key used to AES-encrypt each partner's signing secret at rest; optional so the
+  // app boots without it, but creating/rotating a partner secret errors clearly
+  // when it's absent.
+  PARTNER_API_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  PARTNER_SECRET_ENC_KEY: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

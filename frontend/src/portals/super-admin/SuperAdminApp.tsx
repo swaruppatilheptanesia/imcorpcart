@@ -19,6 +19,8 @@ import { Reviews } from './screens/Reviews';
 import { ResellerPricing } from './screens/ResellerPricing';
 import { Categories } from './screens/Categories';
 import { Pincodes } from './screens/Pincodes';
+import { Partners } from './screens/Partners';
+import { PartnerDetail } from './screens/PartnerDetail';
 import { QrCampaigns } from './screens/QrCampaigns';
 import { Banners } from './screens/Banners';
 import { Payments } from './screens/Payments';
@@ -111,6 +113,8 @@ function Console({ onSignOut }: { onSignOut: () => void }) {
                 <Route path="productDetail/:id" element={<ProductDetail />} />
                 <Route path="categories" element={<Categories />} />
                 <Route path="pincodes" element={<Pincodes />} />
+                <Route path="partners" element={<Partners />} />
+                <Route path="partnerDetail/:id" element={<PartnerDetail />} />
                 <Route path="orders" element={<Orders />} />
                 <Route path="orderDetail/:id" element={<OrderDetail />} />
                 <Route path="orderDetail" element={<OrderDetail />} />

@@ -170,6 +170,28 @@ enum OrderType {
   SMART_EPP
 }
 
+// Where an order originated: an internal employee checkout vs an external
+// integration partner posting via `/partner-api/v1`.
+enum OrderSource {
+  INTERNAL
+  PARTNER
+}
+
+// ── Partner integration ──────────────────────────────────────────────────────
+enum WebhookStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Which of our DB prices a partner pays for a catalogued product (a commission %
+// is then added on top). EPP = the buy-box cheapest offer.
+enum PartnerPriceBasis {
+  MRP
+  MOP
+  EPP
+}
+
 enum OrderStatus {
   PLACED
   CONFIRMED

@@ -15,6 +15,7 @@ const SECRET_KEYS = new Set([
   'keyRef',
   'webhookRef',
   'apiKeyRef',
+  'apiSecretEnc',
 ]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

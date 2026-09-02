@@ -603,6 +603,105 @@ export function updateDeliverySetting(key: string, enabled: boolean): Promise<De
   return apiFetch('/pincodes/settings', { method: 'PATCH', body: { key, enabled } });
 }
 
+// ─── Integration partners ────────────────────────────────────────────────────
+
+export type PartnerStatus = 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED';
+
+export interface AdminPartner {
+  id: string;
+  name: string;
+  slug: string;
+  status: PartnerStatus;
+  active: boolean;
+  apiKey: string;
+  secretLast4: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  ipAllowlist: string[];
+  webhookUrl: string | null;
+  catalogScope: { categorySlugs?: string[] } | null;
+  priceField: string;
+  commissionPct: number | null;
+  features: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { orders: number };
+}
+
+export interface PartnerWrite {
+  name: string;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  status?: PartnerStatus;
+  active?: boolean;
+  webhookUrl?: string | null;
+  ipAllowlist?: string[];
+  catalogScope?: { categorySlugs?: string[] } | null;
+  commissionPct?: number;
+  features?: Record<string, unknown> | null;
+}
+
+// Secret is returned only once, at create/rotate.
+export interface PartnerCredentials {
+  partner: AdminPartner;
+  apiKey: string;
+  secret: string;
+}
+
+export interface WebhookDeliveryRow {
+  id: string;
+  event: string;
+  url: string;
+  status: 'PENDING' | 'DELIVERED' | 'FAILED';
+  attempts: number;
+  responseStatus: number | null;
+  lastError: string | null;
+  createdAt: string;
+  lastAttemptAt: string | null;
+}
+
+export interface PartnerActivityRow {
+  id: string;
+  action: string;
+  ipAddress: string | null;
+  after: unknown;
+  createdAt: string;
+}
+
+export async function getPartners(): Promise<AdminPartner[]> {
+  const r = await apiFetch<{ data: AdminPartner[] }>('/partners');
+  return r.data;
+}
+export function getPartner(id: string): Promise<AdminPartner> {
+  return apiFetch(`/partners/${id}`);
+}
+export function createPartner(body: PartnerWrite): Promise<PartnerCredentials> {
+  return apiFetch('/partners', { method: 'POST', body });
+}
+export function updatePartner(id: string, body: Partial<PartnerWrite>): Promise<AdminPartner> {
+  return apiFetch(`/partners/${id}`, { method: 'PATCH', body });
+}
+export function deletePartner(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/partners/${id}`, { method: 'DELETE' });
+}
+export function rotatePartnerSecret(id: string): Promise<{ secret: string }> {
+  return apiFetch(`/partners/${id}/rotate-secret`, { method: 'POST', body: {} });
+}
+export async function getPartnerWebhooks(id: string): Promise<WebhookDeliveryRow[]> {
+  const r = await apiFetch<{ data: WebhookDeliveryRow[] }>(`/partners/${id}/webhooks`);
+  return r.data;
+}
+export function testPartnerWebhook(id: string): Promise<WebhookDeliveryRow> {
+  return apiFetch(`/partners/${id}/webhooks/test`, { method: 'POST', body: {} });
+}
+export function resendPartnerWebhook(id: string, deliveryId: string): Promise<WebhookDeliveryRow> {
+  return apiFetch(`/partners/${id}/webhooks/${deliveryId}/resend`, { method: 'POST', body: {} });
+}
+export async function getPartnerActivity(id: string): Promise<PartnerActivityRow[]> {
+  const r = await apiFetch<{ data: PartnerActivityRow[] }>(`/partners/${id}/activity`);
+  return r.data;
+}
+
 // ─── QR exhibition campaigns ─────────────────────────────────────────────────
 
 export type CampaignDiscountMode = 'FIRST_ORDER' | 'WHILE_ACTIVE' | 'FOREVER';

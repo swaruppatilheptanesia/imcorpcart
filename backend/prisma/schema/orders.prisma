@@ -39,10 +39,19 @@ model Order {
   id         String    @id @default(cuid())
   orderNo    String    @unique
   type       OrderType
-  employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id])
-  companyId  String
-  company    Company   @relation(fields: [companyId], references: [id])
+
+  // Origin: INTERNAL (employee checkout) or PARTNER (posted via /partner-api/v1).
+  source    OrderSource @default(INTERNAL)
+  partnerId String?     @map("partner_id")
+  partner   Partner?    @relation(fields: [partnerId], references: [id])
+  // Partner's own order id (dedup + status lookups). Unique per partner.
+  externalRef String? @map("external_ref")
+
+  // Buyer. Null for partner orders (no internal employee/company).
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  companyId  String?
+  company    Company?  @relation(fields: [companyId], references: [id])
 
   // Smart EPP orders reference the approved request (null for EPP).
   smartEppRequestId String?          @unique
@@ -93,9 +102,11 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([partnerId, externalRef])
   @@index([employeeId])
   @@index([companyId])
   @@index([resellerId])
+  @@index([partnerId])
   @@index([checkoutGroup])
   @@index([couponId])
   @@index([status])

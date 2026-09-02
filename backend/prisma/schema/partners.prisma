@@ -1,0 +1,80 @@
+// Outbound integration partners (GenieMart-style vendors that list our catalog
+// and post us orders over the machine-to-machine `/partner-api/v1` surface).
+// A partner authenticates with an API key + HMAC signature (+ optional IP
+// allowlist); its secret is stored AES-GCM-encrypted (HMAC needs the raw key
+// back for both request verification and outbound webhook signing).
+model Partner {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  contactEmail String?
+  contactPhone String?
+  status       OrgStatus @default(ONBOARDING)
+  active       Boolean   @default(true) // quick kill-switch (independent of status)
+
+  // Credentials. apiKey is public (sent as X-Api-Key); apiSecretEnc is the
+  // encrypted signing secret (stripped from responses via SECRET_KEYS).
+  apiKey       String   @unique @map("api_key")
+  apiSecretEnc String   @map("api_secret_enc")
+  secretLast4  String?  @map("secret_last4") // for admin display only
+  ipAllowlist  String[] @default([]) @map("ip_allowlist") // empty = any IP
+
+  // Config. priceField + commissionPct are the DEFAULTS applied when adding a
+  // product to the partner's catalogue; each catalogue entry stores its own basis
+  // + commission (see PartnerCatalogueEntry).
+  webhookUrl    String?  @map("webhook_url")
+  priceField    String   @default("MOP") @map("price_field") // default PartnerPriceBasis
+  commissionPct Decimal? @default(0) @map("commission_pct") @db.Decimal(5, 2)
+  features      Json? // { epod, pincode, cancellation } feature flags
+
+  orders            Order[]
+  webhookDeliveries WebhookDelivery[]
+  idempotencyKeys   PartnerIdempotencyKey[]
+  catalogueEntries  PartnerCatalogueEntry[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("partners")
+}
+
+// Idempotency ledger for partner order posts — a replayed Idempotency-Key returns
+// the stored response verbatim instead of creating a duplicate order.
+model PartnerIdempotencyKey {
+  id            String   @id @default(cuid())
+  partnerId     String
+  partner       Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  key           String
+  statusCode    Int      @map("status_code")
+  responseJson  Json     @map("response_json")
+  checkoutGroup String?  @map("checkout_group")
+  createdAt     DateTime @default(now())
+
+  @@unique([partnerId, key])
+  @@map("partner_idempotency_keys")
+}
+
+// Outbound webhook delivery log (lightweight, in-process retry with backoff).
+model WebhookDelivery {
+  id             String        @id @default(cuid())
+  partnerId      String
+  partner        Partner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  event          String
+  payload        Json
+  url            String
+  status         WebhookStatus @default(PENDING)
+  attempts       Int           @default(0)
+  nextAttemptAt  DateTime?     @map("next_attempt_at")
+  lastAttemptAt  DateTime?     @map("last_attempt_at")
+  responseStatus Int?          @map("response_status")
+  lastError      String?       @map("last_error")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerId])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}

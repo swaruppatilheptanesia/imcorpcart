@@ -1,6 +1,7 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { connectPrisma, disconnectPrisma } from './config/prisma';
+import { startWebhookRetryLoop } from './services/webhook.service';
 
 // Minimal bootstrap: connect the DB, start listening, wire graceful shutdown.
 async function main() {
@@ -11,6 +12,10 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log(`🚀 imcorpcart API listening on http://localhost:${env.PORT}/api`);
   });
+
+  // Reprocess due partner webhook deliveries (retry with backoff). Runs only in
+  // the main server process.
+  startWebhookRetryLoop();
 
   async function shutdown(signal: string) {
     // eslint-disable-next-line no-console

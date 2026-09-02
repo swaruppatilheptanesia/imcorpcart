@@ -13,6 +13,7 @@ import { serialize, toNumber } from '../models/serializers';
 import { resolveResellerId } from '../utils/scope';
 import { ensureOwnedGift } from './product-write';
 import { creditWallet } from './shop.service';
+import { notifyPartnerOrderStatus } from './webhook.service';
 import type {
   ResellerListQuery,
   TransitUpdateInput,
@@ -117,7 +118,7 @@ export async function getDashboard(userId: string) {
       select: { id: true, name: true },
     }),
     prisma.company.findMany({
-      where: { id: { in: topCustomersRaw.map((c) => c.companyId) } },
+      where: { id: { in: topCustomersRaw.map((c) => c.companyId).filter((x): x is string => x !== null) } },
       select: { id: true, name: true },
     }),
     prisma.product.findMany({
@@ -144,7 +145,7 @@ export async function getDashboard(userId: string) {
     })),
     topCustomers: topCustomersRaw.map((c) => ({
       companyId: c.companyId,
-      name: nameOf(companies, c.companyId),
+      name: c.companyId ? nameOf(companies, c.companyId) : 'Partner',
       spend: toNumber(c._sum.total),
     })),
     mostWishlisted: wishlistRaw.map((w) => ({
@@ -499,8 +500,9 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
 
     // On delivery, credit the order's cashback to the shopper's wallet — once
     // (idempotent: skip if an EARN entry already references this order).
+    // Partner orders have no internal employee, so there's no wallet to credit.
     const cashback = toNumber(order.cashbackEarned);
-    if (isDelivered && cashback > 0) {
+    if (isDelivered && cashback > 0 && order.employeeId) {
       const already = await tx.walletLedgerEntry.findFirst({
         where: { type: 'EARN', referenceType: 'ORDER', referenceId: order.id },
         select: { id: true },
@@ -514,6 +516,18 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
       }
     }
   });
+
+  // Push the status change to the origin partner's webhook (no-op for internal orders).
+  if (nextOrderStatus && nextOrderStatus !== order.status) {
+    await notifyPartnerOrderStatus({
+      source: order.source,
+      partnerId: order.partnerId,
+      orderNo: order.orderNo,
+      externalRef: order.externalRef,
+      status: nextOrderStatus,
+      checkoutGroup: order.checkoutGroup,
+    });
+  }
 
   return getOrder(userId, order.id);
 }
