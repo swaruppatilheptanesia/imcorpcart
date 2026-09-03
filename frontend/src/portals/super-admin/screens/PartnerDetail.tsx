@@ -9,7 +9,8 @@ import {
   getPartnerOrders,
   updatePartner,
   deletePartner,
-  rotatePartnerSecret,
+  rotatePartnerToken,
+  rotatePartnerWebhookSecret,
   testPartnerWebhook,
   resendPartnerWebhook,
   orderStatusTone,
@@ -36,6 +37,11 @@ const webhookTone: Record<string, SemanticTone> = { DELIVERED: 'success', PENDIN
 // When re-enabling, also restore getPartnerWebhooks in the useAsync fetch above.
 const SHOW_ACCESS_CARD = false;
 
+// Webhook status-push (#5) isn't wired to a live vendor yet, so the webhook-secret
+// controls are hidden (not removed — the rotate handler + backend stay intact).
+// Flip to true to show "Webhook secret ending ••…" + Regenerate in the Integration card.
+const SHOW_WEBHOOK_SECRET = false;
+
 export function PartnerDetail() {
   const navigate = useNavigate();
   const { id = '' } = useParams();
@@ -44,7 +50,7 @@ export function PartnerDetail() {
     () => Promise.all([getPartner(id), getPartnerActivity(id), getPartnerOrders(id)]),
     [id],
   );
-  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [rotated, setRotated] = useState<{ label: string; value: string } | null>(null);
   const [tab, setTab] = useState<'overview' | 'catalogue'>('overview');
   const [orderRow, setOrderRow] = useState<PartnerOrderRow | null>(null);
 
@@ -90,13 +96,25 @@ export function PartnerDetail() {
     }
   };
 
-  const rotate = async () => {
-    if (!window.confirm('Regenerate the secret? The current secret stops working immediately.')) return;
+  const rotateToken = async () => {
+    if (!window.confirm('Regenerate the API token? The current token stops working immediately.')) return;
     try {
-      const { secret } = await rotatePartnerSecret(id);
-      setNewSecret(secret);
+      const { token } = await rotatePartnerToken(id);
+      setRotated({ label: 'New API token', value: token });
+      reload();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not rotate secret');
+      flash(e instanceof ApiError ? e.message : 'Could not rotate token');
+    }
+  };
+
+  const rotateWebhook = async () => {
+    if (!window.confirm('Regenerate the webhook secret? The current one stops working immediately.')) return;
+    try {
+      const { webhookSecret } = await rotatePartnerWebhookSecret(id);
+      setRotated({ label: 'New webhook secret', value: webhookSecret });
+      reload();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not rotate webhook secret');
     }
   };
 
@@ -136,7 +154,7 @@ export function PartnerDetail() {
 
       {tab === 'overview' ? (
         <div className={styles.detailGrid}>
-          <IntegrationCard partner={partner} onRotate={rotate} />
+          <IntegrationCard partner={partner} onRotateToken={rotateToken} onRotateWebhook={rotateWebhook} />
           {SHOW_ACCESS_CARD && <AccessCard partner={partner} webhooks={[]} onSaved={reload} onReloadWebhooks={reload} />}
           <OrdersCard orders={orders.items} total={orders.meta.total} onView={setOrderRow} />
           <CommercialsCard partner={partner} onSaved={reload} />
@@ -146,8 +164,8 @@ export function PartnerDetail() {
         <PartnerCatalogue partnerId={id} defaultBasis={partner.priceField} defaultCommission={partner.commissionPct ?? 0} />
       )}
 
-      {newSecret && (
-        <SecretModal secret={newSecret} onClose={() => setNewSecret(null)} />
+      {rotated && (
+        <SecretModal label={rotated.label} value={rotated.value} onClose={() => setRotated(null)} />
       )}
       {orderRow && <PartnerOrderDrawer order={orderRow} onClose={() => setOrderRow(null)} />}
     </div>
@@ -156,27 +174,36 @@ export function PartnerDetail() {
 
 // ── Integration (hand-to-vendor) ─────────────────────────────────────────────
 
-function IntegrationCard({ partner, onRotate }: { partner: AdminPartner; onRotate: () => void }) {
+function IntegrationCard({ partner, onRotateToken, onRotateWebhook }: { partner: AdminPartner; onRotateToken: () => void; onRotateWebhook: () => void }) {
   return (
     <Card pad="lg">
       <div className={styles.cardTitle}>Integration</div>
-      <p className={styles.cardHint}>Share these with the vendor. The secret is shown once — keep it server-side only.</p>
+      <p className={styles.cardHint}>Share the base URL + token with the vendor. The token is shown once — keep it server-side only.</p>
       <CopyRow label="Base URL" value={BASE_URL} mono />
-      <CopyRow label="API key" value={partner.apiKey} mono />
+      <a href={`${BASE_URL}/docs`} target="_blank" rel="noreferrer" className={s.muted} style={{ fontSize: 12.5, display: 'inline-block', margin: '2px 2px 8px', textDecoration: 'underline' }}>
+        Open API docs (Swagger) ↗
+      </a>
       <div className={styles.signBox}>
         <div className={styles.signTitle}>Authentication</div>
         <p className={styles.signText}>
-          Send two headers over HTTPS: <code>X-Api-Key</code> (the key above) and{' '}
-          <code>Authorization: Bearer &lt;secret&gt;</code>. No request signing. Order posts also need an{' '}
-          <code>Idempotency-Key</code>.
+          Send one header over HTTPS: <code>Authorization: Bearer &lt;token&gt;</code>. No API key, no signing. Order posts dedupe
+          on your own <code>externalRef</code>, so retries are safe.
         </p>
       </div>
       <div className={styles.cardFoot}>
-        <span className={s.muted}>Secret ending ••{partner.secretLast4 ?? '????'}</span>
-        <Button variant="secondary" onClick={onRotate}>
-          <RotateCw size={14} /> Regenerate secret
+        <span className={s.muted}>Token ending ••{partner.apiTokenLast4 ?? '????'}</span>
+        <Button variant="secondary" onClick={onRotateToken}>
+          <RotateCw size={14} /> Regenerate token
         </Button>
       </div>
+      {SHOW_WEBHOOK_SECRET && (
+        <div className={styles.cardFoot}>
+          <span className={s.muted}>Webhook secret ending ••{partner.webhookSecretLast4 ?? '????'}</span>
+          <Button variant="secondary" onClick={onRotateWebhook}>
+            <RotateCw size={14} /> Regenerate webhook secret
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -372,17 +399,17 @@ function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
 
 // ── Orders received ──────────────────────────────────────────────────────────
 
-const ORDER_COLS = '1.4fr 0.9fr 1.6fr 1fr 0.9fr 40px';
+const ORDER_COLS = '1.3fr 0.85fr 1.4fr 1fr 0.95fr 0.9fr 40px';
 
 // Dev-only sample so the empty Orders UI is reviewable (never in production).
 const DEMO_ORDERS: PartnerOrderRow[] = [
   {
-    id: 'demo-o1', orderNo: 'IMC-84213007', externalRef: 'GM-9921', checkoutGroup: null, status: 'Processing',
+    id: 'demo-o1', orderNo: 'IMC-84213007', externalRef: 'GM-9921', checkoutGroup: null, status: 'Processing', reseller: 'TechnoReseller',
     subtotal: 3299, total: 3299, itemCount: 1, createdAt: ago(38), dispatchedAt: null, awb: null, courier: null,
     items: [{ name: 'Galaxy A15 5G', sku: 'GP-AN-1000', image: null, qty: 1, unitPrice: 3299, lineTotal: 3299 }],
   },
   {
-    id: 'demo-o2', orderNo: 'IMC-84119221', externalRef: 'GM-9907', checkoutGroup: null, status: 'In transit',
+    id: 'demo-o2', orderNo: 'IMC-84119221', externalRef: 'GM-9907', checkoutGroup: null, status: 'In transit', reseller: 'MobileHub',
     subtotal: 12980, total: 12980, itemCount: 2, createdAt: ago(300), dispatchedAt: ago(90), awb: 'BD1234567', courier: 'Bluedart',
     items: [
       { name: 'Anker PowerCore 20K', sku: 'AC-PC-2000', image: null, qty: 2, unitPrice: 3990, lineTotal: 7980 },
@@ -390,7 +417,7 @@ const DEMO_ORDERS: PartnerOrderRow[] = [
     ],
   },
   {
-    id: 'demo-o3', orderNo: 'IMC-83911772', externalRef: 'GM-9880', checkoutGroup: null, status: 'Delivered',
+    id: 'demo-o3', orderNo: 'IMC-83911772', externalRef: 'GM-9880', checkoutGroup: null, status: 'Delivered', reseller: 'First-party',
     subtotal: 74999, total: 74999, itemCount: 1, createdAt: ago(2880), dispatchedAt: ago(2600), awb: 'DL9988776', courier: 'Delhivery',
     items: [{ name: 'Galaxy S24 Ultra', sku: 'GP-SS-9000', image: null, qty: 1, unitPrice: 74999, lineTotal: 74999 }],
   },
@@ -409,7 +436,7 @@ function OrdersCard({ orders, total, onView }: { orders: PartnerOrderRow[]; tota
       {rows.length === 0 ? (
         <EmptyState icon={<ShoppingBag size={22} />} title="No orders received yet" body="Orders this partner posts through the API will appear here." />
       ) : (
-        <DataTable cols={ORDER_COLS} headers={['Order', 'Date', 'Product', 'Status', 'Total', '']}>
+        <DataTable cols={ORDER_COLS} headers={['Order', 'Date', 'Product', 'Reseller', 'Status', 'Total', '']}>
           {rows.slice(0, 10).map((o) => (
             <Row key={o.id} cols={ORDER_COLS} onClick={() => onView(o)}>
               <div className={styles.ordId}>
@@ -421,6 +448,7 @@ function OrdersCard({ orders, total, onView }: { orders: PartnerOrderRow[]; tota
                 {o.items[0]?.name ?? '—'}
                 {o.itemCount > 1 && <span className={s.muted}> +{o.itemCount - 1} more</span>}
               </div>
+              <div className={s.muted}>{o.reseller}</div>
               <div><StatusPill label={o.status} tone={orderStatusTone[o.status]} /></div>
               <div className={s.price}>{inr(o.total)}</div>
               <button className={s.iconBtn} onClick={(e) => { e.stopPropagation(); onView(o); }} aria-label="View order"><Eye size={15} /></button>
@@ -469,6 +497,13 @@ function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClos
           </ul>
         </div>
 
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Fulfilment</div>
+          <dl className={styles.pdMeta}>
+            <div><dt>Reseller</dt><dd>{order.reseller}</dd></div>
+          </dl>
+        </div>
+
         {(order.courier || order.awb || order.dispatchedAt) && (
           <div className={styles.pdSection}>
             <div className={styles.pdSectionTitle}>Shipping</div>
@@ -490,15 +525,15 @@ function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClos
   );
 }
 
-function SecretModal({ secret, onClose }: { secret: string; onClose: () => void }) {
+function SecretModal({ label, value, onClose }: { label: string; value: string; onClose: () => void }) {
   return (
     <div className={styles.secretOverlay} onClick={onClose}>
       <div className={styles.secretCard} onClick={(e) => e.stopPropagation()}>
         <div className={styles.secretWarn}>
           <AlertTriangle size={16} />
-          <span>New secret — copy it now, it won't be shown again.</span>
+          <span>{label} — copy it now, it won't be shown again.</span>
         </div>
-        <CopyRow label="Secret" value={secret} mono />
+        <CopyRow label={label} value={value} mono />
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
           <Button onClick={onClose}>Done</Button>
         </div>

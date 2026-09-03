@@ -517,16 +517,11 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
     }
   });
 
-  // Push the status change to the origin partner's webhook (no-op for internal orders).
-  if (nextOrderStatus && nextOrderStatus !== order.status) {
-    await notifyPartnerOrderStatus({
-      source: order.source,
-      partnerId: order.partnerId,
-      orderNo: order.orderNo,
-      externalRef: order.externalRef,
-      status: nextOrderStatus,
-      checkoutGroup: order.checkoutGroup,
-    });
+  // Push to the origin partner's webhook on every shipment transition (so In
+  // Transit / Out for Delivery reach the partner, not only order-status changes).
+  // No-op for internal orders.
+  if (order.source === 'PARTNER') {
+    await notifyPartnerOrderStatus(order.id, { shipmentStatus: input.status });
   }
 
   return getOrder(userId, order.id);

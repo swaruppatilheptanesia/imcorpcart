@@ -615,8 +615,8 @@ export interface AdminPartner {
   slug: string;
   status: PartnerStatus;
   active: boolean;
-  apiKey: string;
-  secretLast4: string | null;
+  apiTokenLast4: string | null;
+  webhookSecretLast4: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   ipAllowlist: string[];
@@ -724,6 +724,7 @@ export interface PartnerOrderRow {
   externalRef: string | null;
   checkoutGroup: string | null;
   status: OrderStatus; // display label
+  reseller: string; // fulfilling reseller, or 'First-party' for house orders
   subtotal: number;
   total: number;
   itemCount: number;
@@ -742,11 +743,11 @@ export async function getPartnerOrders(id: string, query: { page?: number; pageS
   return { items, meta: r.meta };
 }
 
-// Secret is returned only once, at create/rotate.
+// Token + webhook secret are returned only once, at create.
 export interface PartnerCredentials {
   partner: AdminPartner;
-  apiKey: string;
-  secret: string;
+  token: string;
+  webhookSecret: string;
 }
 
 export interface WebhookDeliveryRow {
@@ -785,8 +786,11 @@ export function updatePartner(id: string, body: Partial<PartnerWrite>): Promise<
 export function deletePartner(id: string): Promise<{ ok: boolean }> {
   return apiFetch(`/partners/${id}`, { method: 'DELETE' });
 }
-export function rotatePartnerSecret(id: string): Promise<{ secret: string }> {
-  return apiFetch(`/partners/${id}/rotate-secret`, { method: 'POST', body: {} });
+export function rotatePartnerToken(id: string): Promise<{ token: string }> {
+  return apiFetch(`/partners/${id}/rotate-token`, { method: 'POST', body: {} });
+}
+export function rotatePartnerWebhookSecret(id: string): Promise<{ webhookSecret: string }> {
+  return apiFetch(`/partners/${id}/rotate-webhook-secret`, { method: 'POST', body: {} });
 }
 export async function getPartnerWebhooks(id: string): Promise<WebhookDeliveryRow[]> {
   const r = await apiFetch<{ data: WebhookDeliveryRow[] }>(`/partners/${id}/webhooks`);

@@ -1,6 +1,7 @@
-import { WebhookStatus } from '@prisma/client';
+import { WebhookStatus, OrderStatus, ShipmentStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { decryptSecret } from '../utils/secretbox';
+import { estimateDelivery } from './delivery.service';
 
 // Lightweight, in-process outbound webhook delivery. Each event is logged to
 // `webhook_deliveries` and POSTed to the partner's URL (authenticated with the
@@ -36,7 +37,11 @@ export async function attemptDelivery(id: string): Promise<void> {
   const attempts = d.attempts + 1;
   const body = JSON.stringify(d.payload);
   try {
-    const secret = decryptSecret(d.partner.apiSecretEnc);
+    if (!d.partner.webhookSecretEnc) {
+      await markFailure(id, attempts, null, 'partner has no webhook secret');
+      return;
+    }
+    const secret = decryptSecret(d.partner.webhookSecretEnc);
     const res = await fetch(d.url, {
       method: 'POST',
       headers: {
@@ -92,22 +97,60 @@ export function startWebhookRetryLoop() {
   return timer;
 }
 
-// Push a status change for a partner-sourced order.
-export async function notifyPartnerOrderStatus(order: {
-  source: string;
-  partnerId: string | null;
-  orderNo: string;
-  externalRef: string | null;
-  status: string;
-  checkoutGroup: string | null;
-}) {
-  if (order.source !== 'PARTNER' || !order.partnerId) return;
-  await enqueueWebhook(order.partnerId, 'order.status', {
+// Map our internal statuses to GenieMart's vocabulary. The shipment carries the
+// granular states (In Transit / Out for Delivery) that Order.status collapses.
+const SHIPMENT_TO_PARTNER_STATUS: Record<ShipmentStatus, string> = {
+  PENDING: 'Confirmed',
+  DISPATCHED: 'Dispatched',
+  IN_TRANSIT: 'In Transit',
+  OUT_FOR_DELIVERY: 'Out for Delivery',
+  DELIVERED: 'Delivered',
+  FAILED: 'Failed',
+  RETURNED: 'Returned',
+};
+const ORDER_TO_PARTNER_STATUS: Record<OrderStatus, string> = {
+  PLACED: 'Confirmed',
+  CONFIRMED: 'Confirmed',
+  DISPATCHED: 'Dispatched',
+  DELIVERED: 'Delivered',
+  CANCELLED: 'Cancelled',
+  RETURNED: 'Returned',
+};
+
+// Push an order status change to the origin partner's webhook (no-op for internal
+// orders). Loads the order and builds the rich payload GenieMart expects. Pass a
+// `shipmentStatus` for transit updates (so In Transit / Out for Delivery are
+// emitted), or an `event` (e.g. 'order.cancelled') to override the event name.
+export async function notifyPartnerOrderStatus(orderId: string, opts: { event?: string; shipmentStatus?: ShipmentStatus } = {}) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      address: { select: { pincode: true } },
+      items: { select: { product: { select: { sku: true } } } },
+      shipment: { select: { id: true, awbNumber: true, dispatchedAt: true, deliveredAt: true, courier: { select: { name: true } } } },
+    },
+  });
+  if (!order || order.source !== 'PARTNER' || !order.partnerId) return;
+
+  const status = opts.shipmentStatus ? SHIPMENT_TO_PARTNER_STATUS[opts.shipmentStatus] : ORDER_TO_PARTNER_STATUS[order.status];
+  const eta = order.address?.pincode ? await estimateDelivery(order.address.pincode) : null;
+
+  await enqueueWebhook(order.partnerId, opts.event ?? 'order.status', {
     orderNo: order.orderNo,
     externalRef: order.externalRef,
-    status: order.status,
+    dealerCode: order.dealerCode,
+    itemCodes: order.items.map((i) => i.product.sku),
+    pincode: order.address?.pincode ?? null,
+    status,
+    statusAt: new Date().toISOString(),
+    shipmentId: order.shipment?.id ?? null,
+    awb: order.shipment?.awbNumber ?? null,
+    courier: order.shipment?.courier?.name ?? null,
+    tentativeDeliveryDate: eta?.etaDate ?? null,
+    dispatchedAt: order.shipment?.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
+    deliveredAt: order.shipment?.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
+    remarks: order.cancelReason ?? null,
     checkoutGroup: order.checkoutGroup,
-    at: new Date().toISOString(),
   });
 }
 

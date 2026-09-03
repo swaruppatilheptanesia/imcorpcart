@@ -1,11 +1,12 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 import { env } from '../config/env';
 import { AppError } from './AppError';
 
-// Symmetric secret handling for partner integration credentials. Unlike passwords
-// (hashed one-way), a partner's secret must be recoverable — we need the raw key
-// both to verify inbound bearer tokens and to authenticate outbound webhooks — so
-// it is AES-256-GCM encrypted at rest with a master key from the environment.
+// Secret handling for partner integration credentials. The inbound API token is
+// stored one-way SHA-256-hashed (looked up by hash, never recoverable). The
+// webhook secret must be recoverable — we send it on outbound webhooks for the
+// partner to verify — so it is AES-256-GCM encrypted at rest with a master key
+// from the environment.
 
 const ALGO = 'aes-256-gcm';
 
@@ -37,19 +38,17 @@ export function decryptSecret(enc: string): string {
   return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
 }
 
-/** Public partner id, sent by the partner as the `X-Api-Key` header. */
-export function generateApiKey(): string {
-  return `imcpk_${randomBytes(18).toString('base64url')}`;
-}
-
-/** The partner's signing secret (shown once at creation/rotation). */
-export function generateSecret(): string {
+/** The partner's single API token — the bearer credential (shown once). */
+export function generateApiToken(): string {
   return `imcsk_${randomBytes(32).toString('base64url')}`;
 }
 
-/** Timing-safe equality of a presented bearer secret against the expected one. */
-export function verifySecret(expected: string, provided: string): boolean {
-  const a = Buffer.from(expected);
-  const b = Buffer.from(provided ?? '');
-  return a.length === b.length && timingSafeEqual(a, b);
+/** The partner's webhook signing secret (shown once at creation/rotation). */
+export function generateWebhookSecret(): string {
+  return `imcwh_${randomBytes(32).toString('base64url')}`;
+}
+
+/** SHA-256 hex of an API token — the value we store and look up by. */
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }

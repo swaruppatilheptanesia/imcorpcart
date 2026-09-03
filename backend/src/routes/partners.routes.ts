@@ -21,7 +21,8 @@ router.post('/', validate({ body: createPartnerBody }), asyncHandler(ctrl.create
 router.get('/:id', validate({ params: idParam }), asyncHandler(ctrl.get));
 router.patch('/:id', validate({ params: idParam, body: updatePartnerBody }), asyncHandler(ctrl.update));
 router.delete('/:id', validate({ params: idParam }), asyncHandler(ctrl.remove));
-router.post('/:id/rotate-secret', validate({ params: idParam }), asyncHandler(ctrl.rotateSecret));
+router.post('/:id/rotate-token', validate({ params: idParam }), asyncHandler(ctrl.rotateApiToken));
+router.post('/:id/rotate-webhook-secret', validate({ params: idParam }), asyncHandler(ctrl.rotateWebhookSecret));
 router.get('/:id/webhooks', validate({ params: idParam }), asyncHandler(ctrl.webhooks));
 router.post('/:id/webhooks/test', validate({ params: idParam }), asyncHandler(ctrl.testWebhook));
 router.post('/:id/webhooks/:deliveryId/resend', asyncHandler(ctrl.resendWebhook));

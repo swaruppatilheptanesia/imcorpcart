@@ -36,16 +36,24 @@ model Address {
 }
 
 model Order {
-  id         String    @id @default(cuid())
-  orderNo    String    @unique
-  type       OrderType
+  id      String    @id @default(cuid())
+  orderNo String    @unique
+  type    OrderType
 
   // Origin: INTERNAL (employee checkout) or PARTNER (posted via /partner-api/v1).
-  source    OrderSource @default(INTERNAL)
-  partnerId String?     @map("partner_id")
-  partner   Partner?    @relation(fields: [partnerId], references: [id])
+  source      OrderSource @default(INTERNAL)
+  partnerId   String?     @map("partner_id")
+  partner     Partner?    @relation(fields: [partnerId], references: [id])
   // Partner's own order id (dedup + status lookups). Unique per partner.
-  externalRef String? @map("external_ref")
+  externalRef String?     @map("external_ref")
+
+  // Partner-order metadata (GenieMart dealer + delivery instructions). Null for
+  // internal orders. Echoed back on status/cancel pushes.
+  dealerCode           String? @map("dealer_code")
+  dealerName           String? @map("dealer_name")
+  dealerMobile         String? @map("dealer_mobile")
+  deliveryInstructions String? @map("delivery_instructions")
+  cancelReason         String? @map("cancel_reason")
 
   // Buyer. Null for partner orders (no internal employee/company).
   employeeId String?

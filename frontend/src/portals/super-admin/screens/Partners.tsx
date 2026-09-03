@@ -12,6 +12,11 @@ import styles from './Partners.module.css';
 
 const COLS = '1.3fr 1.4fr 0.9fr 0.8fr 0.8fr 90px';
 
+// Webhook status-push (#5) isn't wired to a live vendor yet, so the webhook URL
+// input + webhook-secret reveal are hidden (not removed — the state, create
+// payload, and backend stay intact). Flip to true to bring both back.
+const SHOW_WEBHOOK_FIELDS = false;
+
 export const statusTone: Record<string, SemanticTone> = {
   ACTIVE: 'success',
   ONBOARDING: 'warning',
@@ -61,14 +66,14 @@ export function Partners() {
       )}
 
       {state === 'live' && data && (
-        <DataTable cols={COLS} headers={['Partner', 'API key', 'Default basis', 'Commission', 'Webhook', '']}>
+        <DataTable cols={COLS} headers={['Partner', 'Token', 'Default basis', 'Commission', 'Webhook', '']}>
           {data.map((p) => (
             <Row key={p.id} cols={COLS} onClick={() => navigate(`/super-admin/partnerDetail/${p.id}`)}>
               <div className={styles.nameCell}>
                 <div className={styles.name}>{p.name}</div>
                 <StatusPill label={p.active ? p.status : 'Disabled'} tone={p.active ? statusTone[p.status] : 'neutral'} />
               </div>
-              <div className={styles.key}>{p.apiKey}</div>
+              <div className={styles.key}>••{p.apiTokenLast4 ?? '····'}</div>
               <div className={s.muted}>{p.priceField}</div>
               <div className={s.muted}>{p.commissionPct != null ? `${p.commissionPct}%` : '—'}</div>
               <div>
@@ -148,9 +153,11 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
       <Field label="Contact email">
         <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="ops@partner.com" />
       </Field>
-      <Field label="Webhook URL (optional)">
-        <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://partner.com/hooks/imcorpcart" />
-      </Field>
+      {SHOW_WEBHOOK_FIELDS && (
+        <Field label="Webhook URL (optional)">
+          <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://partner.com/hooks/imcorpcart" />
+        </Field>
+      )}
       <Field label="IP allowlist (comma-separated)">
         <Input value={ips} onChange={(e) => setIps(e.target.value)} placeholder="Blank = any IP" />
       </Field>
@@ -185,13 +192,13 @@ function CredentialsModal({ credentials, onClose }: { credentials: PartnerCreden
     >
       <div className={styles.secretWarn}>
         <AlertTriangle size={16} />
-        <span>Copy the secret now — it is shown <strong>once</strong> and cannot be retrieved later. You can rotate it if lost.</span>
+        <span>Copy these now — they are shown <strong>once</strong> and cannot be retrieved later. You can regenerate them if lost.</span>
       </div>
-      <CopyRow label="API key" value={credentials.apiKey} />
-      <CopyRow label="Secret" value={credentials.secret} mono icon={<KeyRound size={14} />} />
+      <CopyRow label="API token" value={credentials.token} mono icon={<KeyRound size={14} />} />
+      {SHOW_WEBHOOK_FIELDS && <CopyRow label="Webhook secret" value={credentials.webhookSecret} mono />}
       <p className={s.muted} style={{ fontSize: 12.5, margin: '10px 2px 0' }}>
-        The partner sends the API key as the <code>X-Api-Key</code> header and the secret as{' '}
-        <code>Authorization: Bearer &lt;secret&gt;</code> over HTTPS — no request signing.
+        The partner sends the token on every request as <code>Authorization: Bearer &lt;token&gt;</code> over HTTPS — no other
+        header, no signing.{SHOW_WEBHOOK_FIELDS && <> The <strong>webhook secret</strong> is how they verify webhooks we send them.</>}
       </p>
     </Modal>
   );

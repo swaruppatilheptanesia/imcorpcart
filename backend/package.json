@@ -26,6 +26,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.1",
+    "@types/swagger-ui-express": "^4.1.8",
     "nodemon": "^3.1.14",
     "prisma": "^5.19.0",
     "ts-node": "^10.9.2",
@@ -45,6 +46,7 @@
     "nanoid": "^3.3.16",
     "razorpay": "^2.9.8",
     "resend": "^6.21.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   }
 }

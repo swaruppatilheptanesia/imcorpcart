@@ -7,7 +7,7 @@ import { notDeleted } from '../models/selectors';
 import { pickBuyBox, shopProductInclude } from './shop.service';
 import { resolveBasePrice, vendorPrice } from './partner.service';
 import { estimateDelivery } from './delivery.service';
-import { enqueueWebhook } from './webhook.service';
+import { enqueueWebhook, notifyPartnerOrderStatus } from './webhook.service';
 import type { PartnerPrincipal } from '../types/express';
 import type { AcceptOrderInput } from '../validators/partner.schema';
 
@@ -22,64 +22,68 @@ interface PricedLine {
   resellerId: string | null;
 }
 
-// Validate a partner-posted order against our buy box + serviceability, then (on
-// success) create one Order per fulfilling seller. Idempotent on (partner, key).
-export async function acceptOrder(partner: PartnerPrincipal, key: string, input: AcceptOrderInput) {
-  // 1. Idempotency replay.
-  const prior = await prisma.partnerIdempotencyKey.findUnique({
-    where: { partnerId_key: { partnerId: partner.id, key } },
-  });
-  if (prior) return { statusCode: prior.statusCode, body: prior.responseJson, replay: true };
+// Structured rejection so the partner gets an exact, machine-readable reason.
+type RejectCode = 'NOT_IN_CATALOGUE' | 'OUT_OF_STOCK' | 'PRICE_MISMATCH' | 'PINCODE_UNSERVICEABLE';
+interface Rejection {
+  code: RejectCode;
+  sku?: string;
+  message: string;
+  expected?: number;
+  got?: number;
+}
 
-  // 2. Dedup by the partner's own order id (a retry without an idempotency key).
-  if (input.externalRef) {
-    const existing = await prisma.order.findFirst({
-      where: { partnerId: partner.id, externalRef: input.externalRef },
-      select: { orderNo: true, checkoutGroup: true },
-    });
-    if (existing) {
-      const body = { status: 'ACCEPTED', orderNo: existing.orderNo, checkoutGroup: existing.checkoutGroup, duplicate: true };
-      return persist(partner.id, key, 200, body);
-    }
+// Validate a partner-posted order against our buy box + serviceability, then (on
+// success) create one Order per fulfilling seller. Deduplicated on the partner's
+// own order id (externalRef) — re-posting the same id returns the existing order
+// instead of creating a duplicate, so posts are safe to retry.
+export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderInput) {
+  // 1. Dedup by the partner's own order id — a retry returns the existing order.
+  const existing = await prisma.order.findFirst({
+    where: { partnerId: partner.id, externalRef: input.externalRef },
+    select: { orderNo: true, checkoutGroup: true },
+  });
+  if (existing) {
+    return { statusCode: 200, body: { status: 'ACCEPTED', orderNo: existing.orderNo, checkoutGroup: existing.checkoutGroup, duplicate: true } };
   }
 
-  // 3. Validate + price each line against the partner's catalogue entry (the
+  // 2. Validate + price each line against the partner's catalogue entry (the
   // configured basis + commission), and check availability.
   const lines: PricedLine[] = [];
-  const rejections: string[] = [];
+  const rejections: Rejection[] = [];
   for (const item of input.items) {
     const entry = await prisma.partnerCatalogueEntry.findFirst({
       where: { partnerId: partner.id, product: { sku: item.sku, status: ProductStatus.ACTIVE, ...notDeleted } },
       include: { product: { include: shopProductInclude } },
     });
     if (!entry) {
-      rejections.push(`SKU not in your catalogue: ${item.sku}`);
+      rejections.push({ code: 'NOT_IN_CATALOGUE', sku: item.sku, message: `SKU not in your catalogue: ${item.sku}` });
       continue;
     }
     const product = entry.product;
     const winner = pickBuyBox(product.offers);
     if (!winner || winner.quantity < item.qty) {
-      rejections.push(`Out of stock: ${item.sku}`);
+      rejections.push({ code: 'OUT_OF_STOCK', sku: item.sku, message: `Out of stock: ${item.sku}` });
       continue;
     }
     const unitPrice = vendorPrice(resolveBasePrice(product, entry.priceBasis), entry.commissionPct);
     if (item.price !== undefined && Math.abs(item.price - unitPrice) > PRICE_TOLERANCE) {
-      rejections.push(`Price mismatch for ${item.sku}: expected ₹${unitPrice}, got ₹${item.price}`);
+      rejections.push({ code: 'PRICE_MISMATCH', sku: item.sku, message: `Price mismatch for ${item.sku}`, expected: unitPrice, got: item.price });
       continue;
     }
     lines.push({ productId: product.id, sku: item.sku, quantity: item.qty, unitPrice, resellerId: winner.resellerId ?? null });
   }
 
-  // 4. Pincode serviceability.
+  // 3. Pincode serviceability.
   const eta = await estimateDelivery(input.shipping.pincode);
-  if (!eta.serviceable) rejections.push(`Not serviceable to pincode ${input.shipping.pincode}`);
-
-  if (rejections.length) {
-    const body = { status: 'REJECTED', reasons: rejections };
-    return persist(partner.id, key, 422, body);
+  if (!eta.serviceable) {
+    rejections.push({ code: 'PINCODE_UNSERVICEABLE', message: `Not serviceable to pincode ${input.shipping.pincode}` });
   }
 
-  // 5. Create one order per fulfilling seller (mirrors the storefront split-loop,
+  if (rejections.length) {
+    return { statusCode: 422, body: { status: 'REJECTED', reasons: rejections } };
+  }
+
+  // 4. Create one order per fulfilling seller (mirrors the storefront split-loop,
   // minus payment/wallet — partner orders are post-paid B2B).
   const groups = new Map<string, PricedLine[]>();
   for (const l of lines) {
@@ -91,8 +95,6 @@ export async function acceptOrder(partner: PartnerPrincipal, key: string, input:
   const baseNo = Date.now().toString().slice(-8);
   const checkoutGroup = nanoid(12);
 
-  // Create the orders AND the idempotency record atomically, so a crash can't
-  // leave orphan orders without a replayable response.
   const result = await prisma.$transaction(async (tx) => {
     const address = await tx.address.create({
       data: {
@@ -117,7 +119,11 @@ export async function acceptOrder(partner: PartnerPrincipal, key: string, input:
           type: OrderType.EPP,
           source: OrderSource.PARTNER,
           partnerId: partner.id,
-          externalRef: input.externalRef ?? null,
+          externalRef: input.externalRef,
+          dealerCode: input.dealerCode ?? null,
+          dealerName: input.dealerName ?? null,
+          dealerMobile: input.dealerMobile ?? null,
+          deliveryInstructions: input.deliveryInstructions ?? null,
           resellerId: gLines[0].resellerId,
           checkoutGroup,
           addressId: address.id,
@@ -138,10 +144,7 @@ export async function acceptOrder(partner: PartnerPrincipal, key: string, input:
       orderNos.push(order.orderNo);
     }
     const body = { status: 'ACCEPTED', orderNo: orderNos[0], checkoutGroup, orderCount: orderNos.length, orderNos };
-    await tx.partnerIdempotencyKey.create({
-      data: { partnerId: partner.id, key, statusCode: 201, responseJson: body, checkoutGroup },
-    });
-    return { statusCode: 201, body, replay: false as const };
+    return { statusCode: 201, body };
   });
 
   // Best-effort audit (actorId is a User FK, so the partner id goes in entityId).
@@ -152,14 +155,39 @@ export async function acceptOrder(partner: PartnerPrincipal, key: string, input:
   return result;
 }
 
-// Store an idempotency record for a non-created outcome (reject / dedup) so a
-// replay returns the identical response.
-async function persist(partnerId: string, key: string, statusCode: number, body: Record<string, unknown>) {
-  const checkoutGroup = (body.checkoutGroup as string | undefined) ?? null;
-  await prisma.partnerIdempotencyKey.create({
-    data: { partnerId, key, statusCode, responseJson: body as Prisma.InputJsonValue, checkoutGroup },
+// Cancel a partner's order (the whole order / checkout group). Only PLACED or
+// CONFIRMED orders are cancellable. Partner orders don't reserve offer stock at
+// placement (stock is fulfillment-managed), so there is nothing to restore.
+export async function cancelPartnerOrder(partner: PartnerPrincipal, ref: string, reason?: string) {
+  const orders = await prisma.order.findMany({
+    where: { partnerId: partner.id, OR: [{ orderNo: ref }, { externalRef: ref }] },
+    select: { id: true, orderNo: true, status: true },
   });
-  return { statusCode, body, replay: false };
+  if (!orders.length) throw AppError.notFound('Order not found');
+
+  const blocked = orders.find((o) => o.status !== OrderStatus.PLACED && o.status !== OrderStatus.CONFIRMED);
+  if (blocked) {
+    return {
+      statusCode: 422,
+      body: {
+        status: 'REJECTED',
+        reasons: [{ code: 'NOT_CANCELLABLE', orderNo: blocked.orderNo, message: `Order ${blocked.orderNo} is ${blocked.status} and can no longer be cancelled` }],
+      },
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const o of orders) {
+      await tx.order.update({ where: { id: o.id }, data: { status: OrderStatus.CANCELLED, cancelReason: reason ?? null } });
+      await tx.orderStatusHistory.create({
+        data: { orderId: o.id, status: OrderStatus.CANCELLED, note: reason ? `Cancelled by partner: ${reason}` : 'Cancelled by partner' },
+      });
+    }
+  });
+
+  for (const o of orders) await notifyPartnerOrderStatus(o.id, { event: 'order.cancelled' });
+
+  return { statusCode: 200, body: { status: 'CANCELLED', orderNo: orders[0].orderNo, orderNos: orders.map((o) => o.orderNo) } };
 }
 
 // Partner reads one of its orders by our orderNo or their externalRef.
@@ -176,6 +204,11 @@ export async function getPartnerOrder(partner: PartnerPrincipal, ref: string) {
       externalRef: o.externalRef,
       status: o.status,
       checkoutGroup: o.checkoutGroup,
+      dealerCode: o.dealerCode,
+      dealerName: o.dealerName,
+      dealerMobile: o.dealerMobile,
+      deliveryInstructions: o.deliveryInstructions,
+      cancelReason: o.cancelReason,
       subtotal: o.subtotal,
       total: o.total,
       createdAt: o.createdAt,

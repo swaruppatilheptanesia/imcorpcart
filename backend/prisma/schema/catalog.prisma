@@ -92,8 +92,8 @@ model Product {
   visibilities ProductVisibility[]
   inventory    Inventory? // DEPRECATED — per-offer stock lives on ProductOffer
 
-  cartItems     CartItem[]
-  smartEppItems SmartEppRequestItem[]
+  cartItems      CartItem[]
+  smartEppItems  SmartEppRequestItem[]
   orderItems     OrderItem[]
   wishlistItems  WishlistItem[]
   reviews        ProductReview[]

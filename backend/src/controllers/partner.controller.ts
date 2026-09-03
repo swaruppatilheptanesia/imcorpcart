@@ -24,8 +24,12 @@ export async function remove(req: Request, res: Response) {
   res.json(await service.deletePartner(getParam(req, 'id')));
 }
 
-export async function rotateSecret(req: Request, res: Response) {
-  res.json(await service.rotateSecret(getParam(req, 'id')));
+export async function rotateApiToken(req: Request, res: Response) {
+  res.json(await service.rotateApiToken(getParam(req, 'id')));
+}
+
+export async function rotateWebhookSecret(req: Request, res: Response) {
+  res.json(await service.rotateWebhookSecret(getParam(req, 'id')));
 }
 
 export async function webhooks(req: Request, res: Response) {

@@ -5,8 +5,9 @@ import { serialize, toNumber } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
 import { slugify } from '../utils/slug';
 import { parsePagination, pageMeta } from '../utils/pagination';
-import { encryptSecret, generateApiKey, generateSecret } from '../utils/secretbox';
+import { encryptSecret, generateApiToken, generateWebhookSecret, hashToken } from '../utils/secretbox';
 import { toStoreProduct, shopProductInclude, pickBuyBox } from './shop.service';
+import { estimateDelivery } from './delivery.service';
 import type {
   CreatePartnerInput,
   UpdatePartnerInput,
@@ -68,11 +69,11 @@ async function uniqueSlug(name: string): Promise<string> {
   return slug;
 }
 
-// Create a partner + generate its API key and secret. The raw secret is returned
-// ONCE (never stored in the clear) for the admin to hand to the vendor.
+// Create a partner + generate its API token and webhook secret. Both raw values
+// are returned ONCE (the token is only stored hashed) for the admin to hand over.
 export async function createPartner(input: CreatePartnerInput) {
-  const apiKey = generateApiKey();
-  const secret = generateSecret();
+  const token = generateApiToken();
+  const webhookSecret = generateWebhookSecret();
   const partner = await prisma.partner.create({
     data: {
       name: input.name,
@@ -81,9 +82,10 @@ export async function createPartner(input: CreatePartnerInput) {
       contactPhone: input.contactPhone ?? null,
       status: (input.status as OrgStatus) ?? OrgStatus.ONBOARDING,
       active: input.active ?? true,
-      apiKey,
-      apiSecretEnc: encryptSecret(secret),
-      secretLast4: secret.slice(-4),
+      apiTokenHash: hashToken(token),
+      apiTokenLast4: token.slice(-4),
+      webhookSecretEnc: encryptSecret(webhookSecret),
+      webhookSecretLast4: webhookSecret.slice(-4),
       ipAllowlist: input.ipAllowlist ?? [],
       webhookUrl: input.webhookUrl ?? null,
       priceField: input.priceField ?? PartnerPriceBasis.MOP,
@@ -91,7 +93,7 @@ export async function createPartner(input: CreatePartnerInput) {
       features: input.features ? (input.features as Prisma.InputJsonValue) : Prisma.DbNull,
     },
   });
-  return { partner: serialize(partner), apiKey, secret };
+  return { partner: serialize(partner), token, webhookSecret };
 }
 
 export async function updatePartner(id: string, input: UpdatePartnerInput) {
@@ -122,16 +124,28 @@ export async function deletePartner(id: string) {
   return { ok: true };
 }
 
-// Rotate the signing secret — invalidates the old one; returns the new raw secret once.
-export async function rotateSecret(id: string) {
+// Rotate the API token — invalidates the old one; returns the new raw token once.
+export async function rotateApiToken(id: string) {
   const existing = await prisma.partner.findFirst({ where: { id, ...notDeleted } });
   if (!existing) throw AppError.notFound('Partner not found');
-  const secret = generateSecret();
+  const token = generateApiToken();
   await prisma.partner.update({
     where: { id },
-    data: { apiSecretEnc: encryptSecret(secret), secretLast4: secret.slice(-4) },
+    data: { apiTokenHash: hashToken(token), apiTokenLast4: token.slice(-4) },
   });
-  return { secret };
+  return { token };
+}
+
+// Rotate the webhook signing secret — returns the new raw secret once.
+export async function rotateWebhookSecret(id: string) {
+  const existing = await prisma.partner.findFirst({ where: { id, ...notDeleted } });
+  if (!existing) throw AppError.notFound('Partner not found');
+  const webhookSecret = generateWebhookSecret();
+  await prisma.partner.update({
+    where: { id },
+    data: { webhookSecretEnc: encryptSecret(webhookSecret), webhookSecretLast4: webhookSecret.slice(-4) },
+  });
+  return { webhookSecret };
 }
 
 export async function listPartnerWebhooks(id: string) {
@@ -163,6 +177,7 @@ const partnerOrderSelect = {
   subtotal: true,
   total: true,
   createdAt: true,
+  reseller: { select: { name: true } }, // null = first-party / house fulfilment
   shipment: { select: { status: true, awbNumber: true, dispatchedAt: true, deliveredAt: true, courier: { select: { name: true } } } },
   items: {
     select: { quantity: true, unitPrice: true, lineTotal: true, product: { select: { name: true, sku: true, images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 } } } },
@@ -178,6 +193,7 @@ function toPartnerOrderRow(o: PartnerOrderPayload) {
     externalRef: o.externalRef,
     checkoutGroup: o.checkoutGroup,
     status: o.status,
+    reseller: o.reseller?.name ?? 'First-party',
     subtotal: o.subtotal,
     total: o.total,
     createdAt: o.createdAt,
@@ -239,9 +255,12 @@ type CatalogueEntryWithProduct = Prisma.PartnerCatalogueEntryGetPayload<{
 function toPartnerCatalogueProduct(entry: CatalogueEntryWithProduct) {
   const sp = toStoreProduct(entry.product, { public: true });
   const base = resolveBasePrice(entry.product, entry.priceBasis);
+  const price = vendorPrice(base, entry.commissionPct);
+  const mrp = toNumber(entry.product.mrp);
   return {
     ...toPartnerProduct(sp),
-    price: vendorPrice(base, entry.commissionPct),
+    price,
+    discountPercent: mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0,
     priceBasis: entry.priceBasis,
     commissionPct: entry.commissionPct != null ? toNumber(entry.commissionPct) : 0,
   };
@@ -273,6 +292,36 @@ export async function partnerCatalogueItem(partner: PartnerPrincipal, sku: strin
   });
   if (!entry) throw AppError.notFound('Product not found or not available to this partner');
   return toPartnerCatalogueProduct(entry);
+}
+
+// Default lead time before a dispatched shipment leaves the warehouse. A constant
+// for now; can move to DeliverySetting (per-pincode/global) later.
+const DEFAULT_DISPATCH_DAYS = 1;
+
+// Delivery ETA for a pincode, optionally scoped to an item (availability from the
+// partner's catalogue entry + buy-box stock). Mirrors GenieMart's "Tentative
+// Delivery Days" data point (Item Code, Pin Code → Availability, Delivery Days).
+export async function partnerDelivery(partner: PartnerPrincipal, pincode: string, sku?: string) {
+  const eta = await estimateDelivery(pincode);
+  let available: boolean | null = null;
+  if (sku) {
+    const entry = await prisma.partnerCatalogueEntry.findFirst({
+      where: { partnerId: partner.id, product: { sku, status: ProductStatus.ACTIVE, ...notDeleted } },
+      include: catalogueEntryInclude,
+    });
+    const winner = entry ? pickBuyBox(entry.product.offers) : null;
+    available = !!winner && winner.quantity > 0; // not in catalogue → unavailable
+  }
+  return {
+    pincode: eta.pincode,
+    sku: sku ?? null,
+    serviceable: eta.serviceable,
+    available,
+    tentativeDeliveryDays: eta.tatDays,
+    dispatchDays: DEFAULT_DISPATCH_DAYS,
+    courier: eta.courier || null,
+    etaDate: eta.etaDate,
+  };
 }
 
 // ── Admin catalogue management ───────────────────────────────────────────────

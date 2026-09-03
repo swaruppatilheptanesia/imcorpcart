@@ -69,8 +69,21 @@ export const partnerCatalogueQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(200).optional(),
 });
 
+export const deliveryQuery = z.object({
+  pincode: z.string().trim().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
+  sku: z.string().trim().min(1).optional(),
+});
+
+export const cancelOrderBody = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
 export const acceptOrderBody = z.object({
   externalRef: z.string().trim().min(1).max(120),
+  dealerCode: z.string().trim().max(120).optional(),
+  dealerName: z.string().trim().max(200).optional(),
+  dealerMobile: z.string().trim().max(20).optional(),
+  deliveryInstructions: z.string().trim().max(500).optional(),
   items: z
     .array(
       z.object({
@@ -96,7 +109,9 @@ export const acceptOrderBody = z.object({
 export type CreatePartnerInput = z.infer<typeof createPartnerBody>;
 export type UpdatePartnerInput = z.infer<typeof updatePartnerBody>;
 export type PartnerCatalogueQuery = z.infer<typeof partnerCatalogueQuery>;
+export type DeliveryQuery = z.infer<typeof deliveryQuery>;
 export type AcceptOrderInput = z.infer<typeof acceptOrderBody>;
+export type CancelOrderInput = z.infer<typeof cancelOrderBody>;
 export type CatalogueCandidatesQuery = z.infer<typeof catalogueCandidatesQuery>;
 export type AddCatalogueInput = z.infer<typeof addCatalogueBody>;
 export type UpdateCatalogueEntryInput = z.infer<typeof updateCatalogueEntryBody>;
