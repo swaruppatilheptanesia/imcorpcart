@@ -76,6 +76,7 @@ export interface ProductQuery {
   q?: string;
   group?: 'all' | 'phones' | 'accessories' | 'bags';
   status?: 'all' | 'active' | 'draft' | 'inactive';
+  source?: string; // VendorSource id — filter to one vendor's imported products
   page?: number;
   pageSize?: number;
 }
@@ -91,6 +92,7 @@ export async function getProducts(query: ProductQuery = {}): Promise<ProductList
       q: query.q,
       group: query.group && query.group !== 'all' ? query.group : undefined,
       status: query.status && query.status !== 'all' ? PRODUCT_STATUS_OUT[query.status] : undefined,
+      source: query.source,
       page: query.page,
       pageSize: query.pageSize,
     },
@@ -1027,3 +1029,103 @@ export {
   demoAccounts,
   DEMO_PASSWORD,
 } from './fixtures/admin';
+
+// ─── Inbound vendor sources (product import) ─────────────────────────────────
+
+export type VendorSourceStatus = 'ACTIVE' | 'SUSPENDED' | 'ONBOARDING';
+
+export interface VendorSource {
+  id: string;
+  name: string;
+  slug: string;
+  status: VendorSourceStatus;
+  active: boolean;
+  adapter: string;
+  baseUrl: string | null;
+  apiKeyLast4: string | null;
+  config: Record<string, unknown> | null;
+  discountPct: number;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  _count: { products: number; runs: number };
+}
+
+// Sources are auto-provisioned per adapter (no create); the admin only patches
+// config/discount/active.
+export interface VendorSourceUpdate {
+  name?: string;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  discountPct?: number;
+  active?: boolean;
+  config?: Record<string, unknown> | null;
+}
+
+export interface VendorImportRun {
+  id: string;
+  sourceId: string;
+  status: 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  fetched: number;
+  created: number;
+  updated: number;
+  failed: number;
+  errors: { ref: string; field: string; message: string }[] | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface VendorSourceProduct {
+  id: string;
+  sku: string;
+  name: string;
+  status: string;
+  hidden: boolean;
+  externalRef: string | null;
+  offers: { eppPrice: number; quantity: number }[];
+}
+
+export async function getVendorSources(): Promise<VendorSource[]> {
+  const r = await apiFetch<{ data: VendorSource[] }>('/vendor-sources');
+  return r.data;
+}
+
+export function getVendorSource(id: string): Promise<VendorSource> {
+  return apiFetch(`/vendor-sources/${id}`);
+}
+
+export function updateVendorSource(id: string, body: VendorSourceUpdate): Promise<VendorSource> {
+  return apiFetch(`/vendor-sources/${id}`, { method: 'PATCH', body });
+}
+
+export function syncVendorSource(id: string): Promise<VendorImportRun> {
+  return apiFetch(`/vendor-sources/${id}/sync`, { method: 'POST' });
+}
+
+/** Admin per-product show/hide on the storefront (PUT the product master). */
+export function setProductHidden(id: string, hidden: boolean): Promise<unknown> {
+  return apiFetch(`/products/${id}`, { method: 'PUT', body: { hidden } });
+}
+
+/** Admin fulfilment: update the real shipment/transit status for any order. */
+export function updateOrderTransit(
+  id: string,
+  input: { status: string; awbNumber?: string; courierCode?: string; description?: string },
+): Promise<unknown> {
+  return apiFetch(`/orders/${id}/transit`, { method: 'PATCH', body: input });
+}
+
+export async function getVendorSourceRuns(
+  id: string,
+  query: { page?: number; pageSize?: number } = {},
+): Promise<{ items: VendorImportRun[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<VendorImportRun[]>>(`/vendor-sources/${id}/runs`, { query });
+  return { items: r.data, meta: r.meta };
+}
+
+export async function getVendorSourceProducts(
+  id: string,
+  query: { page?: number; pageSize?: number } = {},
+): Promise<{ items: VendorSourceProduct[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<VendorSourceProduct[]>>(`/vendor-sources/${id}/products`, { query });
+  return { items: r.data, meta: r.meta };
+}

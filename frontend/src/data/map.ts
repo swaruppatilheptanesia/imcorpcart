@@ -122,6 +122,9 @@ interface ApiProductRow {
   offers?: ApiOffer[];
   images?: { url: string }[];
   createdAt?: string;
+  hidden?: boolean;
+  sourceId?: string | null;
+  source?: { id: string; name: string } | null;
 }
 
 // Buy-box helpers — the storefront/admin views surface the cheapest active,
@@ -155,6 +158,10 @@ export function toProduct(r: ApiProductRow): Product {
     // Real image if present, else a deterministic gradient placeholder.
     g1: firstImage ?? g1,
     g2: firstImage ?? g2,
+    // Inbound-vendor provenance (the "tag") + admin show/hide.
+    vendorTag: r.source?.name ?? null,
+    sourceId: r.sourceId ?? null,
+    hidden: r.hidden ?? false,
   };
 }
 

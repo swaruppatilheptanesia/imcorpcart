@@ -1,0 +1,70 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Inbound vendor integration — pull external vendors' catalogs INTO ours.
+// A VendorSource is a supplier we import products from (the opposite direction
+// of Partner, which is an outbound buyer of our catalog). Each source runs a
+// per-vendor `adapter` (code) that pages the vendor's API and normalizes rows;
+// imported products land as DRAFT offers under a linked Reseller (the fulfilment
+// owner) and are published to ACTIVE by the admin. See docs/VENDOR_INTEGRATION_PLAN.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model VendorSource {
+  id     String    @id @default(cuid())
+  name   String
+  slug   String    @unique
+  status OrgStatus @default(ONBOARDING)
+  active Boolean   @default(true) // quick enable/disable kill-switch
+
+  // Which adapter drives the pull (key into the in-code adapter registry, e.g.
+  // "mobile-accessories", "sample"). A string — not a Prisma enum — so adding a
+  // new vendor adapter needs no migration.
+  adapter String
+
+  // Connection. apiKey is AES-GCM encrypted at rest (needed raw to call the
+  // vendor); keyless public vendors leave it null. `config` holds adapter opts
+  // (page size, category filter, shop id, vendor→our category-slug map).
+  baseUrl     String? @map("base_url")
+  apiKeyEnc   String? @map("api_key_enc")
+  apiKeyLast4 String? @map("api_key_last4") // admin display only
+  config      Json?
+
+  // Imported products are FIRST-PARTY (house offers, resellerId null) — imcorpcart
+  // is the seller and the admin handles fulfilment. The vendor is only a tag on the
+  // product (Product.sourceId/externalRef); there is no reseller entity.
+
+  // Pricing: our eppPrice = round(MRP × (1 − discountPct/100)).
+  discountPct Decimal @default(0) @map("discount_pct") @db.Decimal(5, 2)
+
+  lastSyncedAt DateTime? @map("last_synced_at")
+
+  products Product[]
+  runs     VendorImportRun[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("vendor_sources")
+}
+
+// One import run = one "Run sync" click. Persisted as the import log (bulk import
+// only writes an audit summary; here we keep the run history for review).
+model VendorImportRun {
+  id       String       @id @default(cuid())
+  sourceId String
+  source   VendorSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  status      String  @default("RUNNING") // RUNNING | SUCCESS | PARTIAL | FAILED
+  fetched     Int     @default(0)
+  created     Int     @default(0)
+  updated     Int     @default(0)
+  failed      Int     @default(0)
+  errors      Json? // [{ ref, field, message }]
+  startedById String? @map("started_by_id")
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  @@index([sourceId])
+  @@map("vendor_import_runs")
+}

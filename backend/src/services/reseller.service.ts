@@ -437,12 +437,22 @@ export async function getOrder(userId: string, id: string) {
 
 export async function updateTransit(userId: string, id: string, input: TransitUpdateInput) {
   const resellerId = await resolveResellerId(userId);
-
   const order = await prisma.order.findFirst({
     where: { resellerId, OR: [{ id }, { orderNo: id }] },
     include: { shipment: true },
   });
   if (!order) throw AppError.notFound('Order not found');
+  await applyTransit(order, input, userId);
+  return getOrder(userId, order.id);
+}
+
+// Reseller-agnostic fulfilment core: given a fetched order (+ its shipment),
+// upsert the shipment, add a tracking event, sync Order.status, credit cashback
+// on delivery, and push the partner webhook. Called by the reseller portal
+// (scoped) and by the admin (any order — house/vendor orders included).
+export type OrderForTransit = Prisma.OrderGetPayload<{ include: { shipment: true } }>;
+
+export async function applyTransit(order: OrderForTransit, input: TransitUpdateInput, actorId: string) {
   if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED) {
     throw AppError.badRequest(`Cannot update transit on a ${order.status} order`);
   }
@@ -492,7 +502,7 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
         data: {
           orderId: order.id,
           status: nextOrderStatus,
-          changedById: userId,
+          changedById: actorId,
           note: input.description ?? `Transit: ${input.status}`,
         },
       });
@@ -523,8 +533,6 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
   if (order.source === 'PARTNER') {
     await notifyPartnerOrderStatus(order.id, { shipmentStatus: input.status });
   }
-
-  return getOrder(userId, order.id);
 }
 
 function defaultTransitNote(status: ShipmentStatus): string {

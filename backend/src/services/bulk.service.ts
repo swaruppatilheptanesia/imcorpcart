@@ -3,8 +3,14 @@ import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { serialize } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
-import { slugify } from '../utils/slug';
 import { slugishFamily } from './product-write';
+import {
+  D,
+  parseImageUrls,
+  parseSpecRows,
+  upsertCategoryBySlug,
+  upsertImportedProduct,
+} from './catalog-write';
 import { importRow } from '../validators/bulk.schema';
 import type {
   BulkImportInput,
@@ -12,32 +18,6 @@ import type {
   BulkCashbackUpdateInput,
   BulkImportRow,
 } from '../validators/bulk.schema';
-
-const D = (n: number) => new Prisma.Decimal(n);
-
-function parseImageUrls(raw?: string): string[] {
-  if (!raw) return [];
-  return raw
-    .split(/[|,]/)
-    .map((u) => u.trim())
-    .filter(Boolean);
-}
-
-// "Display: 6.1-inch OLED | RAM: 8GB" → [{k:'Display', v:'6.1-inch OLED'}, …].
-// Rows are pipe- or newline-separated; the first colon splits label from value.
-function parseSpecRows(raw?: string): { k: string; v: string }[] {
-  if (!raw) return [];
-  return raw
-    .split(/[|\n]/)
-    .map((pair) => {
-      const i = pair.indexOf(':');
-      if (i === -1) return null;
-      const k = pair.slice(0, i).trim();
-      const v = pair.slice(i + 1).trim();
-      return k && v ? { k, v } : null;
-    })
-    .filter((r): r is { k: string; v: string } => r !== null);
-}
 
 // Import product rows from the client spreadsheet. Each raw row is validated
 // individually (per-field errors, one bad row never fails the whole file), then
@@ -52,16 +32,8 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
     errors: [] as { sku: string; field: string; message: string }[],
   };
 
-  // Resolve/create categories once, up front.
+  // Resolve/create categories once, up front (cached per run).
   const categoryCache = new Map<string, string>(); // slug -> id
-  async function categoryId(name: string): Promise<string> {
-    const slug = slugify(name);
-    const cached = categoryCache.get(slug);
-    if (cached) return cached;
-    const cat = await prisma.category.upsert({ where: { slug }, create: { name, slug }, update: {} });
-    categoryCache.set(slug, cat.id);
-    return cat.id;
-  }
 
   for (let i = 0; i < input.rows.length; i++) {
     const raw = input.rows[i];
@@ -79,15 +51,17 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
     const row = parsed.data;
 
     try {
-      const catId = await categoryId(row.category);
-      const existing = await prisma.product.findUnique({ where: { sku: row.sku }, select: { id: true } });
-      if (existing) {
-        await updateImportedProduct(existing.id, row, catId);
-        result.updated += 1;
-      } else {
-        await createOneImportedProduct(row, catId);
-        result.created += 1;
-      }
+      const catId = await upsertCategoryBySlug(row.category, categoryCache);
+      const scal = productScalars(row, catId);
+      const outcome = await upsertImportedProduct({
+        sku: row.sku,
+        scalars: scal,
+        specRows: parseSpecRows(row.spec_rows),
+        images: parseImageUrls(row.image_urls),
+        offer: { resellerId: null, ...houseOfferData(row, scal.status) },
+      });
+      if (outcome === 'created') result.created += 1;
+      else result.updated += 1;
     } catch (e) {
       result.errors.push({ sku: label, field: '—', message: e instanceof Error ? e.message : 'unknown' });
     }
@@ -141,47 +115,6 @@ function houseOfferData(row: BulkImportRow, status: ProductStatus) {
     status,
     isActive: status === ProductStatus.ACTIVE,
   };
-}
-
-async function createOneImportedProduct(row: BulkImportRow, categoryId: string) {
-  const images = parseImageUrls(row.image_urls);
-  const specRows = parseSpecRows(row.spec_rows);
-  const scal = productScalars(row, categoryId);
-  await prisma.product.create({
-    data: {
-      sku: row.sku,
-      ...scal,
-      ...(specRows.length ? { specs: { rows: specRows } } : {}),
-      offers: { create: [{ resellerId: null, ...houseOfferData(row, scal.status) }] },
-      ...(images.length ? { images: { create: images.map((url, i) => ({ url, position: i })) } } : {}),
-    },
-  });
-}
-
-// Update an existing SKU from an import row: master scalars + specs/images (when
-// provided) + the house offer's price/stock.
-async function updateImportedProduct(id: string, row: BulkImportRow, categoryId: string) {
-  const images = parseImageUrls(row.image_urls);
-  const specRows = parseSpecRows(row.spec_rows);
-  const scal = productScalars(row, categoryId);
-  await prisma.$transaction(async (tx) => {
-    await tx.product.update({
-      where: { id },
-      data: {
-        ...scal,
-        ...(specRows.length ? { specs: { rows: specRows } } : {}),
-        ...(images.length
-          ? { images: { deleteMany: {}, create: images.map((url, i) => ({ url, position: i })) } }
-          : {}),
-      },
-    });
-    const house = await tx.productOffer.findFirst({ where: { productId: id, resellerId: null } });
-    if (house) {
-      await tx.productOffer.update({ where: { id: house.id }, data: houseOfferData(row, scal.status) });
-    } else {
-      await tx.productOffer.create({ data: { productId: id, resellerId: null, ...houseOfferData(row, scal.status) } });
-    }
-  });
 }
 
 // Apply a price adjustment across a scope (category group) of products.

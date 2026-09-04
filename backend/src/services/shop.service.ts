@@ -165,6 +165,15 @@ export const HAS_LIVE_OFFER = {
   offers: { some: { isActive: true, status: ProductStatus.ACTIVE, quantity: { gt: 0 }, deletedAt: null } },
 } satisfies Prisma.ProductWhereInput;
 
+// Admin visibility gate applied on every storefront query: a product is shown
+// only if the admin hasn't hidden it (`hidden: false`) AND — for imported vendor
+// products — its VendorSource is active (vendor suspend hides all its products).
+// Internal/bulk products (sourceId null) are always vendor-OK.
+export const STOREFRONT_SHOWABLE = {
+  hidden: false,
+  OR: [{ sourceId: null }, { source: { is: { active: true } } }],
+} satisfies Prisma.ProductWhereInput;
+
 // Sibling SKUs of a product's variant family (self included), for the detail
 // page's colour/variant selectors. Empty family → just the product itself.
 async function familyMembersOf(
@@ -173,7 +182,7 @@ async function familyMembersOf(
 ): Promise<ReturnType<typeof toFamilyMember>[]> {
   if (!p.familyKey) return [toFamilyMember(toStoreProduct(p, opts))];
   const rows = await prisma.product.findMany({
-    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
   });
   const self = rows.some((r) => r.id === p.id) ? rows : [p, ...rows];
@@ -197,7 +206,7 @@ function toFamilyMember(sp: StoreProductLite) {
 
 export async function listProducts() {
   const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
@@ -208,7 +217,7 @@ export async function listProducts() {
 
 export async function getProduct(id: string) {
   const p = await prisma.product.findFirst({
-    where: { id, ...notDeleted },
+    where: { id, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');
@@ -236,7 +245,7 @@ export async function getProduct(id: string) {
 
 export async function listPublicProducts() {
   const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
@@ -246,7 +255,7 @@ export async function listPublicProducts() {
 
 export async function getPublicProduct(id: string) {
   const p = await prisma.product.findFirst({
-    where: { id, status: ProductStatus.ACTIVE, ...notDeleted },
+    where: { id, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');

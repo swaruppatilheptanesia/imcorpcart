@@ -41,6 +41,10 @@ export const productListSelect = {
   offers: { where: notDeleted, select: offerSelect },
   // First image only — powers the list thumbnail (falls back to a gradient).
   images: { orderBy: { position: 'asc' }, take: 1, select: { url: true } },
+  // Inbound-vendor provenance + admin show/hide (for the Vendor tag/filter).
+  hidden: true,
+  sourceId: true,
+  source: { select: { id: true, name: true } },
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ProductSelect;

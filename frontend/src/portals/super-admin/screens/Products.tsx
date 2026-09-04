@@ -208,6 +208,22 @@ export function Products() {
                   <div style={{ minWidth: 0 }}>
                     <div className={s.cellName}>{p.name}</div>
                     <VendorTag name={p.brand} color={vendorColors[p.vendor]} />
+                    {p.vendorTag && (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginTop: 3,
+                          padding: '1px 7px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                          color: 'var(--accent)',
+                        }}
+                        title="Imported from an external vendor"
+                      >
+                        {p.vendorTag}{p.hidden ? ' · hidden' : ''}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={s.mono}>{p.sku}</div>

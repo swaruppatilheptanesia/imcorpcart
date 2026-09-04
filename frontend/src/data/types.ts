@@ -24,6 +24,9 @@ export interface Product {
   dateAdded: string; // formatted createdAt (e.g. "31 Dec 2026")
   g1: string; // gradient placeholder colors (stand in for real imagery)
   g2: string;
+  vendorTag?: string | null; // inbound vendor source name (null for internal/bulk)
+  sourceId?: string | null;
+  hidden?: boolean; // admin show/hide on the storefront
 }
 
 export type CouponType = 'pct' | 'flat';
