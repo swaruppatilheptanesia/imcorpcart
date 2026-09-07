@@ -14,6 +14,7 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { getRazorpay } from '../config/razorpay';
 import { HUBBLE_ADAPTER } from '../config/hubble';
+import { isDemoLoginEmail } from '../config/constants';
 import { AppError } from '../utils/AppError';
 import { serialize, toNumber } from '../models/serializers';
 import { notDeleted, orderFullInclude, shopOrderFullInclude } from '../models/selectors';
@@ -855,8 +856,9 @@ async function refundQuietly(paymentId: string) {
 // View-only demo accounts can browse/cart but never purchase — enforced
 // server-side (not just hidden in the UI) regardless of the global flag.
 async function assertNotViewOnly(userId: string) {
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true } });
-  if (u?.viewOnly) throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true, email: true } });
+  if (u?.viewOnly || isDemoLoginEmail(u?.email))
+    throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
 }
 
 // Step 1 of checkout: price the cart and open a Razorpay order for the grand

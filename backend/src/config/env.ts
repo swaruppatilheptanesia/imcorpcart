@@ -21,11 +21,6 @@ const schema = z.object({
   // z.coerce.boolean would treat "false" as true, so parse the literal string.
   OTP_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
-  // Comma-separated emails that skip the email-OTP step and sign in directly.
-  // For demo accounts on domains that can't receive real mail (e.g. the seeded
-  // Super Admin) — everyone else uses passwordless email-OTP.
-  OTP_BYPASS_EMAILS: z.string().default(''),
-
   // Master checkout switch. 'false' = browse/register only: the order-creation
   // endpoints 403 and the storefront hides every pay/checkout entry point. Set
   // 'true' (with live Razorpay keys) to open ordering. Same string-literal parse
@@ -82,11 +77,6 @@ export const env = {
   corsOrigins: raw.CORS_ORIGIN.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
-  otpBypassEmails: new Set(
-    raw.OTP_BYPASS_EMAILS.split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean),
-  ),
 };
 
 export type Env = typeof env;
