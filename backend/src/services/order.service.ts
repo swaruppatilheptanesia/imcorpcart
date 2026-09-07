@@ -5,6 +5,7 @@ import { parsePagination, pageMeta } from '../utils/pagination';
 import { orderListSelect, orderFullInclude } from '../models/selectors';
 import { serialize } from '../models/serializers';
 import { applyTransit } from './reseller.service';
+import { retryVoucherFulfilment, resendVoucherEmail } from './voucher-fulfilment.service';
 import type { OrderListQuery, OverrideStatusInput } from '../validators/order.schema';
 import type { TransitUpdateInput } from '../validators/reseller.schema';
 
@@ -84,6 +85,32 @@ export async function updateTransit(id: string, input: TransitUpdateInput, actor
   if (!order) throw AppError.notFound('Order not found');
   await applyTransit(order, input, actorId);
   return getOrder(order.id);
+}
+
+// Admin action: retry issuing a stuck/failed gift-card (Hubble voucher) line.
+// Idempotent on the Hubble referenceId, so a double-tap never double-issues.
+export async function retryVoucher(orderId: string, itemId: string) {
+  const item = await prisma.orderItem.findFirst({
+    where: { id: itemId, order: { OR: [{ id: orderId }, { orderNo: orderId }] } },
+    select: { id: true, orderId: true, voucherFulfilment: { select: { id: true } } },
+  });
+  if (!item) throw AppError.notFound('Voucher line not found');
+  if (!item.voucherFulfilment) throw AppError.badRequest('This line is not a gift-card voucher');
+  await retryVoucherFulfilment(item.id);
+  return getOrder(item.orderId);
+}
+
+// Admin action: re-send an already-issued gift-card email to the buyer (support).
+// The raw code is read server-side and never returned to the admin.
+export async function resendVoucher(orderId: string, itemId: string) {
+  const item = await prisma.orderItem.findFirst({
+    where: { id: itemId, order: { OR: [{ id: orderId }, { orderNo: orderId }] } },
+    select: { id: true, voucherFulfilment: { select: { status: true } } },
+  });
+  if (!item) throw AppError.notFound('Voucher line not found');
+  if (item.voucherFulfilment?.status !== 'DELIVERED') throw AppError.badRequest('This voucher has not been issued yet');
+  await resendVoucherEmail(item.id);
+  return { sent: true };
 }
 
 export async function cancelOrder(id: string, note: string | undefined, actorId: string) {

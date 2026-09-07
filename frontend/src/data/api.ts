@@ -1097,8 +1097,14 @@ export function updateVendorSource(id: string, body: VendorSourceUpdate): Promis
   return apiFetch(`/vendor-sources/${id}`, { method: 'PATCH', body });
 }
 
+/** Kicks off a background sync; returns the RUNNING run to poll (202). */
 export function syncVendorSource(id: string): Promise<VendorImportRun> {
   return apiFetch(`/vendor-sources/${id}/sync`, { method: 'POST' });
+}
+
+/** Poll one import run for live progress. */
+export function getVendorSourceRun(id: string, runId: string): Promise<VendorImportRun> {
+  return apiFetch(`/vendor-sources/${id}/runs/${runId}`);
 }
 
 /** Admin per-product show/hide on the storefront (PUT the product master). */
@@ -1112,6 +1118,33 @@ export function updateOrderTransit(
   input: { status: string; awbNumber?: string; courierCode?: string; description?: string },
 ): Promise<unknown> {
   return apiFetch(`/orders/${id}/transit`, { method: 'PATCH', body: input });
+}
+
+/** Admin: retry issuing a stuck/failed gift-card (Hubble voucher) line. */
+export async function retryVoucherFulfilment(orderId: string, itemId: string): Promise<OrderWithCuid> {
+  const clean = orderId.replace(/^#/, '');
+  const raw = await apiFetch<Parameters<typeof toOrderFull>[0]>(
+    `/orders/${clean}/items/${itemId}/retry-voucher`,
+    { method: 'POST' },
+  );
+  return toOrderFull(raw);
+}
+
+/** Admin: re-send an already-issued gift-card email to the buyer (code stays hidden from admin). */
+export function resendVoucherEmail(orderId: string, itemId: string): Promise<{ sent: boolean }> {
+  const clean = orderId.replace(/^#/, '');
+  return apiFetch(`/orders/${clean}/items/${itemId}/resend-voucher`, { method: 'POST' });
+}
+
+export interface VendorWalletBalance {
+  supported: boolean;
+  configured: boolean;
+  balance: number | null;
+  error?: string;
+}
+/** Hubble client wallet balance (ops aid on the vendor-source page). */
+export function getVendorWalletBalance(id: string): Promise<VendorWalletBalance> {
+  return apiFetch(`/vendor-sources/${id}/wallet`);
 }
 
 export async function getVendorSourceRuns(

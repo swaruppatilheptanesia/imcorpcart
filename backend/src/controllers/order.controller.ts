@@ -27,3 +27,11 @@ export async function cancel(req: Request, res: Response) {
   if (!req.user) throw AppError.unauthorized();
   res.json(await service.cancelOrder(getParam(req, 'id'), req.body?.note, req.user.id));
 }
+
+export async function retryVoucher(req: Request, res: Response) {
+  res.json(await service.retryVoucher(getParam(req, 'id'), getParam(req, 'itemId')));
+}
+
+export async function resendVoucher(req: Request, res: Response) {
+  res.json(await service.resendVoucher(getParam(req, 'id'), getParam(req, 'itemId')));
+}

@@ -4,7 +4,7 @@
 
 import { createAuthStore } from './auth-store';
 import { createHttpClient, createAuthApi } from './http';
-import type { StoreProduct, StoreCoupon, Shade, Freebie, Spec, ShopAddress, FamilyMember, Review } from './store-types';
+import type { StoreProduct, StoreCoupon, Shade, Freebie, Spec, ShopAddress, FamilyMember, Review, VoucherSpec } from './store-types';
 
 export const shopStore = createAuthStore('shopper');
 const client = createHttpClient(shopStore);
@@ -78,6 +78,8 @@ export interface CartLineView {
   itemId: string;
   productId: string;
   shade: string;
+  denomination?: number | null; // gift-card face value (null for normal products)
+  voucher?: VoucherSpec | null; // gift-card denomination options
   qty: number;
   name: string;
   brand: string;

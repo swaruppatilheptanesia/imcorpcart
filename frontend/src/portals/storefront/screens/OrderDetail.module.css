@@ -138,3 +138,69 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Gift-card (voucher) fulfilment panel ── */
+.voucherPanel {
+  margin: 6px 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  display: grid;
+  gap: 8px;
+}
+.voucherPending {
+  border-color: var(--border);
+  background: var(--surface2);
+}
+.voucherFailed {
+  border-color: color-mix(in srgb, var(--danger, #d1242f) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger, #d1242f) 6%, var(--surface));
+}
+.voucherHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.voucherCred {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.voucherCred:hover {
+  border-color: var(--accent);
+}
+.credLabel {
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.credValue {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.03em;
+  word-break: break-all;
+}
+.voucherMeta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text2);
+}
+.voucherLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}

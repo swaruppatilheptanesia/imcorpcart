@@ -144,12 +144,19 @@ const CAT_LABEL_OVERRIDE: Record<string, string> = {
   phones: 'Phones',
   accessories: 'Phone accessories',
   bags: 'Bags',
+  vouchers: 'Gift cards',
 };
 export const catLabel = (slug: string) => CAT_LABEL_OVERRIDE[slug] ?? titleCase(slug);
 
 // Preferred order: the established departments first, then any new category
 // alphabetically — so the nav stays stable as categories are added.
-const CAT_ORDER = ['phones', 'accessories', 'bags'];
+const CAT_ORDER = ['phones', 'accessories', 'bags', 'vouchers'];
+
+// The curated departments shown inline in the top nav bar. Every other
+// department (e.g. the ~40 imported vendor prodcats) is reachable only via the
+// "All Categories" mega-menu, so the bar never overflows no matter how many
+// categories get imported.
+const FEATURED = ['phones', 'accessories', 'bags', 'vouchers'];
 
 // Distinct top-level category slugs (p.group) present in the loaded catalog —
 // a category appears only once it has at least one product.
@@ -214,13 +221,23 @@ function subsFor(cat: StoreCategory): SubFacet[] {
     map.set(key, (map.get(key) ?? 0) + 1);
   }
   return [...map.entries()]
-    .map(([key, count]) => ({ key, label: titleCase(key), count }))
+    // Display-only label cleanup (raw key is kept for filtering): EMERGING_BRANDS → "Emerging Brands".
+    .map(([key, count]) => ({ key, label: titleCase(key.replace(/_/g, ' ').toLowerCase()), count }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // The full mega-menu tree: each department (a category with products) + its subs.
 export function categoryTree(): CategoryNode[] {
   return topGroups().map((key) => ({ key, label: catLabel(key), subs: subsFor(key) }));
+}
+
+// The curated departments shown inline in the nav bar: the FEATURED slugs that
+// actually have products, in FEATURED order. Everything else lives in the
+// "All Categories" mega-menu (categoryTree) so the bar can't overflow.
+export function featuredDepartments(): CategoryNode[] {
+  return categoryTree()
+    .filter((n) => FEATURED.includes(n.key))
+    .sort((a, b) => FEATURED.indexOf(a.key) - FEATURED.indexOf(b.key));
 }
 
 // Subcategory facets for the filter sidebar (empty for the "all" department).

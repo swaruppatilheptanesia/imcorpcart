@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, RefreshCw, Download, Eye, EyeOff, Pencil } from 'lucide-react';
 import { Card, Button, Field, Input, Toggle, StatusPill, DataTable, Row, EmptyState, Skeleton, useToast } from '@/components';
@@ -6,9 +6,11 @@ import {
   getVendorSource,
   getVendorSourceRuns,
   getVendorSourceProducts,
+  getVendorSourceRun,
   updateVendorSource,
   syncVendorSource,
   setProductHidden,
+  getVendorWalletBalance,
   type VendorImportRun,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
@@ -22,6 +24,7 @@ import styles from './Partners.module.css';
 
 const RUN_COLS = '1.1fr 0.7fr 0.7fr 0.7fr 0.7fr 1.1fr';
 const PROD_COLS = '1.6fr 0.9fr 0.7fr 0.8fr 150px';
+const PROD_PAGE_SIZE = 20;
 const runTone: Record<string, SemanticTone> = {
   SUCCESS: 'success',
   PARTIAL: 'warning',
@@ -34,10 +37,69 @@ export function VendorSourceDetail() {
   const { id = '' } = useParams();
   const { flash } = useToast();
   const { data, state, error, reload } = useAsync(
-    () => Promise.all([getVendorSource(id), getVendorSourceRuns(id, { pageSize: 20 }), getVendorSourceProducts(id, { pageSize: 100 })]),
+    () => Promise.all([getVendorSource(id), getVendorSourceRuns(id, { pageSize: 20 })]),
     [id],
   );
+  // Imported products get their own page state + reload (independent of source/runs).
+  const [prodPage, setProdPage] = useState(1);
+  const { data: prods, reload: reloadProducts } = useAsync(
+    () => getVendorSourceProducts(id, { page: prodPage, pageSize: PROD_PAGE_SIZE }),
+    [id, prodPage],
+  );
   const [busy, setBusy] = useState(false);
+
+  // Background sync: kick off → poll the RUNNING run for live progress.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<VendorImportRun | null>(null);
+  const finishedRef = useRef<string | null>(null); // guards against re-adopting a just-finished run
+
+  // Adopt an in-flight run on load/refresh (so progress resumes across a page reload).
+  const latestRun = data?.[1]?.items?.[0];
+  useEffect(() => {
+    if (latestRun && latestRun.status === 'RUNNING' && !activeRunId && latestRun.id !== finishedRef.current) {
+      setActiveRunId(latestRun.id);
+      setProgress(latestRun);
+    }
+  }, [latestRun, activeRunId]);
+
+  // Poll the active run every 2s until it finishes.
+  useEffect(() => {
+    if (!activeRunId) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const finish = (r: VendorImportRun) => {
+      finishedRef.current = r.id;
+      flash(`Sync ${r.status.toLowerCase()} — ${r.created} created · ${r.updated} updated · ${r.failed} failed`);
+      setActiveRunId(null);
+      setProgress(null);
+      reload(); // source counts + Import log
+      setProdPage(1);
+      reloadProducts();
+    };
+    const tick = async () => {
+      try {
+        const r = await getVendorSourceRun(id, activeRunId);
+        if (cancelled) return;
+        setProgress(r);
+        if (r.status !== 'RUNNING') return finish(r);
+        if (Date.now() - startedAt > 20 * 60 * 1000) {
+          flash('Sync is taking a while — check the Import log shortly.');
+          setActiveRunId(null);
+        }
+      } catch {
+        /* transient poll error — keep trying */
+      }
+    };
+    const iv = setInterval(tick, 2000);
+    tick(); // immediate first poll
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRunId, id]);
+
+  const syncing = busy || activeRunId != null;
 
   if (state === 'loading') {
     return (
@@ -59,7 +121,10 @@ export function VendorSourceDetail() {
     );
   }
 
-  const [source, runs, products] = data;
+  const [source, runs] = data;
+  const prodItems = prods?.items ?? [];
+  const prodTotal = prods?.meta.total ?? 0;
+  const prodPageCount = prods?.meta.pageCount ?? 1;
 
   const toggleActive = async () => {
     try {
@@ -74,11 +139,18 @@ export function VendorSourceDetail() {
   const runSync = async () => {
     setBusy(true);
     try {
-      const run = await syncVendorSource(id);
-      flash(`Sync ${run.status.toLowerCase()} — ${run.created} created · ${run.updated} updated · ${run.failed} failed`);
-      reload();
+      const run = await syncVendorSource(id); // 202 — RUNNING run; import continues in the background
+      finishedRef.current = null;
+      setProgress(run);
+      setActiveRunId(run.id); // starts the polling effect
+      reload(); // surface the RUNNING row in the Import log
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Sync failed');
+      if (e instanceof ApiError && e.status === 409) {
+        flash('A sync is already running for this vendor');
+        reload(); // the resume effect adopts the in-flight run
+      } else {
+        flash(e instanceof ApiError ? e.message : 'Could not start sync');
+      }
     } finally {
       setBusy(false);
     }
@@ -87,7 +159,7 @@ export function VendorSourceDetail() {
   const toggleHidden = async (productId: string, hidden: boolean) => {
     try {
       await setProductHidden(productId, hidden);
-      reload();
+      reloadProducts(); // only the products table changed — keep the current page
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not update');
     }
@@ -122,24 +194,60 @@ export function VendorSourceDetail() {
             Pull the vendor's catalog. Products go <strong>live immediately</strong> as first-party at EPP = MRP −{' '}
             {source.discountPct}%. Suspending the vendor (toggle above) hides all its products from the storefront.
           </p>
-          <Button onClick={runSync} disabled={busy || !source.active}>
-            <RefreshCw size={15} /> {busy ? 'Syncing…' : 'Run sync'}
+          <Button onClick={runSync} disabled={syncing || !source.active}>
+            <RefreshCw size={15} style={syncing ? { animation: 'saSpin 1s linear infinite' } : undefined} />{' '}
+            {syncing ? 'Syncing…' : 'Run sync'}
           </Button>
-          {source.lastSyncedAt && (
-            <div className={s.muted} style={{ fontSize: 12.5, marginTop: 10 }}>Last synced {fmtDate(source.lastSyncedAt)}</div>
+          {activeRunId && progress ? (
+            <div className={s.muted} style={{ fontSize: 12.5, marginTop: 10 }}>
+              Importing… {progress.fetched} fetched · {progress.created} new · {progress.updated} updated
+              {progress.failed ? ` · ${progress.failed} failed` : ''} — runs in the background, safe to leave this page.
+            </div>
+          ) : (
+            source.lastSyncedAt && (
+              <div className={s.muted} style={{ fontSize: 12.5, marginTop: 10 }}>Last synced {fmtDate(source.lastSyncedAt)}</div>
+            )
           )}
         </Card>
 
         <ConfigCard source={source} onSaved={reload} />
       </div>
 
+      {source.adapter === 'hubble' && <WalletCard id={id} />}
+
       <Card pad="lg" style={{ marginTop: 14 }}>
-        <div className={styles.cardTitle}>Imported products{products.meta.total ? ` · ${products.meta.total}` : ''}</div>
-        {products.items.length === 0 ? (
+        <div className={styles.cardTitle}>Imported products{prodTotal ? ` · ${prodTotal}` : ''}</div>
+        {!prods ? (
+          <Skeleton h={160} />
+        ) : prodTotal === 0 ? (
           <EmptyState icon={<Download size={22} />} title="No products yet" body="Run a sync to import this vendor's products." />
         ) : (
-          <DataTable cols={PROD_COLS} headers={['Product', 'Our price', 'Stock', 'On storefront', '']}>
-            {products.items.map((p) => (
+          <DataTable
+            cols={PROD_COLS}
+            headers={['Product', 'Our price', 'Stock', 'On storefront', '']}
+            footer={
+              prodPageCount > 1 ? (
+                <>
+                  <span>
+                    Showing {(prodPage - 1) * PROD_PAGE_SIZE + 1}–{Math.min(prodPage * PROD_PAGE_SIZE, prodTotal)} of {prodTotal}
+                  </span>
+                  <div className={styles.pager}>
+                    <button className={styles.pageBtn} disabled={prodPage <= 1} onClick={() => setProdPage((p) => Math.max(1, p - 1))}>
+                      Prev
+                    </button>
+                    <button
+                      className={styles.pageBtn}
+                      disabled={prodPage >= prodPageCount}
+                      onClick={() => setProdPage((p) => Math.min(prodPageCount, p + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+              ) : undefined
+            }
+          >
+            {prodItems.map((p) => (
               <Row key={p.id} cols={PROD_COLS}>
                 <div className={styles.nameCell}>
                   <div className={styles.name}>{p.name}</div>
@@ -210,6 +318,36 @@ function RunErrors({ runs }: { runs: VendorImportRun[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+// Hubble client wallet balance (ops aid): the client tops this up offline, and
+// every voucher order auto-debits it. A low/empty balance means new voucher orders
+// will fail to issue (and buyers get refunded), so it's worth surfacing.
+function WalletCard({ id }: { id: string }) {
+  const { data, state, reload } = useAsync(() => getVendorWalletBalance(id), [id]);
+  return (
+    <Card pad="lg" style={{ marginTop: 14 }}>
+      <div className={styles.cardTitle}>Hubble wallet</div>
+      <p className={styles.cardHint}>
+        Voucher orders are paid from this Hubble wallet (the client tops it up with their Hubble account manager).
+        Keep it funded — an empty wallet means new gift-card orders can’t be issued and buyers are refunded.
+      </p>
+      {state === 'loading' ? (
+        <Skeleton h={28} w={160} />
+      ) : data?.configured && data.balance != null ? (
+        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>{inr(data.balance)}</div>
+      ) : (
+        <div className={s.muted} style={{ fontSize: 12.5 }}>
+          {data && !data.configured
+            ? 'Hubble is not configured on the server (set HUBBLE_CLIENT_ID / HUBBLE_CLIENT_SECRET and restart).'
+            : 'Balance unavailable right now.'}
+        </div>
+      )}
+      <Button variant="secondary" onClick={reload} style={{ marginTop: 10 }}>
+        <RefreshCw size={14} /> Refresh
+      </Button>
+    </Card>
   );
 }
 

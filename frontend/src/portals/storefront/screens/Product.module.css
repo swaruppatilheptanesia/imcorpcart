@@ -837,3 +837,71 @@ button.varChip:hover {
   color: var(--text2);
   white-space: pre-wrap;
 }
+
+/* ── Gift-card (voucher) denomination picker ── */
+.voucherBox {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--surface2);
+}
+.denoms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.denom {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.denom:hover {
+  border-color: var(--accent);
+}
+.denomOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.voucherCustom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voucherRupee {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text2);
+}
+.voucherInput {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.voucherInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.voucherRange {
+  font-size: 12px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.voucherNote {
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text2);
+}

@@ -201,6 +201,18 @@ enum OrderStatus {
   RETURNED // reserved — returns flow out of scope (B4)
 }
 
+// Per-item gift-card (Hubble voucher) issuance state. NONE = not a voucher line.
+// PENDING = paid, placing the Hubble order; PROCESSING = Hubble is generating the
+// code (we poll); DELIVERED = code issued + emailed/shown; FAILED = could not
+// issue (buyer refunded).
+enum VoucherFulfilmentStatus {
+  NONE
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+}
+
 enum AddressType {
   OFFICE
   HOME

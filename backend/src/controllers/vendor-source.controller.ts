@@ -20,13 +20,22 @@ export async function update(req: Request, res: Response) {
 }
 
 export async function sync(req: Request, res: Response) {
-  res.json(await service.runImport(getParam(req, 'id'), req.user?.id));
+  // Kicks the import off in the background; returns the RUNNING run to poll.
+  res.status(202).json(await service.startImport(getParam(req, 'id'), req.user?.id));
 }
 
 export async function runs(req: Request, res: Response) {
   res.json(await service.listRuns(getParam(req, 'id'), getQuery<RunsQuery>(req)));
 }
 
+export async function run(req: Request, res: Response) {
+  res.json(await service.getRun(getParam(req, 'id'), getParam(req, 'runId')));
+}
+
 export async function products(req: Request, res: Response) {
   res.json(await service.listSourceProducts(getParam(req, 'id'), getQuery<RunsQuery>(req)));
+}
+
+export async function wallet(req: Request, res: Response) {
+  res.json(await service.getWalletBalance(getParam(req, 'id')));
 }

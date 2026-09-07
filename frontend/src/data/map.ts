@@ -244,23 +244,27 @@ interface ApiOrderListRow {
   status: string;
   total: number;
   createdAt: string;
-  company: { name: string };
-  employee: { user: { fullName: string } };
+  company: { name: string } | null; // null for partner orders
+  employee: { user: { fullName: string } } | null;
   reseller: { name: string } | null;
   shipment: { awbNumber: string | null; dispatchedAt: string | null; courier: { name: string } | null } | null;
-  items: { quantity: number; product: { name: string; reseller?: { name: string } | null } }[];
+  items: {
+    quantity: number;
+    product: { name: string; reseller?: { name: string } | null; sourceId?: string | null; source?: { name: string } | null };
+  }[];
 }
 
-// Vendor: the seller of the first line item's product, else the order-level
-// reseller, else the first-party house catalog.
+// Vendor: the marketplace seller of the first line item, else its inbound import
+// vendor (source), else the order-level reseller, else the first-party house catalog.
 function orderVendor(o: ApiOrderListRow): string {
-  return o.items?.[0]?.product?.reseller?.name ?? o.reseller?.name ?? 'imcorpcart';
+  const first = o.items?.[0]?.product;
+  return first?.reseller?.name ?? first?.source?.name ?? o.reseller?.name ?? 'imcorpcart';
 }
 
 export function toOrderListRow(o: ApiOrderListRow): Order {
   return {
     id: `#${o.orderNo}`,
-    company: o.company.name,
+    company: o.company?.name ?? '—',
     buyer: o.employee?.user?.fullName ?? '—',
     date: fmtDate(o.createdAt),
     dispatchDate: o.shipment?.dispatchedAt ? fmtDate(o.shipment.dispatchedAt) : '—',
@@ -276,12 +280,18 @@ export function toOrderListRow(o: ApiOrderListRow): Order {
 }
 
 interface ApiOrderItem {
+  id: string;
   quantity: number;
   unitPrice: number;
-  product: { id: string; name: string };
+  // Voucher issuance now lives in its own table, nested on the item (status only
+  // for admin; no raw code). Flattened onto OrderItem below so components are stable.
+  voucherFulfilment?: { status?: string | null; denomination?: number | null; deliveredAt?: string | null } | null;
+  product: { id: string; name: string; sourceId?: string | null; source?: { name: string } | null };
 }
 interface ApiOrderFull extends ApiOrderListRow {
   id: string;
+  // The full order carries the buyer's email (orderFullInclude); the list row doesn't.
+  employee: { user: { fullName: string; email?: string | null } } | null;
   couponCode: string | null;
   subtotal: number;
   items: ApiOrderItem[];
@@ -290,16 +300,30 @@ interface ApiOrderFull extends ApiOrderListRow {
 export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
   const items: OrderItem[] = o.items.map((it) => {
     const [g1, g2] = gradientFor(it.product.id);
-    return { name: it.product.name, shade: '', g1, g2, qty: it.quantity, price: it.unitPrice };
+    return {
+      itemId: it.id,
+      name: it.product.name,
+      shade: '',
+      g1,
+      g2,
+      qty: it.quantity,
+      price: it.unitPrice,
+      vendorTag: it.product.source?.name ?? null,
+      // Flatten the nested voucher fulfilment so the OrderDetail components stay stable.
+      denomination: it.voucherFulfilment?.denomination ?? null,
+      fulfilmentStatus: it.voucherFulfilment?.status ?? null,
+      deliveredAt: it.voucherFulfilment?.deliveredAt ?? null,
+    };
   });
   return {
     cuid: o.id,
     id: `#${o.orderNo}`,
-    company: o.company.name,
+    company: o.company?.name ?? '—',
     buyer: o.employee?.user?.fullName ?? '—',
+    buyerEmail: o.employee?.user?.email ?? null,
     date: fmtDate(o.createdAt),
     dispatchDate: o.shipment?.dispatchedAt ? fmtDate(o.shipment.dispatchedAt) : '—',
-    vendor: o.reseller?.name ?? 'imcorpcart',
+    vendor: o.reseller?.name ?? o.items?.[0]?.product?.source?.name ?? 'imcorpcart',
     productName: o.items?.[0]?.product?.name ?? '—',
     itemCount: o.items?.length ?? 0,
     status: ORDER_STATUS_IN[o.status] ?? 'Processing',

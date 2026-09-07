@@ -9,7 +9,8 @@ export interface NormalizedRow {
   brand?: string | null;
   category: string; // vendor category name (free text; created/mapped on import)
   subCategory?: string | null;
-  mrp: number; // vendor MRP — our eppPrice is derived via the source discount %
+  mrp: number; // vendor list/MRP price → Product.mrp (struck-through list)
+  mop?: number | null; // vendor public/selling price → Product.mop + the EPP basis (falls back to mrp)
   description?: string | null;
   images?: string[];
   specRows?: { k: string; v: string }[];
@@ -21,6 +22,10 @@ export interface NormalizedRow {
   warrantyText?: string | null;
   termsText?: string | null;
   stock?: number | null;
+  // Extra structured fields merged into Product.specs alongside `rows` (vendor-owned,
+  // refreshed on re-sync). Used e.g. by the Hubble adapter to carry selectable
+  // voucher denominations: `{ voucher: { denominations, min, max, type } }`.
+  specsExtra?: Record<string, unknown>;
 }
 
 // Runtime context handed to an adapter (secrets already decrypted).

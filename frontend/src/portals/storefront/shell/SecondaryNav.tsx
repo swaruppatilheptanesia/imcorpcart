@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Menu } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { StoreCategory } from '@/data/store-types';
 import { useStore } from '../store-context';
-import { categoryTree } from '../data';
+import { categoryTree, featuredDepartments } from '../data';
 import styles from './SecondaryNav.module.css';
+
+// Sentinel openKey for the "All Categories" mega-menu (can't collide with a slug).
+const ALL_KEY = '__all__';
 
 export function SecondaryNav() {
   const navigate = useNavigate();
   const { setFilters } = useStore();
-  const tree = categoryTree();
-  // Which category's subcategory dropdown is open (hover-driven).
+  const featured = featuredDepartments(); // curated inline departments
+  const tree = categoryTree(); // full department list for the mega-menu
+  // Which category's subcategory dropdown (or the mega-menu) is open (hover-driven).
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   const pick = (category: StoreCategory, sub: string | null = null) => {
@@ -26,7 +30,38 @@ export function SecondaryNav() {
         All products
       </button>
 
-      {tree.map((node) => (
+      {/* Amazon-style "All Categories" mega-menu — holds every department. */}
+      <div
+        className={styles.item}
+        onMouseEnter={() => setOpenKey(ALL_KEY)}
+        onMouseLeave={() => setOpenKey((k) => (k === ALL_KEY ? null : k))}
+      >
+        <button className={styles.megaBtn} onClick={() => setOpenKey((k) => (k === ALL_KEY ? null : ALL_KEY))}>
+          <Menu size={15} />
+          All Categories
+          <ChevronDown size={13} className={cn(styles.chev, openKey === ALL_KEY && styles.chevOpen)} />
+        </button>
+
+        {openKey === ALL_KEY && (
+          <div className={styles.megaPanel}>
+            {tree.map((node) => (
+              <div key={node.key} className={styles.megaCol}>
+                <button className={styles.megaHead} onClick={() => pick(node.key)}>
+                  {node.label}
+                </button>
+                {node.subs.map((sub) => (
+                  <button key={sub.key} className={styles.megaSub} onClick={() => pick(node.key, sub.key)}>
+                    <span>{sub.label}</span>
+                    <span className={styles.subCount}>{sub.count}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {featured.map((node, i) => (
         <div
           key={node.key}
           className={styles.item}
@@ -41,7 +76,7 @@ export function SecondaryNav() {
           </button>
 
           {node.subs.length > 0 && openKey === node.key && (
-            <div className={styles.dropdown}>
+            <div className={cn(styles.dropdown, i >= featured.length - 1 && styles.dropdownEnd)}>
               {node.subs.map((sub) => (
                 <button key={sub.key} className={styles.subItem} onClick={() => pick(node.key, sub.key)}>
                   <span>{sub.label}</span>

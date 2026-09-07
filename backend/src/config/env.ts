@@ -53,6 +53,13 @@ const schema = z.object({
   // when it's absent.
   PARTNER_API_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   PARTNER_SECRET_ENC_KEY: z.string().optional(),
+
+  // Hubble (myhubble.money) gift-card/voucher provider — inbound catalog only.
+  // Optional so the app boots without it; the Hubble adapter errors clearly when
+  // absent. The secret lives ONLY in .env, never .env.example.
+  HUBBLE_CLIENT_ID: z.string().optional(),
+  HUBBLE_CLIENT_SECRET: z.string().optional(),
+  HUBBLE_BASE_URL: z.string().optional(), // default: staging (see config/hubble.ts)
 });
 
 const parsed = schema.safeParse(process.env);

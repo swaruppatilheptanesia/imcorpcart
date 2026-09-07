@@ -19,5 +19,10 @@ export const runsQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
 
+export const runParams = z.object({
+  id: z.string().trim().min(1),
+  runId: z.string().trim().min(1),
+});
+
 export type UpdateSourceInput = z.infer<typeof updateSourceBody>;
 export type RunsQuery = z.infer<typeof runsQuery>;

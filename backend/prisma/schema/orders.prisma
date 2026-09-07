@@ -133,6 +133,11 @@ model OrderItem {
   unitPrice Decimal @db.Decimal(12, 2)
   lineTotal Decimal @db.Decimal(12, 2)
 
+  // Gift-card (Hubble voucher) issuance, when this line is a voucher. Lives in its
+  // own table (different lifecycle than a physical line); its presence marks the
+  // line as a voucher. See prisma/schema/vouchers.prisma.
+  voucherFulfilment VoucherFulfilment?
+
   @@index([orderId])
   @@map("order_items")
 }
