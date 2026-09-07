@@ -428,6 +428,8 @@ function serializeCart(
       group: p.group, // category slug — for category-scoped discount preview
       price: voucher && denomination ? denomination : p.price,
       mrp: p.mrp,
+      image: p.image,
+      images: p.images,
       g1: p.g1,
       g2: p.g2,
       shades: p.shades,

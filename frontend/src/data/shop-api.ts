@@ -86,6 +86,8 @@ export interface CartLineView {
   vendor: string;
   price: number;
   mrp: number;
+  image?: string | null; // first product photo (null → gradient fallback)
+  images?: string[];
   g1: string;
   g2: string;
   shades: Shade[];

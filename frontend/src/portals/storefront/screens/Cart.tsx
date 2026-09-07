@@ -52,7 +52,11 @@ export function Cart() {
           return (
             <div key={line.itemId} className={styles.line}>
               <button className={styles.thumb} onClick={openProduct} aria-label={`View ${line.name}`}>
-                <span className={styles.device} style={{ background: `linear-gradient(155deg, ${g1}, ${g2})` }} />
+                {line.image ? (
+                  <img className={styles.img} src={line.image} alt={line.name} />
+                ) : (
+                  <span className={styles.device} style={{ background: `linear-gradient(155deg, ${g1}, ${g2})` }} />
+                )}
               </button>
               <div className={styles.info}>
                 <button className={styles.name} onClick={openProduct}>{line.name}</button>
@@ -67,12 +71,14 @@ export function Cart() {
                     <Gift size={11} /> {line.freebie.description}
                   </div>
                 )}
-                {line.shade && (
+                {line.voucher || line.denomination != null ? (
+                  <div className={styles.shade}>Amount: {inr(line.denomination ?? Number(line.shade))}</div>
+                ) : line.shade ? (
                   <div className={styles.shade}>
                     <span className={styles.shadeDot} style={{ background: `linear-gradient(155deg, ${g1}, ${g2})` }} />
                     Colour: {line.shade}
                   </div>
-                )}
+                ) : null}
                 <div className={styles.lineControls}>
                   <QtyStepper value={line.qty} onChange={(v) => void setLineQty(line.itemId, v)} />
                   <button className={styles.remove} onClick={() => void removeLine(line.itemId)}>
