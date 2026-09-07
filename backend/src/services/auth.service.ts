@@ -86,11 +86,12 @@ export async function login(email: string): Promise<LoginResult | SessionResult>
     throw AppError.forbidden('Your company account is not active. Please contact support.');
   }
 
-  // Direct sign-in for the hardcoded demo accounts (DEMO_LOGIN_EMAILS) — e.g. the
-  // seeded Super Admin + the storefront demo shopper, whose fake domains can't
-  // receive a real email. Gated to non-production so this never weakens prod auth;
-  // everyone else goes through the emailed OTP below.
-  if (!env.isProd && DEMO_LOGIN_EMAILS.has(normalized)) {
+  // Direct sign-in for the hardcoded demo accounts (DEMO_LOGIN_EMAILS) — the seeded
+  // Super Admin + the storefront demo shopper, whose fake domains can't receive a
+  // real email. NOTE: intentionally active in ALL environments (incl. production)
+  // for now, per request — re-add an `!env.isProd` / feature-flag gate to re-lock.
+  // Everyone else goes through the emailed OTP below.
+  if (DEMO_LOGIN_EMAILS.has(normalized)) {
     return issueSession(user);
   }
 
