@@ -1,7 +1,7 @@
 import { Role, RegistrationSource } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
-import { OTP_PURPOSE } from '../config/constants';
+import { OTP_PURPOSE, DEMO_LOGIN_EMAILS } from '../config/constants';
 import { AppError } from '../utils/AppError';
 import { signAccessToken } from '../utils/jwt';
 import { generateOtp, hashOtp, verifyOtp } from '../utils/otp';
@@ -86,10 +86,11 @@ export async function login(email: string): Promise<LoginResult | SessionResult>
     throw AppError.forbidden('Your company account is not active. Please contact support.');
   }
 
-  // Direct sign-in for allow-listed demo accounts (OTP_BYPASS_EMAILS) — e.g. the
-  // seeded Super Admin, whose fake domain can't receive a real email. Everyone
-  // else goes through the emailed OTP below.
-  if (env.otpBypassEmails.has(normalized)) {
+  // Direct sign-in for the hardcoded demo accounts (DEMO_LOGIN_EMAILS) — e.g. the
+  // seeded Super Admin + the storefront demo shopper, whose fake domains can't
+  // receive a real email. Gated to non-production so this never weakens prod auth;
+  // everyone else goes through the emailed OTP below.
+  if (!env.isProd && DEMO_LOGIN_EMAILS.has(normalized)) {
     return issueSession(user);
   }
 
@@ -108,8 +109,8 @@ export async function login(email: string): Promise<LoginResult | SessionResult>
   return issueLoginOtp(user);
 }
 
-// Mint a Session + JWT for a user directly (no OTP). Used only by the
-// OTP_BYPASS_EMAILS allow-list in login(); mirrors the tail of verifyLoginOtp.
+// Mint a Session + JWT for a user directly (no OTP). Used only by the hardcoded
+// DEMO_LOGIN_EMAILS bypass in login(); mirrors the tail of verifyLoginOtp.
 async function issueSession(
   user: { id: string; role: Role; status: string },
   ctx: AuthContext = {},

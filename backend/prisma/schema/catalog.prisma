@@ -86,17 +86,29 @@ model Product {
   freeGiftId String?
   freeGift   FreeGift? @relation(fields: [freeGiftId], references: [id])
 
+  // Inbound-import provenance. Set when a product was imported from an external
+  // VendorSource (null for internally-authored / bulk-imported products).
+  // externalRef = the vendor's own SKU/id (namespaced into `sku` for dedup).
+  sourceId    String?
+  source      VendorSource? @relation(fields: [sourceId], references: [id])
+  externalRef String?       @map("external_ref")
+
+  // Admin per-product show/hide on the storefront (independent of `status`; a
+  // re-sync never touches it). Combined with VendorSource.active (vendor suspend).
+  hidden Boolean @default(false)
+
   images       ProductImage[]
   prices       ProductPrice[] // DEPRECATED — superseded by ProductOffer
   offers       ProductOffer[]
   visibilities ProductVisibility[]
   inventory    Inventory? // DEPRECATED — per-offer stock lives on ProductOffer
 
-  cartItems     CartItem[]
-  smartEppItems SmartEppRequestItem[]
-  orderItems    OrderItem[]
-  wishlistItems WishlistItem[]
-  reviews       ProductReview[]
+  cartItems      CartItem[]
+  smartEppItems  SmartEppRequestItem[]
+  orderItems     OrderItem[]
+  wishlistItems  WishlistItem[]
+  reviews        ProductReview[]
+  partnerEntries PartnerCatalogueEntry[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -107,6 +119,7 @@ model Product {
   @@index([resellerId])
   @@index([status])
   @@index([familyKey])
+  @@index([sourceId])
   @@map("products")
 }
 

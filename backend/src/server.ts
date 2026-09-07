@@ -1,6 +1,8 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { connectPrisma, disconnectPrisma } from './config/prisma';
+import { startWebhookRetryLoop } from './services/webhook.service';
+import { resumePendingFulfilments } from './services/voucher-fulfilment.service';
 
 // Minimal bootstrap: connect the DB, start listening, wire graceful shutdown.
 async function main() {
@@ -11,6 +13,14 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log(`🚀 imcorpcart API listening on http://localhost:${env.PORT}/api`);
   });
+
+  // Reprocess due partner webhook deliveries (retry with backoff). Runs only in
+  // the main server process.
+  startWebhookRetryLoop();
+
+  // Resume any voucher (Hubble) fulfilments that were mid-flight when the process
+  // last stopped — place/poll continues until the code is delivered or refunded.
+  void resumePendingFulfilments().catch((e) => console.error('resumePendingFulfilments failed:', e));
 
   async function shutdown(signal: string) {
     // eslint-disable-next-line no-console

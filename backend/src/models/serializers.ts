@@ -10,11 +10,15 @@ const SECRET_KEYS = new Set([
   'passwordHash',
   'codeHash',
   'tokenHash',
+  'apiTokenHash',
   'secret',
   'recoveryCode',
   'keyRef',
   'webhookRef',
   'apiKeyRef',
+  'apiSecretEnc',
+  'webhookSecretEnc',
+  'apiKeyEnc',
 ]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

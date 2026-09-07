@@ -71,7 +71,21 @@ export interface StoreProduct extends Product {
   optionVariant?: string | null; // this SKU's config label
   familyColors?: number; // distinct colours in the family (card badge)
   family?: FamilyMember[]; // sibling SKUs (detail page only)
+  // Gift-card (Hubble voucher) product: the buyer picks an amount at checkout and
+  // the code is delivered by email + in-app after purchase. Null for normal products.
+  voucher?: VoucherSpec | null;
 }
+
+// Selectable gift-card denominations for a voucher product.
+export interface VoucherSpec {
+  denominations: number[]; // fixed choices (empty → custom amount within min/max)
+  min: number | null;
+  max: number | null;
+  type: string | null; // FIXED | FLEXIBLE
+}
+
+// Per-item gift-card issuance state (mirrors the backend enum).
+export type VoucherFulfilmentStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'DELIVERED' | 'FAILED';
 
 // ─── Storefront view state ───────────────────────────────────────────────────
 

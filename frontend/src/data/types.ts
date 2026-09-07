@@ -24,6 +24,9 @@ export interface Product {
   dateAdded: string; // formatted createdAt (e.g. "31 Dec 2026")
   g1: string; // gradient placeholder colors (stand in for real imagery)
   g2: string;
+  vendorTag?: string | null; // inbound vendor source name (null for internal/bulk)
+  sourceId?: string | null;
+  hidden?: boolean; // admin show/hide on the storefront
 }
 
 export type CouponType = 'pct' | 'flat';
@@ -45,18 +48,24 @@ export interface Coupon {
 export type OrderStatus = 'Processing' | 'In transit' | 'Delivered' | 'Cancelled';
 
 export interface OrderItem {
+  itemId?: string; // OrderItem cuid — needed to retry a stuck voucher line
   name: string;
   shade: string;
   g1: string;
   g2: string;
   qty: number;
   price: number;
+  vendorTag?: string | null; // inbound import vendor (source name), null for house/first-party
+  denomination?: number | null; // gift-card face value (voucher lines only)
+  fulfilmentStatus?: string | null; // PENDING | PROCESSING | DELIVERED | FAILED (voucher lines only)
+  deliveredAt?: string | null; // when the voucher code was issued + emailed
 }
 
 export interface Order {
   id: string; // #IMC-#####
   company: string;
   buyer: string;
+  buyerEmail?: string | null; // buyer's email (order detail only; for voucher "emailed to" line)
   date: string; // order (created) date
   dispatchDate: string; // shipment dispatch date, or "—"
   vendor: string; // reseller name, or "imcorpcart" (first-party)

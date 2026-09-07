@@ -1,0 +1,86 @@
+// Outbound integration partners (GenieMart-style vendors that list our catalog
+// and post us orders over the machine-to-machine `/partner-api/v1` surface).
+// A partner authenticates with a single bearer token (+ optional IP allowlist):
+// the token is stored SHA-256-hashed (looked up by hash, never recoverable). A
+// separate webhook secret is stored AES-GCM-encrypted (we send it on outbound
+// webhooks for the partner to verify).
+model Partner {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  contactEmail String?
+  contactPhone String?
+  status       OrgStatus @default(ONBOARDING)
+  active       Boolean   @default(true) // quick kill-switch (independent of status)
+
+  // Credentials. The API token (sent as `Authorization: Bearer <token>`) is
+  // stored only as a SHA-256 hash; the webhook secret is AES-encrypted (needs the
+  // raw value back to sign outbound webhooks). Both stripped via SECRET_KEYS.
+  apiTokenHash       String?  @unique @map("api_token_hash")
+  apiTokenLast4      String?  @map("api_token_last4") // admin display only
+  webhookSecretEnc   String?  @map("webhook_secret_enc")
+  webhookSecretLast4 String?  @map("webhook_secret_last4") // admin display only
+  ipAllowlist        String[] @default([]) @map("ip_allowlist") // empty = any IP
+
+  // Config. priceField + commissionPct are the DEFAULTS applied when adding a
+  // product to the partner's catalogue; each catalogue entry stores its own basis
+  // + commission (see PartnerCatalogueEntry).
+  webhookUrl    String?  @map("webhook_url")
+  priceField    String   @default("MOP") @map("price_field") // default PartnerPriceBasis
+  commissionPct Decimal? @default(0) @map("commission_pct") @db.Decimal(5, 2)
+  features      Json? // { epod, pincode, cancellation } feature flags
+
+  orders            Order[]
+  webhookDeliveries WebhookDelivery[]
+  catalogueEntries  PartnerCatalogueEntry[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("partners")
+}
+
+// Outbound webhook delivery log (lightweight, in-process retry with backoff).
+model WebhookDelivery {
+  id             String        @id @default(cuid())
+  partnerId      String
+  partner        Partner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  event          String
+  payload        Json
+  url            String
+  status         WebhookStatus @default(PENDING)
+  attempts       Int           @default(0)
+  nextAttemptAt  DateTime?     @map("next_attempt_at")
+  lastAttemptAt  DateTime?     @map("last_attempt_at")
+  responseStatus Int?          @map("response_status")
+  lastError      String?       @map("last_error")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerId])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}
+
+// A single product exposed to a partner (curated by the admin), with the price
+// basis the vendor pays and a commission % added on top. The vendor price =
+// base(priceBasis) × (1 + commissionPct/100). One row per (partner × product).
+model PartnerCatalogueEntry {
+  id            String            @id @default(cuid())
+  partnerId     String
+  partner       Partner           @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceBasis    PartnerPriceBasis @default(MOP) @map("price_basis")
+  commissionPct Decimal?          @default(0) @map("commission_pct") @db.Decimal(5, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partnerId, productId])
+  @@index([partnerId])
+  @@map("partner_catalogue_entries")
+}

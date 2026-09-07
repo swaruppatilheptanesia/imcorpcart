@@ -13,6 +13,7 @@ import { serialize, toNumber } from '../models/serializers';
 import { resolveResellerId } from '../utils/scope';
 import { ensureOwnedGift } from './product-write';
 import { creditWallet } from './shop.service';
+import { notifyPartnerOrderStatus } from './webhook.service';
 import type {
   ResellerListQuery,
   TransitUpdateInput,
@@ -117,7 +118,7 @@ export async function getDashboard(userId: string) {
       select: { id: true, name: true },
     }),
     prisma.company.findMany({
-      where: { id: { in: topCustomersRaw.map((c) => c.companyId) } },
+      where: { id: { in: topCustomersRaw.map((c) => c.companyId).filter((x): x is string => x !== null) } },
       select: { id: true, name: true },
     }),
     prisma.product.findMany({
@@ -144,7 +145,7 @@ export async function getDashboard(userId: string) {
     })),
     topCustomers: topCustomersRaw.map((c) => ({
       companyId: c.companyId,
-      name: nameOf(companies, c.companyId),
+      name: c.companyId ? nameOf(companies, c.companyId) : 'Partner',
       spend: toNumber(c._sum.total),
     })),
     mostWishlisted: wishlistRaw.map((w) => ({
@@ -436,12 +437,22 @@ export async function getOrder(userId: string, id: string) {
 
 export async function updateTransit(userId: string, id: string, input: TransitUpdateInput) {
   const resellerId = await resolveResellerId(userId);
-
   const order = await prisma.order.findFirst({
     where: { resellerId, OR: [{ id }, { orderNo: id }] },
     include: { shipment: true },
   });
   if (!order) throw AppError.notFound('Order not found');
+  await applyTransit(order, input, userId);
+  return getOrder(userId, order.id);
+}
+
+// Reseller-agnostic fulfilment core: given a fetched order (+ its shipment),
+// upsert the shipment, add a tracking event, sync Order.status, credit cashback
+// on delivery, and push the partner webhook. Called by the reseller portal
+// (scoped) and by the admin (any order — house/vendor orders included).
+export type OrderForTransit = Prisma.OrderGetPayload<{ include: { shipment: true } }>;
+
+export async function applyTransit(order: OrderForTransit, input: TransitUpdateInput, actorId: string) {
   if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED) {
     throw AppError.badRequest(`Cannot update transit on a ${order.status} order`);
   }
@@ -491,7 +502,7 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
         data: {
           orderId: order.id,
           status: nextOrderStatus,
-          changedById: userId,
+          changedById: actorId,
           note: input.description ?? `Transit: ${input.status}`,
         },
       });
@@ -499,8 +510,9 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
 
     // On delivery, credit the order's cashback to the shopper's wallet — once
     // (idempotent: skip if an EARN entry already references this order).
+    // Partner orders have no internal employee, so there's no wallet to credit.
     const cashback = toNumber(order.cashbackEarned);
-    if (isDelivered && cashback > 0) {
+    if (isDelivered && cashback > 0 && order.employeeId) {
       const already = await tx.walletLedgerEntry.findFirst({
         where: { type: 'EARN', referenceType: 'ORDER', referenceId: order.id },
         select: { id: true },
@@ -515,7 +527,12 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
     }
   });
 
-  return getOrder(userId, order.id);
+  // Push to the origin partner's webhook on every shipment transition (so In
+  // Transit / Out for Delivery reach the partner, not only order-status changes).
+  // No-op for internal orders.
+  if (order.source === 'PARTNER') {
+    await notifyPartnerOrderStatus(order.id, { shipmentStatus: input.status });
+  }
 }
 
 function defaultTransitNote(status: ShipmentStatus): string {

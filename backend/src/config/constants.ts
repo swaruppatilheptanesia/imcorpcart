@@ -18,3 +18,11 @@ export const OTP_PURPOSE = {
 // The roles allowed to use the Super Admin API surface built in this pass.
 // Kept as a constant so route guards and future portals can reference it.
 export const ADMIN_ROLES = ['SUPER_ADMIN'] as const;
+
+// Demo accounts that skip email-OTP and sign in directly (dev/testing only — the
+// bypass is gated to non-production in auth.service, so this never weakens prod
+// auth). The storefront demo (demo@imcorpcart.com) is also blocked from checkout.
+// Lowercased for case-insensitive matching.
+export const DEMO_LOGIN_EMAILS = new Set(['admin@imcorpcart.local', 'demo@imcorpcart.com']);
+export const isDemoLoginEmail = (email?: string | null): boolean =>
+  !!email && DEMO_LOGIN_EMAILS.has(email.toLowerCase());

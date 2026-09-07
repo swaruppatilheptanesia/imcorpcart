@@ -86,7 +86,7 @@ export async function getDashboard(userId: string) {
     ]);
 
   const topEmployees = await prisma.employee.findMany({
-    where: { id: { in: topEmployeesRaw.map((t) => t.employeeId) } },
+    where: { id: { in: topEmployeesRaw.map((t) => t.employeeId).filter((id): id is string => id !== null) } },
     select: { id: true, user: { select: { fullName: true } } },
   });
   const nameOf = (id: string) =>
@@ -103,7 +103,7 @@ export async function getDashboard(userId: string) {
     },
     recentOrders: recentOrders.map((o) => ({
       id: o.orderNo,
-      buyer: o.employee.user.fullName,
+      buyer: o.employee?.user.fullName ?? '—',
       product: o.items[0]?.product.name ?? '—',
       value: toNumber(o.total),
       status: o.status,
@@ -111,7 +111,7 @@ export async function getDashboard(userId: string) {
     })),
     topEmployees: topEmployeesRaw.map((t) => ({
       employeeId: t.employeeId,
-      name: nameOf(t.employeeId),
+      name: t.employeeId ? nameOf(t.employeeId) : 'Unknown',
       spend: toNumber(t._sum.total),
       orders: t._count._all,
     })),

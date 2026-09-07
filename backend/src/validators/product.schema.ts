@@ -7,6 +7,7 @@ export const productListQuery = z.object({
   q: z.string().trim().optional(),
   group: z.string().trim().optional(), // category slug or id
   status: z.nativeEnum(ProductStatus).optional(),
+  source: z.string().trim().optional(), // filter to one VendorSource's imported products
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
@@ -66,6 +67,7 @@ export const createProductBody = z.object({
   optionVariant: z.string().trim().max(60).nullable().optional(),
   variantOptions: z.string().max(400).optional(),
   freebieText: z.string().max(200).optional(), // first-party fallback freebie
+  hidden: z.boolean().optional(), // admin show/hide on the storefront
   shades: z.array(shadeInput).max(24).optional(),
   specRows: z.array(specRowInput).max(30).optional(),
   images: z.array(imageInput).max(8).optional(),

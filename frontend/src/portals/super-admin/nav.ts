@@ -12,6 +12,8 @@ import {
   Star,
   IndianRupee,
   MapPin,
+  Plug,
+  Download,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -26,6 +28,8 @@ export const navDefs: NavDef[] = [
   { key: 'products', label: 'Products', icon: Package },
   { key: 'categories', label: 'Categories', icon: FolderTree },
   { key: 'pincodes', label: 'Pincodes', icon: MapPin },
+  { key: 'partners', label: 'Partners', icon: Plug },
+  { key: 'vendor-sources', label: 'Vendor sources', icon: Download },
   { key: 'orders', label: 'Orders', icon: ShoppingBag },
   { key: 'users', label: 'Users & companies', icon: Users },
   { key: 'reseller-pricing', label: 'Reseller pricing', icon: IndianRupee },
@@ -41,6 +45,8 @@ export const navDefs: NavDef[] = [
 export function activeNav(route: string): string {
   if (route === 'productDetail' || route === 'productEdit') return 'products';
   if (route === 'orderDetail') return 'orders';
+  if (route === 'partnerDetail') return 'partners';
+  if (route === 'vendorSourceDetail') return 'vendor-sources';
   return route;
 }
 
@@ -56,6 +62,10 @@ export const titles: Record<string, RouteMeta> = {
   productEdit: { title: 'Product', sub: 'Author the product master' },
   categories: { title: 'Categories', sub: 'Category & sub-category master' },
   pincodes: { title: 'Pincodes', sub: 'Courier delivery TAT & serviceability per pincode' },
+  partners: { title: 'Partners', sub: 'Integration partners — API access, catalogue & webhooks' },
+  partnerDetail: { title: 'Partner', sub: 'Integration, access, catalogue & activity' },
+  'vendor-sources': { title: 'Vendor sources', sub: 'Integrated vendors — sync their products into the catalog' },
+  vendorSourceDetail: { title: 'Vendor source', sub: 'Sync, configure & import log' },
   orders: { title: 'Orders', sub: 'All orders across every company' },
   orderDetail: { title: 'Order detail', sub: 'Manifest, timeline, and documents' },
   users: { title: 'Users & companies', sub: 'Companies, employees, resellers, partners' },

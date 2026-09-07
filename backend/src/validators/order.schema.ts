@@ -18,5 +18,11 @@ export const cancelOrderBody = z.object({
   note: z.string().max(500).optional(),
 });
 
+// Retry a stuck/failed gift-card voucher line: /orders/:id/items/:itemId/retry-voucher
+export const voucherRetryParams = z.object({
+  id: z.string().min(1),
+  itemId: z.string().min(1),
+});
+
 export type OrderListQuery = z.infer<typeof orderListQuery>;
 export type OverrideStatusInput = z.infer<typeof overrideStatusBody>;

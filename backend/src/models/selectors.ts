@@ -41,6 +41,10 @@ export const productListSelect = {
   offers: { where: notDeleted, select: offerSelect },
   // First image only — powers the list thumbnail (falls back to a gradient).
   images: { orderBy: { position: 'asc' }, take: 1, select: { url: true } },
+  // Inbound-vendor provenance + admin show/hide (for the Vendor tag/filter).
+  hidden: true,
+  sourceId: true,
+  source: { select: { id: true, name: true } },
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ProductSelect;
@@ -73,7 +77,9 @@ export const orderListSelect = {
   items: {
     select: {
       quantity: true,
-      product: { select: { name: true, reseller: { select: { name: true } } } },
+      product: {
+        select: { name: true, reseller: { select: { name: true } }, sourceId: true, source: { select: { name: true } } },
+      },
     },
   },
   _count: { select: { items: true } },
@@ -92,7 +98,19 @@ export const orderFullInclude = {
   reseller: { select: { id: true, name: true } },
   address: true,
   coupon: { select: { id: true, code: true, type: true } },
-  items: { include: { product: { select: { id: true, name: true, sku: true } } } },
+  // Explicit item select (NOT `include`): carries the voucher fulfilment STATUS
+  // for the admin, but never the raw credential (voucherCode/voucherPin/…). The
+  // buyer's own order detail uses `shopOrderFullInclude` below, which adds them.
+  items: {
+    select: {
+      id: true,
+      quantity: true,
+      unitPrice: true,
+      lineTotal: true,
+      voucherFulfilment: { select: { status: true, denomination: true, deliveredAt: true } },
+      product: { select: { id: true, name: true, sku: true, sourceId: true, source: { select: { name: true } } } },
+    },
+  },
   statusHistory: {
     orderBy: { createdAt: 'asc' },
     include: { changedBy: { select: { id: true, fullName: true } } },
@@ -120,6 +138,36 @@ export const orderFullInclude = {
   },
   documents: {
     select: { id: true, docType: true, source: true, number: true, fileUrl: true, createdAt: true },
+  },
+} satisfies Prisma.OrderInclude;
+
+// Buyer-facing order detail: everything in orderFullInclude PLUS the issued voucher
+// credential on each item (card number/pin/type/redemption/expiry). Used ONLY by
+// the shopper's own getOrder (employee-scoped), so codes never appear in admin or
+// list payloads. `hubbleOrderRef` stays internal — serialize() strips *Ref keys.
+export const shopOrderFullInclude = {
+  ...orderFullInclude,
+  items: {
+    select: {
+      id: true,
+      quantity: true,
+      unitPrice: true,
+      lineTotal: true,
+      voucherFulfilment: {
+        select: {
+          status: true,
+          denomination: true,
+          deliveredAt: true,
+          voucherCode: true,
+          voucherPin: true,
+          voucherCardType: true,
+          redemptionUrl: true,
+          voucherExpiry: true,
+          fulfilmentError: true,
+        },
+      },
+      product: { select: { id: true, name: true, sku: true, sourceId: true, source: { select: { name: true } } } },
+    },
   },
 } satisfies Prisma.OrderInclude;
 

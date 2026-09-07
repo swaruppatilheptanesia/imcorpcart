@@ -41,6 +41,7 @@ export async function listProducts(query: ProductListQuery) {
     ...notDeleted,
     ...groupWhere(query.group),
     ...(query.status ? { status: query.status } : {}),
+    ...(query.source ? { sourceId: query.source } : {}),
     ...(query.q
       ? {
           OR: [
@@ -145,6 +146,7 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
         ...(rest.familyKey !== undefined ? { familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null } : {}),
         ...(rest.optionColor !== undefined ? { optionColor: rest.optionColor } : {}),
         ...(rest.optionVariant !== undefined ? { optionVariant: rest.optionVariant } : {}),
+        ...(rest.hidden !== undefined ? { hidden: rest.hidden } : {}),
         ...(rest.shades !== undefined ? { colorOptions: colorOptionsFrom(rest.shades) } : {}),
         specs: buildSpecs(rest, existingSpecs) as unknown as Prisma.InputJsonValue,
       },

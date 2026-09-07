@@ -21,11 +21,6 @@ const schema = z.object({
   // z.coerce.boolean would treat "false" as true, so parse the literal string.
   OTP_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
-  // Comma-separated emails that skip the email-OTP step and sign in directly.
-  // For demo accounts on domains that can't receive real mail (e.g. the seeded
-  // Super Admin) — everyone else uses passwordless email-OTP.
-  OTP_BYPASS_EMAILS: z.string().default(''),
-
   // Master checkout switch. 'false' = browse/register only: the order-creation
   // endpoints 403 and the storefront hides every pay/checkout entry point. Set
   // 'true' (with live Razorpay keys) to open ordering. Same string-literal parse
@@ -45,6 +40,21 @@ const schema = z.object({
   // Optional saved Checkout Configuration id (dashboard → Payment methods config,
   // e.g. "config_XXXX") — restricts/orders the methods shown in the modal.
   RAZORPAY_CHECKOUT_CONFIG_ID: z.string().optional(),
+
+  // Partner integration API (/partner-api/v1). Master switch parsed as a literal
+  // string (same reason as CHECKOUT_ENABLED). PARTNER_SECRET_ENC_KEY is the master
+  // key used to AES-encrypt each partner's signing secret at rest; optional so the
+  // app boots without it, but creating/rotating a partner secret errors clearly
+  // when it's absent.
+  PARTNER_API_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  PARTNER_SECRET_ENC_KEY: z.string().optional(),
+
+  // Hubble (myhubble.money) gift-card/voucher provider — inbound catalog only.
+  // Optional so the app boots without it; the Hubble adapter errors clearly when
+  // absent. The secret lives ONLY in .env, never .env.example.
+  HUBBLE_CLIENT_ID: z.string().optional(),
+  HUBBLE_CLIENT_SECRET: z.string().optional(),
+  HUBBLE_BASE_URL: z.string().optional(), // default: staging (see config/hubble.ts)
 });
 
 const parsed = schema.safeParse(process.env);
@@ -67,11 +77,6 @@ export const env = {
   corsOrigins: raw.CORS_ORIGIN.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
-  otpBypassEmails: new Set(
-    raw.OTP_BYPASS_EMAILS.split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean),
-  ),
 };
 
 export type Env = typeof env;

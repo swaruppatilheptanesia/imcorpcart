@@ -107,7 +107,7 @@ export async function getDashboard(range: DashboardRange) {
   // Resolve names for the grouped ids.
   const [companies, products, partners] = await Promise.all([
     prisma.company.findMany({
-      where: { id: { in: topCompaniesRaw.map((c) => c.companyId) } },
+      where: { id: { in: topCompaniesRaw.map((c) => c.companyId).filter((x): x is string => x !== null) } },
       select: { id: true, name: true },
     }),
     prisma.product.findMany({
@@ -147,7 +147,7 @@ export async function getDashboard(range: DashboardRange) {
       const spend = toNumber(c._sum.total);
       return {
         companyId: c.companyId,
-        name: nameOf(companies, c.companyId),
+        name: c.companyId ? nameOf(companies, c.companyId) : 'Direct / partner',
         spend,
         pct: grandTotal ? Math.round((spend / grandTotal) * 100) : 0,
       };
@@ -172,7 +172,7 @@ export async function getDashboard(range: DashboardRange) {
     })),
     recentOrders: recentOrders.map((o) => ({
       id: o.orderNo,
-      company: o.company.name,
+      company: o.company?.name ?? '—',
       product: o.items[0]?.product.name ?? '—',
       value: toNumber(o.total),
       status: o.status,

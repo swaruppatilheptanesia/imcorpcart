@@ -6,19 +6,23 @@ import {
   PaymentMethod,
   PaymentStatus,
   GatewayProvider,
+  VoucherFulfilmentStatus,
 } from '@prisma/client';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { nanoid } from 'nanoid';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { getRazorpay } from '../config/razorpay';
+import { HUBBLE_ADAPTER } from '../config/hubble';
+import { isDemoLoginEmail } from '../config/constants';
 import { AppError } from '../utils/AppError';
 import { serialize, toNumber } from '../models/serializers';
-import { notDeleted, orderFullInclude } from '../models/selectors';
+import { notDeleted, orderFullInclude, shopOrderFullInclude } from '../models/selectors';
 import { resolveEmployee } from '../utils/scope';
 import { isLive as isCampaignLive } from './campaign.service';
 import { listActiveBanners } from './banner.service';
 import { listApprovedReviews } from './review.service';
+import { kickoffVoucherFulfilments } from './voucher-fulfilment.service';
 import type {
   AddToCartInput,
   UpdateCartInput,
@@ -32,8 +36,10 @@ const PRODUCT_STATUS_OUT: Record<ProductStatus, string> = {
   INACTIVE: 'inactive',
 };
 
-const shopProductInclude = {
+export const shopProductInclude = {
   category: { select: { slug: true, name: true } },
+  // Provenance — used to detect a gift-card (Hubble voucher) line at checkout.
+  source: { select: { adapter: true, active: true } },
   offers: {
     where: notDeleted,
     include: {
@@ -47,12 +53,59 @@ const shopProductInclude = {
 type ShopProductRow = Prisma.ProductGetPayload<{ include: typeof shopProductInclude }>;
 type ShopOfferRow = ShopProductRow['offers'][number];
 
+interface VoucherSpec {
+  denominations: number[];
+  min: number | null;
+  max: number | null;
+  type: string | null; // FIXED | FLEXIBLE
+}
+
 interface Presentation {
   g1?: string;
   g2?: string;
   newness?: number;
   shades?: { name: string; g1: string; g2: string; stock: number }[];
   rows?: { k: string; v: string }[];
+  voucher?: VoucherSpec;
+}
+
+// A gift-card line — imported from Hubble (provenance is the authoritative signal;
+// the "vouchers" category slug is a fallback). Voucher lines are priced by the
+// buyer's chosen denomination (carried in the cart line's `shade`), not the offer.
+export function isVoucherProduct(p: ShopProductRow): boolean {
+  return p.source?.adapter === HUBBLE_ADAPTER || p.category.slug === 'vouchers';
+}
+export function voucherSpecOf(p: ShopProductRow): VoucherSpec | null {
+  return ((p.specs ?? {}) as Presentation).voucher ?? null;
+}
+
+// Validate a chosen gift-card amount against the brand's Hubble acceptance rules —
+// exactly what Hubble will accept on POST /v1/partners/orders — so we never charge
+// the buyer for an amount that would then be rejected. Whole rupees only (Hubble
+// denominations are integers); FIXED brands accept only a listed denomination;
+// FLEXIBLE brands accept an integer within [min, max] (bounds are required — if a
+// flexible brand imported without them we can't verify acceptance, so we refuse).
+// Throws AppError.badRequest on any violation.
+function assertValidVoucherAmount(spec: VoucherSpec | null, amount: number, productName: string): void {
+  const label = productName ? `"${productName}"` : 'this gift card';
+  if (!spec) throw AppError.badRequest(`Gift-card options are unavailable for ${label}`);
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw AppError.badRequest(`Enter a whole-rupee amount for ${label}`);
+  }
+  const denoms = spec.denominations ?? [];
+  if (denoms.length) {
+    if (!denoms.includes(amount)) {
+      throw AppError.badRequest(`Choose a valid gift-card amount (${denoms.map((d) => `₹${d}`).join(', ')})`);
+    }
+    return;
+  }
+  // FLEXIBLE (custom-amount) brand — both bounds must be known to accept a value.
+  if (spec.min == null || spec.max == null) {
+    throw AppError.badRequest(`Gift-card amount options are unavailable for ${label} right now`);
+  }
+  if (amount < spec.min || amount > spec.max) {
+    throw AppError.badRequest(`Amount for ${label} must be between ₹${spec.min} and ₹${spec.max}`);
+  }
 }
 
 // Offers eligible for the buy box: active, in stock, and priced.
@@ -64,7 +117,7 @@ function eligibleOffers(offers: ShopOfferRow[]): ShopOfferRow[] {
 
 // The winning offer: the cheapest eligible one by EPP price. (Public MOP is a
 // single admin-set product price, so the buy box is always chosen by EPP.)
-function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
+export function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
   const elig = eligibleOffers(offers);
   if (!elig.length) return null;
   return [...elig].sort((a, b) => toNumber(a.eppPrice) - toNumber(b.eppPrice))[0];
@@ -86,7 +139,7 @@ function cashbackPerUnit(
 
 // Map a DB product (+ its seeded presentation blob + marketplace offers) to the
 // storefront's StoreProduct shape so the frontend adapter stays trivial.
-function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
+export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
   const pres = (p.specs ?? {}) as Presentation;
   const mrp = toNumber(p.mrp);
   const elig = eligibleOffers(p.offers);
@@ -145,6 +198,10 @@ function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
     image: p.images[0]?.url ?? null,
     images: p.images.map((img) => img.url),
     newness: pres.newness ?? 0,
+    // Gift-card (Hubble voucher) product: structured denominations for the
+    // checkout picker + a flag so the storefront renders the amount selector and
+    // the "code delivered after purchase" note. Null for normal products.
+    voucher: isVoucherProduct(p) ? pres.voucher ?? { denominations: [], min: null, max: null, type: null } : null,
   };
 }
 
@@ -161,8 +218,17 @@ function winningOfferFor(p: ShopProductRow): ShopOfferRow | null {
 // The storefront filters/sorts/facets client-side over the full active catalog
 // (only ~22 SKUs), so we return everything active in one shot.
 // Products with at least one active, in-stock offer are the buyable catalog.
-const HAS_LIVE_OFFER = {
+export const HAS_LIVE_OFFER = {
   offers: { some: { isActive: true, status: ProductStatus.ACTIVE, quantity: { gt: 0 }, deletedAt: null } },
+} satisfies Prisma.ProductWhereInput;
+
+// Admin visibility gate applied on every storefront query: a product is shown
+// only if the admin hasn't hidden it (`hidden: false`) AND — for imported vendor
+// products — its VendorSource is active (vendor suspend hides all its products).
+// Internal/bulk products (sourceId null) are always vendor-OK.
+export const STOREFRONT_SHOWABLE = {
+  hidden: false,
+  OR: [{ sourceId: null }, { source: { is: { active: true } } }],
 } satisfies Prisma.ProductWhereInput;
 
 // Sibling SKUs of a product's variant family (self included), for the detail
@@ -173,7 +239,7 @@ async function familyMembersOf(
 ): Promise<ReturnType<typeof toFamilyMember>[]> {
   if (!p.familyKey) return [toFamilyMember(toStoreProduct(p, opts))];
   const rows = await prisma.product.findMany({
-    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
   });
   const self = rows.some((r) => r.id === p.id) ? rows : [p, ...rows];
@@ -197,7 +263,7 @@ function toFamilyMember(sp: StoreProductLite) {
 
 export async function listProducts() {
   const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
@@ -208,7 +274,7 @@ export async function listProducts() {
 
 export async function getProduct(id: string) {
   const p = await prisma.product.findFirst({
-    where: { id, ...notDeleted },
+    where: { id, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');
@@ -236,7 +302,7 @@ export async function getProduct(id: string) {
 
 export async function listPublicProducts() {
   const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...HAS_LIVE_OFFER },
+    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
@@ -246,7 +312,7 @@ export async function listPublicProducts() {
 
 export async function getPublicProduct(id: string) {
   const p = await prisma.product.findFirst({
-    where: { id, status: ProductStatus.ACTIVE, ...notDeleted },
+    where: { id, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');
@@ -346,16 +412,21 @@ function serializeCart(
 ) {
   const lines = (cart?.items ?? []).map((it) => {
     const p = toStoreProduct(it.product);
+    // Gift-card line: the chosen amount lives in `shade` and is the line price.
+    const voucher = isVoucherProduct(it.product);
+    const denomination = voucher ? Number(it.shade) || 0 : null;
     return {
       itemId: it.id,
       productId: it.productId,
       shade: it.shade ?? '',
+      denomination, // null for normal products; ₹ face value for vouchers
+      voucher: p.voucher, // structured denomination options (null for normal products)
       qty: it.quantity,
       name: p.name,
       brand: p.brand,
       vendor: p.vendor,
       group: p.group, // category slug — for category-scoped discount preview
-      price: p.price,
+      price: voucher && denomination ? denomination : p.price,
       mrp: p.mrp,
       g1: p.g1,
       g2: p.g2,
@@ -386,6 +457,15 @@ export async function addToCart(userId: string, input: AddToCartInput) {
     include: shopProductInclude,
   });
   if (!product) throw AppError.notFound('Product not found');
+
+  // Gift-card (Hubble voucher) line: the buyer must choose an amount, carried in
+  // `shade` (the compound-unique cart key keeps different amounts as separate
+  // lines). Validate against the brand's allowed denominations / min–max.
+  if (isVoucherProduct(product)) {
+    if (!shade) throw AppError.badRequest('Please choose a gift-card amount');
+    assertValidVoucherAmount(voucherSpecOf(product), Number(shade), product.name);
+  }
+
   const sp = toStoreProduct(product);
   const available = shadeStock(sp, shade);
 
@@ -597,11 +677,22 @@ async function priceCart(userId: string, couponCode?: string, method?: PaymentMe
     const p = toStoreProduct(it.product);
     const offer = winningOfferFor(it.product);
     if (!offer) throw AppError.badRequest(`"${p.name}" is out of stock`);
+    // Gift-card lines are priced by the buyer's chosen denomination (carried in the
+    // cart line's `shade`), not the offer's "from" price. Re-validate here — the last
+    // gate before payment — against the brand's Hubble rules, so a stale/invalid amount
+    // is rejected BEFORE we charge (never pay-then-Hubble-refuses).
+    const voucher = isVoucherProduct(it.product);
+    const denomination = voucher ? Number(it.shade) : null;
+    if (voucher) {
+      assertValidVoucherAmount(voucherSpecOf(it.product), Number(it.shade), p.name);
+    }
     return {
       it,
       p,
       resellerId: offer.resellerId ?? null,
-      unitPrice: toNumber(offer.eppPrice),
+      unitPrice: voucher ? (denomination as number) : toNumber(offer.eppPrice),
+      isVoucher: voucher,
+      denomination,
     };
   });
 
@@ -765,8 +856,9 @@ async function refundQuietly(paymentId: string) {
 // View-only demo accounts can browse/cart but never purchase — enforced
 // server-side (not just hidden in the UI) regardless of the global flag.
 async function assertNotViewOnly(userId: string) {
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true } });
-  if (u?.viewOnly) throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true, email: true } });
+  if (u?.viewOnly || isDemoLoginEmail(u?.email))
+    throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
 }
 
 // Step 1 of checkout: price the cart and open a Razorpay order for the grand
@@ -905,6 +997,7 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     }
 
     const orderIds: string[] = [];
+    const voucherItemIds: string[] = []; // gift-card lines to kick off after commit
 
     for (let gi = 0; gi < priced.length; gi += 1) {
       const g = priced[gi];
@@ -931,20 +1024,38 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
           cashbackEarned: D(g.gCashback),
           total: D(g.gTotal),
           status: OrderStatus.PLACED,
-          items: {
-            create: g.gLines.map((l) => ({
-              productId: l.it.productId,
-              quantity: l.it.quantity,
-              unitPrice: D(l.unitPrice),
-              lineTotal: D(l.unitPrice * l.it.quantity),
-            })),
-          },
           statusHistory: {
             create: { status: OrderStatus.PLACED, changedById: userId, note: 'Order placed' },
           },
         },
       });
       orderIds.push(order.id);
+
+      // Order lines (created individually so we can attach a VoucherFulfilment to
+      // each gift-card line). A voucher's issuance state lives in its own table
+      // (different lifecycle than a physical line); it starts PENDING and the
+      // Hubble order is placed after payment is committed (post-commit kickoff).
+      for (const l of g.gLines) {
+        const oi = await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: l.it.productId,
+            quantity: l.it.quantity,
+            unitPrice: D(l.unitPrice),
+            lineTotal: D(l.unitPrice * l.it.quantity),
+          },
+        });
+        if (l.isVoucher) {
+          await tx.voucherFulfilment.create({
+            data: {
+              orderItemId: oi.id,
+              denomination: D(l.denomination as number),
+              status: VoucherFulfilmentStatus.PENDING,
+            },
+          });
+          voucherItemIds.push(oi.id);
+        }
+      }
 
       // Record the captured gateway payment against each split order (they all
       // share the one Razorpay order; amounts are this order's slice).
@@ -983,13 +1094,21 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
       await tx.user.update({ where: { id: userId }, data: { qrDiscountEligible: false } });
     }
 
-    return orderIds;
+    return { orderIds, voucherItemIds };
   });
+
+  // Fire off voucher (Hubble) fulfilment for any gift-card lines, AFTER the paid
+  // order is committed — a Hubble outage never rolls back the payment, and the
+  // long async issuance never blocks the checkout response. Fire-and-forget; the
+  // engine flips each fulfilment PENDING → PROCESSING/DELIVERED/FAILED and delivers.
+  if (created.voucherItemIds.length) {
+    void kickoffVoucherFulfilments(created.voucherItemIds);
+  }
 
   // Return the first split order (full), plus checkout-group metadata so the
   // confirmation screen can note the split.
-  const full = await prisma.order.findUnique({ where: { id: created[0] }, include: orderFullInclude });
-  return serialize({ ...full, checkoutGroup, orderCount: created.length });
+  const full = await prisma.order.findUnique({ where: { id: created.orderIds[0] }, include: orderFullInclude });
+  return serialize({ ...full, checkoutGroup, orderCount: created.orderIds.length });
 }
 
 // ─── Alerts ──────────────────────────────────────────────────────────────────
@@ -1007,13 +1126,26 @@ const NOTIF_SHAPE: Record<string, { type: string; title: string; body: (o: strin
 
 export async function listNotifications(userId: string) {
   const { id: employeeId } = await resolveEmployee(userId);
-  const rows = await prisma.orderStatusHistory.findMany({
-    where: { order: { employeeId } },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
-    include: { order: { select: { orderNo: true, total: true } } },
-  });
-  const data = rows.map((h) => {
+  const [rows, vouchers] = await Promise.all([
+    prisma.orderStatusHistory.findMany({
+      where: { order: { employeeId } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { order: { select: { orderNo: true, total: true } } },
+    }),
+    // Delivered gift-card codes surface their own "voucher ready" alert.
+    prisma.voucherFulfilment.findMany({
+      where: { status: VoucherFulfilmentStatus.DELIVERED, deliveredAt: { not: null }, orderItem: { order: { employeeId } } },
+      orderBy: { deliveredAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        deliveredAt: true,
+        orderItem: { select: { product: { select: { brand: true, name: true } }, order: { select: { orderNo: true } } } },
+      },
+    }),
+  ]);
+  const statusAlerts = rows.map((h) => {
     const shape = NOTIF_SHAPE[h.status] ?? NOTIF_SHAPE.CONFIRMED;
     const orderNo = `#${h.order.orderNo}`;
     return {
@@ -1027,6 +1159,14 @@ export async function listNotifications(userId: string) {
       at: h.createdAt,
     };
   });
+  const voucherAlerts = vouchers.map((v) => ({
+    id: `voucher-${v.id}`,
+    type: 'order',
+    title: 'Gift card ready',
+    body: `Your ${v.orderItem.product.brand || v.orderItem.product.name} gift card is ready — tap order #${v.orderItem.order.orderNo} to view the code.`,
+    at: v.deliveredAt as Date,
+  }));
+  const data = [...statusAlerts, ...voucherAlerts].sort((a, b) => +new Date(b.at) - +new Date(a.at));
   return { data: serialize(data) };
 }
 
@@ -1054,8 +1194,10 @@ export async function listOrders(userId: string) {
 export async function getOrder(userId: string, id: string) {
   const { id: employeeId } = await resolveEmployee(userId);
   const order = await prisma.order.findFirst({
+    // Employee-scoped, so it's safe to return issued voucher credentials here (and
+    // only here) via shopOrderFullInclude.
     where: { employeeId, OR: [{ id }, { orderNo: id }] },
-    include: orderFullInclude,
+    include: shopOrderFullInclude,
   });
   if (!order) throw AppError.notFound('Order not found');
   return serialize(order);

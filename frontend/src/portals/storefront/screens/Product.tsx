@@ -67,18 +67,40 @@ function Detail({ p }: { p: ProductDetail }) {
   const [lightbox, setLightbox] = useState(false);
   const [pincode, setPincode] = useState(() => localStorage.getItem(PINCODE_KEY) ?? '');
 
+  // ── Gift-card (Hubble voucher): the buyer chooses a denomination; the chosen
+  //    amount is the price and is carried to the cart as the line's `shade`.
+  const voucher = p.voucher ?? null;
+  const isVoucher = !!voucher;
+  const denomChoices = voucher?.denominations ?? [];
+  const isFlexible = isVoucher && denomChoices.length === 0;
+  const [amount, setAmount] = useState<number | null>(denomChoices[0] ?? null);
+  const [customAmt, setCustomAmt] = useState('');
+
   // Switching colour/variant navigates to a sibling SKU; reset the gallery to
   // that product's first image so it opens on the selected colour's photo.
   useEffect(() => {
     setActiveImg(0);
     setShadeIdx(0);
     setLightbox(false);
+    setAmount((p.voucher?.denominations ?? [])[0] ?? null);
+    setCustomAmt('');
   }, [p.id]);
 
   const shade = hasShades ? p.shades[shadeIdx] : null;
   const shadeStock = shade ? shade.stock : p.stock;
+  // The chosen voucher amount (fixed pick or a valid custom entry); null until valid.
+  const customNum = Number(customAmt);
+  const withinRange =
+    isFlexible && Number.isInteger(customNum) && customNum > 0 &&
+    (voucher?.min == null || customNum >= voucher.min) &&
+    (voucher?.max == null || customNum <= voucher.max);
+  const voucherAmount = isVoucher ? (isFlexible ? (withinRange ? customNum : null) : amount) : null;
+  // Cart key: normal products use the colour name; vouchers use the amount token.
+  const lineShade = isVoucher ? (voucherAmount != null ? String(voucherAmount) : '') : shade?.name ?? '';
+  const displayPrice = isVoucher && voucherAmount ? voucherAmount : p.price;
+  const canBuy = isVoucher ? voucherAmount != null : shadeStock > 0;
   const inStock = shadeStock > 0;
-  const savings = p.mrp - p.price;
+  const savings = p.mrp - displayPrice;
   const related = getRelated(p);
   const wished = isWished(p.id);
 
@@ -152,10 +174,10 @@ function Detail({ p }: { p: ProductDetail }) {
     touchStartX.current = null;
   };
 
-  // Cart line for this exact product + selected shade (feature 4).
+  // Cart line for this exact product + selected shade/denomination.
   const line = useMemo(
-    () => cart.find((l) => l.productId === p.id && (l.shade || '') === (shade?.name || '')),
-    [cart, p.id, shade],
+    () => cart.find((l) => l.productId === p.id && (l.shade || '') === lineShade),
+    [cart, p.id, lineShade],
   );
 
   // Delivery estimate — real Blue Dart TAT lookup, debounced on a valid pincode.
@@ -182,8 +204,12 @@ function Detail({ p }: { p: ProductDetail }) {
   }, [pincode]);
 
   const add = (buyNow = false) => {
-    if (!inStock) return;
-    void addToCart(p.id, shade?.name ?? '', qty);
+    if (isVoucher && voucherAmount == null) {
+      flash('Please choose an amount');
+      return;
+    }
+    if (!canBuy) return;
+    void addToCart(p.id, lineShade, qty);
     if (buyNow) navigate('/shop/cart');
     else flash('Added to cart');
   };
@@ -394,11 +420,11 @@ function Detail({ p }: { p: ProductDetail }) {
         {/* ── Buy box ── */}
         <aside className={styles.buyBox}>
           <div className={styles.priceBlock}>
-            <span className={styles.price}>{inr(p.price)}</span>
-            {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
-            <span className={styles.priceKind}>{authed ? 'EPP price' : 'MOP'}</span>
+            <span className={styles.price}>{inr(displayPrice)}</span>
+            {!isVoucher && p.mrp > displayPrice && <span className={styles.mrp}>{inr(p.mrp)}</span>}
+            <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MOP'}</span>
           </div>
-          {authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
+          {!isVoucher && authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
           {p.cashback > 0 && (
             <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
           )}
@@ -406,13 +432,54 @@ function Detail({ p }: { p: ProductDetail }) {
             {authed ? 'Inclusive of taxes · corporate rate' : 'Market operating price · inclusive of taxes'}
           </div>
 
-          {!authed && (
+          {!authed && !isVoucher && (
             <button className={styles.eppCta} onClick={() => navigate('/')}>
               Sign in to see your EPP price →
             </button>
           )}
 
-          {/* Delivery estimate */}
+          {/* Gift-card: choose a denomination + how the code is delivered */}
+          {isVoucher && (
+            <div className={styles.voucherBox}>
+              <div className={styles.blockLabel}>Choose an amount</div>
+              {isFlexible ? (
+                <div className={styles.voucherCustom}>
+                  <span className={styles.voucherRupee}>₹</span>
+                  <input
+                    className={styles.voucherInput}
+                    value={customAmt}
+                    onChange={(e) => setCustomAmt(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                    placeholder="Enter amount"
+                    inputMode="numeric"
+                  />
+                  {(voucher?.min != null || voucher?.max != null) && (
+                    <span className={styles.voucherRange}>
+                      {voucher?.min != null ? inr(voucher.min) : '₹0'}
+                      {voucher?.max != null ? ` – ${inr(voucher.max)}` : '+'}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className={styles.denoms}>
+                  {denomChoices.map((d) => (
+                    <button
+                      key={d}
+                      className={cn(styles.denom, amount === d && styles.denomOn)}
+                      onClick={() => setAmount(d)}
+                    >
+                      {inr(d)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className={styles.voucherNote}>
+                Digital gift card — after payment, the code is emailed to you and shown here in your order.
+              </div>
+            </div>
+          )}
+
+          {/* Delivery estimate (physical products only) */}
+          {!isVoucher && (
           <div className={styles.deliveryBox}>
             <div className={styles.deliveryHead}>
               <Truck size={15} /> Delivery
@@ -446,6 +513,7 @@ function Detail({ p }: { p: ProductDetail }) {
               <div className={styles.etaHint}>Enter a 6-digit pincode to see the delivery date.</div>
             )}
           </div>
+          )}
 
           {p.freebie.enabled && (
             <div className={styles.freebie}>
@@ -499,7 +567,7 @@ function Detail({ p }: { p: ProductDetail }) {
                 <QtyStepper
                   value={line.qty}
                   onChange={(v) => void setLineQty(line.itemId, v)}
-                  max={Math.max(1, shadeStock)}
+                  max={isVoucher ? 10 : Math.max(1, shadeStock)}
                 />
                 <button className={styles.removeBtn} onClick={() => void removeLine(line.itemId)}>
                   <Trash2 size={14} /> Remove
@@ -518,13 +586,13 @@ function Detail({ p }: { p: ProductDetail }) {
             <>
               <div className={styles.qtyWrap}>
                 <span className={styles.qtyLabel}>Quantity</span>
-                <QtyStepper value={qty} onChange={setQty} max={Math.max(1, shadeStock)} />
+                <QtyStepper value={qty} onChange={setQty} max={isVoucher ? 10 : Math.max(1, shadeStock)} />
               </div>
-              <Button size="lg" block disabled={!inStock} icon={<ShoppingCart size={17} />} onClick={() => add(false)}>
+              <Button size="lg" block disabled={!canBuy} icon={<ShoppingCart size={17} />} onClick={() => add(false)}>
                 Add to cart
               </Button>
               {checkoutEnabled && (
-                <Button size="lg" variant="secondary" block disabled={!inStock} onClick={() => add(true)}>
+                <Button size="lg" variant="secondary" block disabled={!canBuy} onClick={() => add(true)}>
                   Buy now
                 </Button>
               )}

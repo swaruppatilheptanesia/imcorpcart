@@ -5,7 +5,7 @@
 
 import { apiFetch, apiUpload, type PageMeta } from './http';
 import { setToken, setUser, clearAuth, type AuthUser } from './auth-store';
-import type { Coupon, DateRange, Order, Product, UserDataset, UserTab } from './types';
+import type { Coupon, DateRange, Order, OrderStatus, Product, UserDataset, UserTab } from './types';
 import {
   toProduct,
   toCoupon,
@@ -15,6 +15,7 @@ import {
   PRODUCT_STATUS_OUT,
   COUPON_TYPE_OUT,
   COUPON_STATUS_OUT,
+  ORDER_STATUS_IN,
   ORDER_STATUS_OUT,
   USER_TAB_TO_TYPE,
 } from './map';
@@ -75,6 +76,7 @@ export interface ProductQuery {
   q?: string;
   group?: 'all' | 'phones' | 'accessories' | 'bags';
   status?: 'all' | 'active' | 'draft' | 'inactive';
+  source?: string; // VendorSource id — filter to one vendor's imported products
   page?: number;
   pageSize?: number;
 }
@@ -90,6 +92,7 @@ export async function getProducts(query: ProductQuery = {}): Promise<ProductList
       q: query.q,
       group: query.group && query.group !== 'all' ? query.group : undefined,
       status: query.status && query.status !== 'all' ? PRODUCT_STATUS_OUT[query.status] : undefined,
+      source: query.source,
       page: query.page,
       pageSize: query.pageSize,
     },
@@ -603,6 +606,209 @@ export function updateDeliverySetting(key: string, enabled: boolean): Promise<De
   return apiFetch('/pincodes/settings', { method: 'PATCH', body: { key, enabled } });
 }
 
+// ─── Integration partners ────────────────────────────────────────────────────
+
+export type PartnerStatus = 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED';
+export type PartnerPriceBasis = 'MRP' | 'MOP' | 'EPP';
+
+export interface AdminPartner {
+  id: string;
+  name: string;
+  slug: string;
+  status: PartnerStatus;
+  active: boolean;
+  apiTokenLast4: string | null;
+  webhookSecretLast4: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  ipAllowlist: string[];
+  webhookUrl: string | null;
+  priceField: PartnerPriceBasis; // default basis for new catalogue entries
+  commissionPct: number | null;
+  features: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { orders: number };
+}
+
+export interface PartnerWrite {
+  name: string;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  status?: PartnerStatus;
+  active?: boolean;
+  webhookUrl?: string | null;
+  ipAllowlist?: string[];
+  priceField?: PartnerPriceBasis;
+  commissionPct?: number;
+  features?: Record<string, unknown> | null;
+}
+
+// ── Partner catalogue (per-product pricing) ──
+export interface CatalogueEntry {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  brand: string;
+  category: string;
+  categorySlug: string;
+  subCategory: string;
+  image: string | null;
+  mrp: number;
+  mop: number;
+  epp: number | null;
+  priceBasis: PartnerPriceBasis;
+  commissionPct: number;
+  vendorPrice: number;
+}
+export interface CatalogueCandidate {
+  productId: string;
+  sku: string;
+  name: string;
+  category: string;
+  subCategory: string;
+  image: string | null;
+  mrp: number;
+  mop: number;
+  epp: number | null;
+  inCatalogue: boolean;
+}
+export interface CatalogueQuery {
+  q?: string;
+  categoryId?: string;
+  subCategory?: string;
+  page?: number;
+  pageSize?: number;
+}
+export interface AddCatalogueBody {
+  productIds?: string[];
+  categoryId?: string;
+  subCategory?: string;
+  priceBasis?: PartnerPriceBasis;
+  commissionPct?: number;
+}
+function catalogueQuery(q: CatalogueQuery): Record<string, string | number | undefined> {
+  return { q: q.q, categoryId: q.categoryId, subCategory: q.subCategory, page: q.page, pageSize: q.pageSize };
+}
+export async function getPartnerCatalogue(id: string, query: CatalogueQuery = {}): Promise<{ items: CatalogueEntry[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<CatalogueEntry[]>>(`/partners/${id}/catalogue`, { query: catalogueQuery(query) });
+  return { items: r.data, meta: r.meta };
+}
+export async function getCatalogueCandidates(id: string, query: CatalogueQuery = {}): Promise<{ items: CatalogueCandidate[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<CatalogueCandidate[]>>(`/partners/${id}/catalogue/candidates`, { query: catalogueQuery(query) });
+  return { items: r.data, meta: r.meta };
+}
+export function addPartnerCatalogue(id: string, body: AddCatalogueBody): Promise<{ added: number }> {
+  return apiFetch(`/partners/${id}/catalogue`, { method: 'POST', body });
+}
+export function updateCatalogueEntry(id: string, entryId: string, body: { priceBasis?: PartnerPriceBasis; commissionPct?: number }): Promise<CatalogueEntry> {
+  return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'PATCH', body });
+}
+export function removeCatalogueEntry(id: string, entryId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'DELETE' });
+}
+
+// Orders a partner has sent us (admin view). Self-contained — each row carries its
+// items, so no separate order-detail fetch is needed (the admin order mapping
+// assumes a company/employee buyer, which partner orders don't have).
+export interface PartnerOrderItem {
+  name: string;
+  sku: string;
+  image: string | null;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+export interface PartnerOrderRow {
+  id: string;
+  orderNo: string;
+  externalRef: string | null;
+  checkoutGroup: string | null;
+  status: OrderStatus; // display label
+  reseller: string; // fulfilling reseller, or 'First-party' for house orders
+  subtotal: number;
+  total: number;
+  itemCount: number;
+  items: PartnerOrderItem[];
+  createdAt: string;
+  dispatchedAt: string | null;
+  awb: string | null;
+  courier: string | null;
+}
+interface ApiPartnerOrderRow extends Omit<PartnerOrderRow, 'status'> {
+  status: string; // raw enum from the API
+}
+export async function getPartnerOrders(id: string, query: { page?: number; pageSize?: number } = {}): Promise<{ items: PartnerOrderRow[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<ApiPartnerOrderRow[]>>(`/partners/${id}/orders`, { query: { page: query.page, pageSize: query.pageSize } });
+  const items = r.data.map((o) => ({ ...o, status: ORDER_STATUS_IN[o.status] ?? 'Processing' }));
+  return { items, meta: r.meta };
+}
+
+// Token + webhook secret are returned only once, at create.
+export interface PartnerCredentials {
+  partner: AdminPartner;
+  token: string;
+  webhookSecret: string;
+}
+
+export interface WebhookDeliveryRow {
+  id: string;
+  event: string;
+  url: string;
+  status: 'PENDING' | 'DELIVERED' | 'FAILED';
+  attempts: number;
+  responseStatus: number | null;
+  lastError: string | null;
+  createdAt: string;
+  lastAttemptAt: string | null;
+}
+
+export interface PartnerActivityRow {
+  id: string;
+  action: string;
+  ipAddress: string | null;
+  after: unknown;
+  createdAt: string;
+}
+
+export async function getPartners(): Promise<AdminPartner[]> {
+  const r = await apiFetch<{ data: AdminPartner[] }>('/partners');
+  return r.data;
+}
+export function getPartner(id: string): Promise<AdminPartner> {
+  return apiFetch(`/partners/${id}`);
+}
+export function createPartner(body: PartnerWrite): Promise<PartnerCredentials> {
+  return apiFetch('/partners', { method: 'POST', body });
+}
+export function updatePartner(id: string, body: Partial<PartnerWrite>): Promise<AdminPartner> {
+  return apiFetch(`/partners/${id}`, { method: 'PATCH', body });
+}
+export function deletePartner(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/partners/${id}`, { method: 'DELETE' });
+}
+export function rotatePartnerToken(id: string): Promise<{ token: string }> {
+  return apiFetch(`/partners/${id}/rotate-token`, { method: 'POST', body: {} });
+}
+export function rotatePartnerWebhookSecret(id: string): Promise<{ webhookSecret: string }> {
+  return apiFetch(`/partners/${id}/rotate-webhook-secret`, { method: 'POST', body: {} });
+}
+export async function getPartnerWebhooks(id: string): Promise<WebhookDeliveryRow[]> {
+  const r = await apiFetch<{ data: WebhookDeliveryRow[] }>(`/partners/${id}/webhooks`);
+  return r.data;
+}
+export function testPartnerWebhook(id: string): Promise<WebhookDeliveryRow> {
+  return apiFetch(`/partners/${id}/webhooks/test`, { method: 'POST', body: {} });
+}
+export function resendPartnerWebhook(id: string, deliveryId: string): Promise<WebhookDeliveryRow> {
+  return apiFetch(`/partners/${id}/webhooks/${deliveryId}/resend`, { method: 'POST', body: {} });
+}
+export async function getPartnerActivity(id: string): Promise<PartnerActivityRow[]> {
+  const r = await apiFetch<{ data: PartnerActivityRow[] }>(`/partners/${id}/activity`);
+  return r.data;
+}
+
 // ─── QR exhibition campaigns ─────────────────────────────────────────────────
 
 export type CampaignDiscountMode = 'FIRST_ORDER' | 'WHILE_ACTIVE' | 'FOREVER';
@@ -823,3 +1029,136 @@ export {
   demoAccounts,
   DEMO_PASSWORD,
 } from './fixtures/admin';
+
+// ─── Inbound vendor sources (product import) ─────────────────────────────────
+
+export type VendorSourceStatus = 'ACTIVE' | 'SUSPENDED' | 'ONBOARDING';
+
+export interface VendorSource {
+  id: string;
+  name: string;
+  slug: string;
+  status: VendorSourceStatus;
+  active: boolean;
+  adapter: string;
+  baseUrl: string | null;
+  apiKeyLast4: string | null;
+  config: Record<string, unknown> | null;
+  discountPct: number;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  _count: { products: number; runs: number };
+}
+
+// Sources are auto-provisioned per adapter (no create); the admin only patches
+// config/discount/active.
+export interface VendorSourceUpdate {
+  name?: string;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  discountPct?: number;
+  active?: boolean;
+  config?: Record<string, unknown> | null;
+}
+
+export interface VendorImportRun {
+  id: string;
+  sourceId: string;
+  status: 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  fetched: number;
+  created: number;
+  updated: number;
+  failed: number;
+  errors: { ref: string; field: string; message: string }[] | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface VendorSourceProduct {
+  id: string;
+  sku: string;
+  name: string;
+  status: string;
+  hidden: boolean;
+  externalRef: string | null;
+  offers: { eppPrice: number; quantity: number }[];
+}
+
+export async function getVendorSources(): Promise<VendorSource[]> {
+  const r = await apiFetch<{ data: VendorSource[] }>('/vendor-sources');
+  return r.data;
+}
+
+export function getVendorSource(id: string): Promise<VendorSource> {
+  return apiFetch(`/vendor-sources/${id}`);
+}
+
+export function updateVendorSource(id: string, body: VendorSourceUpdate): Promise<VendorSource> {
+  return apiFetch(`/vendor-sources/${id}`, { method: 'PATCH', body });
+}
+
+/** Kicks off a background sync; returns the RUNNING run to poll (202). */
+export function syncVendorSource(id: string): Promise<VendorImportRun> {
+  return apiFetch(`/vendor-sources/${id}/sync`, { method: 'POST' });
+}
+
+/** Poll one import run for live progress. */
+export function getVendorSourceRun(id: string, runId: string): Promise<VendorImportRun> {
+  return apiFetch(`/vendor-sources/${id}/runs/${runId}`);
+}
+
+/** Admin per-product show/hide on the storefront (PUT the product master). */
+export function setProductHidden(id: string, hidden: boolean): Promise<unknown> {
+  return apiFetch(`/products/${id}`, { method: 'PUT', body: { hidden } });
+}
+
+/** Admin fulfilment: update the real shipment/transit status for any order. */
+export function updateOrderTransit(
+  id: string,
+  input: { status: string; awbNumber?: string; courierCode?: string; description?: string },
+): Promise<unknown> {
+  return apiFetch(`/orders/${id}/transit`, { method: 'PATCH', body: input });
+}
+
+/** Admin: retry issuing a stuck/failed gift-card (Hubble voucher) line. */
+export async function retryVoucherFulfilment(orderId: string, itemId: string): Promise<OrderWithCuid> {
+  const clean = orderId.replace(/^#/, '');
+  const raw = await apiFetch<Parameters<typeof toOrderFull>[0]>(
+    `/orders/${clean}/items/${itemId}/retry-voucher`,
+    { method: 'POST' },
+  );
+  return toOrderFull(raw);
+}
+
+/** Admin: re-send an already-issued gift-card email to the buyer (code stays hidden from admin). */
+export function resendVoucherEmail(orderId: string, itemId: string): Promise<{ sent: boolean }> {
+  const clean = orderId.replace(/^#/, '');
+  return apiFetch(`/orders/${clean}/items/${itemId}/resend-voucher`, { method: 'POST' });
+}
+
+export interface VendorWalletBalance {
+  supported: boolean;
+  configured: boolean;
+  balance: number | null;
+  error?: string;
+}
+/** Hubble client wallet balance (ops aid on the vendor-source page). */
+export function getVendorWalletBalance(id: string): Promise<VendorWalletBalance> {
+  return apiFetch(`/vendor-sources/${id}/wallet`);
+}
+
+export async function getVendorSourceRuns(
+  id: string,
+  query: { page?: number; pageSize?: number } = {},
+): Promise<{ items: VendorImportRun[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<VendorImportRun[]>>(`/vendor-sources/${id}/runs`, { query });
+  return { items: r.data, meta: r.meta };
+}
+
+export async function getVendorSourceProducts(
+  id: string,
+  query: { page?: number; pageSize?: number } = {},
+): Promise<{ items: VendorSourceProduct[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<VendorSourceProduct[]>>(`/vendor-sources/${id}/products`, { query });
+  return { items: r.data, meta: r.meta };
+}

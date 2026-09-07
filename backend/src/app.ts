@@ -7,12 +7,16 @@ import { UPLOAD_DIR, UPLOAD_ROUTE } from './config/upload';
 import { requestContext } from './middleware/requestContext';
 import { notFound, errorHandler } from './middleware/error';
 import routes from './routes';
+import partnerRoutes from './routes/partner';
 
 // Build and configure the Express application (no listening here — see server.ts).
 export function createApp(): Application {
   const app = express();
 
   app.disable('x-powered-by');
+  // Behind a reverse proxy (nginx in prod) so req.ip is the real client — used by
+  // the partner IP allowlist and rate limiter.
+  app.set('trust proxy', 1);
   app.use(
     helmet({
       // Allow the SPA (different dev origin) to load uploaded images.
@@ -33,6 +37,10 @@ export function createApp(): Application {
   app.use(UPLOAD_ROUTE, express.static(UPLOAD_DIR));
 
   app.use(API_PREFIX, routes);
+
+  // Machine-to-machine partner integration API (separate front door, its own
+  // key + bearer-secret auth — a sibling to /api, not under it).
+  app.use('/partner-api/v1', partnerRoutes);
 
   // 404 + centralised error handling (must be last).
   app.use(notFound);

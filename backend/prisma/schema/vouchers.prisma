@@ -1,0 +1,38 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Gift-card (Hubble voucher) fulfilment — separate from the order line.
+// A digital voucher has a different lifecycle than a physical order line (no
+// shipment / courier / transit — just async code issuance from the client's
+// Hubble wallet), so its issuance state lives in its own table, 1:1 with the
+// OrderItem it fulfils. The presence of a VoucherFulfilment row is what marks an
+// order line as a gift card.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model VoucherFulfilment {
+  id          String    @id @default(cuid())
+  orderItemId String    @unique @map("order_item_id")
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  // Chosen gift-card face value (the buyer picks it at checkout; drives what we
+  // charge and the Hubble order amount). Equals the order line's unitPrice.
+  denomination Decimal @db.Decimal(12, 2)
+
+  // Issuance state: after the order is paid we place a Hubble order, poll it, then
+  // store the issued credential here. `hubbleOrderRef` is *Ref-named so serialize()
+  // strips it from every response (internal-only). The credential fields
+  // (voucherCode/voucherPin) are exposed ONLY on the buyer's own getOrder.
+  status          VoucherFulfilmentStatus @default(PENDING)
+  hubbleOrderRef  String?                 @map("hubble_order_ref")
+  voucherCode     String?                 @map("voucher_code")
+  voucherPin      String?                 @map("voucher_pin")
+  voucherCardType String?                 @map("voucher_card_type")
+  redemptionUrl   String?                 @map("redemption_url")
+  voucherExpiry   DateTime?               @map("voucher_expiry")
+  fulfilmentError String?                 @map("fulfilment_error")
+  deliveredAt     DateTime?               @map("delivered_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("voucher_fulfilments")
+}
