@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, AlertTriangle, FolderTree } from 'lucide-react';
-import { Button, Card, StatusPill, Field, Input, Toggle, Modal, Skeleton, EmptyState, useToast } from '@/components';
+import { Plus, Pencil, Trash2, AlertTriangle, FolderTree, Search } from 'lucide-react';
+import { Button, Card, StatusPill, Segmented, Field, Input, Toggle, Modal, Skeleton, EmptyState, useToast } from '@/components';
 import { useAsync } from '@/lib/useAsync';
 import { getCategories, createCategory, updateCategory, deleteCategory } from '@/data/api';
 import { ApiError } from '@/data/http';
@@ -16,8 +16,21 @@ export function Categories() {
   const { flash } = useToast();
   const { data, state, error, reload } = useAsync(() => getCategories(), [], (d) => d.length === 0);
   const [target, setTarget] = useState<EditTarget | null>(null);
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
 
   const cats = data ?? [];
+
+  // Client-side filter: getCategories() returns the full tree, so search + status
+  // are applied in-memory. A card matches if the parent name/slug OR any child's
+  // name/slug contains the query, and the parent's active state matches the filter.
+  const query = q.trim().toLowerCase();
+  const filtered = cats.filter((c) => {
+    if (status !== 'all' && c.isActive !== (status === 'active')) return false;
+    if (!query) return true;
+    const hay = `${c.name} ${c.slug} ${c.children.map((sub) => `${sub.name} ${sub.slug}`).join(' ')}`.toLowerCase();
+    return hay.includes(query);
+  });
 
   const onDeactivate = async (id: string, isActive: boolean) => {
     try {
@@ -41,6 +54,24 @@ export function Categories() {
   return (
     <div>
       <div className={s.toolbar}>
+        <div className={s.search}>
+          <Search size={16} className={s.searchIcon} />
+          <Input
+            className={s.searchInput}
+            placeholder="Search categories"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+        <Segmented
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
+          value={status}
+          onChange={(v) => setStatus(v as 'all' | 'active' | 'inactive')}
+        />
         <div className={s.spacer} />
         <Button size="sm" icon={<Plus size={16} strokeWidth={2.2} />} onClick={() => setTarget({ mode: 'newCategory' })}>
           New category
@@ -74,9 +105,18 @@ export function Categories() {
         />
       )}
 
-      {state === 'live' && (
+      {state === 'live' && filtered.length === 0 && (
+        <EmptyState
+          icon={<FolderTree size={24} />}
+          title="No matching categories"
+          body="Try a different search or filter."
+          action={{ label: 'Clear filters', onClick: () => { setQ(''); setStatus('all'); } }}
+        />
+      )}
+
+      {state === 'live' && filtered.length > 0 && (
         <div className={styles.list}>
-          {cats.map((c) => (
+          {filtered.map((c) => (
             <Card key={c.id} pad="lg" className={styles.catCard}>
               <div className={styles.catHead}>
                 <div className={styles.catTitle}>
