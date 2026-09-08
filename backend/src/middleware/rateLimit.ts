@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // Brute-force guard for the auth endpoints (login / verify-otp).
 export const authLimiter = rateLimit({
@@ -16,6 +16,9 @@ export const partnerLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.header('x-api-key') || req.ip) ?? 'unknown',
+  // Key per API key; fall back to the caller IP. Use the ipKeyGenerator helper so
+  // IPv6 addresses are normalized to a subnet (a raw req.ip lets IPv6 callers
+  // rotate addresses to bypass the limit — express-rate-limit warns otherwise).
+  keyGenerator: (req) => req.header('x-api-key') || ipKeyGenerator(req.ip ?? 'unknown'),
   message: { error: { code: 'RATE_LIMITED', message: 'Rate limit exceeded' } },
 });
