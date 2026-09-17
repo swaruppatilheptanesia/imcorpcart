@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook, Eye, ShoppingBag } from 'lucide-react';
-import { Card, Button, Field, Input, Toggle, Segmented, StatusPill, DataTable, Row, ProductThumb, Drawer, EmptyState, Skeleton, useToast } from '@/components';
+import { Card, Button, Field, Input, Segmented, StatusPill, DataTable, Row, ProductThumb, Drawer, EmptyState, Skeleton, useToast } from '@/components';
 import { PartnerCatalogue } from './PartnerCatalogue';
 import {
   getPartner,
@@ -26,7 +26,7 @@ import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
 import { fmtDate } from '@/data/map';
 import type { SemanticTone } from '@/data/types';
-import { statusTone, CopyRow } from './Partners';
+import { CopyRow } from './Partners';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
@@ -80,12 +80,16 @@ export function PartnerDetail() {
 
   const [partner, activity, orders] = data;
 
-  const toggleActive = async () => {
+  // Status is the single control: Active enables the partner (auth gate needs
+  // active && status === ACTIVE), Onboarding/Suspended disable it. We keep the
+  // `active` flag in sync so no separate toggle is needed.
+  const setPartnerStatus = async (next: PartnerStatus) => {
     try {
-      await updatePartner(id, { active: !partner.active });
+      await updatePartner(id, { status: next, active: next === 'ACTIVE' });
+      flash(next === 'ACTIVE' ? 'Partner activated' : `Status set to ${next.toLowerCase()}`);
       reload();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not update');
+      flash(e instanceof ApiError ? e.message : 'Could not update status');
     }
   };
 
@@ -134,11 +138,15 @@ export function PartnerDetail() {
           <div className={s.muted}>{partner.contactEmail ?? 'No contact email'}</div>
         </div>
         <div className={styles.detailHeadActions}>
-          <StatusPill label={partner.active ? partner.status : 'Disabled'} tone={partner.active ? statusTone[partner.status] : 'neutral'} />
-          <div className={styles.activeToggle}>
-            <span className={s.muted}>Active</span>
-            <Toggle on={partner.active} onClick={toggleActive} />
-          </div>
+          <Segmented
+            options={[
+              { value: 'ONBOARDING', label: 'Onboarding' },
+              { value: 'ACTIVE', label: 'Active' },
+              { value: 'SUSPENDED', label: 'Suspended' },
+            ]}
+            value={partner.status}
+            onChange={(v) => setPartnerStatus(v as PartnerStatus)}
+          />
           <Button variant="secondary" onClick={remove}>
             <Trash2 size={15} /> Delete
           </Button>
@@ -312,7 +320,6 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
   const { flash } = useToast();
   const [basis, setBasis] = useState<PartnerPriceBasis>(partner.priceField);
   const [commission, setCommission] = useState(partner.commissionPct != null ? String(partner.commissionPct) : '');
-  const [status, setStatus] = useState<PartnerStatus>(partner.status);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -321,7 +328,6 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
       await updatePartner(partner.id, {
         priceField: basis,
         commissionPct: commission ? Number(commission) : undefined,
-        status,
       });
       flash('Saved');
       onSaved();
@@ -348,13 +354,6 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
           <Input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="numeric" placeholder="0" />
         </Field>
       </div>
-      <Field label="Status">
-        <select className={styles.select} value={status} onChange={(e) => setStatus(e.target.value as PartnerStatus)}>
-          <option value="ONBOARDING">Onboarding</option>
-          <option value="ACTIVE">Active</option>
-          <option value="SUSPENDED">Suspended</option>
-        </select>
-      </Field>
       <div className={styles.cardFoot}>
         <Button onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
       </div>

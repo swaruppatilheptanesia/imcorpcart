@@ -11,3 +11,6 @@ npm-debug.log*
 # Uploaded product images (keep the dir, ignore contents)
 uploads/*
 !uploads/.gitkeep
+
+# Local-only demo reseller seed (not committed)
+prisma/seed-demo-reseller.ts

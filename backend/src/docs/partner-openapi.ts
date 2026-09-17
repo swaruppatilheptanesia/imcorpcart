@@ -17,7 +17,7 @@ export const partnerOpenApiSpec = {
       'Order status updates are pushed to your webhook — this reference is read-only.',
   },
   servers: [
-    { url: 'https://imcorp.heptanesia.com/partner-api/v1', description: 'Production' },
+    { url: 'https://imcorpcart.com/partner-api/v1', description: 'Production' },
     { url: 'http://localhost:4000/partner-api/v1', description: 'Local dev' },
   ],
   tags: [

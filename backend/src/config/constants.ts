@@ -19,10 +19,15 @@ export const OTP_PURPOSE = {
 // Kept as a constant so route guards and future portals can reference it.
 export const ADMIN_ROLES = ['SUPER_ADMIN'] as const;
 
-// Demo accounts that skip email-OTP and sign in directly (dev/testing only — the
-// bypass is gated to non-production in auth.service, so this never weakens prod
-// auth). The storefront demo (demo@imcorpcart.com) is also blocked from checkout.
-// Lowercased for case-insensitive matching.
-export const DEMO_LOGIN_EMAILS = new Set(['admin@imcorpcart.local', 'demo@imcorpcart.com']);
+// Demo accounts that skip email-OTP and sign in directly (all environments — see
+// auth.service). The storefront demo (demo@imcorpcart.com) is also blocked from
+// checkout. reseller@imcorpcart.com signs into the reseller portal (seed it +
+// its demo products with `npm run db:seed-demo-reseller`). Lowercased for
+// case-insensitive matching.
+export const DEMO_LOGIN_EMAILS = new Set([
+  'admin@imcorpcart.local',
+  'demo@imcorpcart.com',
+  'reseller@imcorpcart.com',
+]);
 export const isDemoLoginEmail = (email?: string | null): boolean =>
   !!email && DEMO_LOGIN_EMAILS.has(email.toLowerCase());

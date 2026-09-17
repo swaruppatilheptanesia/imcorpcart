@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Plug, Plus, Copy, Check, AlertTriangle, KeyRound } from 'lucide-react';
 import { Button, DataTable, Row, StatusPill, Field, Input, Modal, EmptyState, Skeleton, useToast } from '@/components';
 import type React from 'react';
-import { getPartners, createPartner, type PartnerCredentials, type PartnerPriceBasis } from '@/data/api';
+import { getPartners, createPartner, updatePartner, type PartnerCredentials, type PartnerPriceBasis, type PartnerStatus } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
 import type { SemanticTone } from '@/data/types';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
-const COLS = '1.3fr 1.4fr 0.9fr 0.8fr 0.8fr 90px';
+const COLS = '1.3fr 1.4fr 0.9fr 0.8fr 0.8fr 130px';
 
 // Webhook status-push (#5) isn't wired to a live vendor yet, so the webhook URL
 // input + webhook-secret reveal are hidden (not removed — the state, create
@@ -25,9 +25,24 @@ export const statusTone: Record<string, SemanticTone> = {
 
 export function Partners() {
   const navigate = useNavigate();
+  const { flash } = useToast();
   const { data, state, error, reload } = useAsync(() => getPartners(), [], (d) => d.length === 0);
   const [creating, setCreating] = useState(false);
   const [credentials, setCredentials] = useState<PartnerCredentials | null>(null);
+
+  // Promote/suspend a partner straight from the list. Row is click-through, so stop
+  // propagation; setting ACTIVE also flips `active` on so the partner-API auth passes.
+  const changeStatus = async (e: React.ChangeEvent<HTMLSelectElement>, id: string) => {
+    e.stopPropagation();
+    const next = e.target.value as PartnerStatus;
+    try {
+      await updatePartner(id, { status: next, active: next === 'ACTIVE' });
+      flash(next === 'ACTIVE' ? 'Partner activated' : `Status set to ${next.toLowerCase()}`);
+      reload();
+    } catch (err) {
+      flash(err instanceof ApiError ? err.message : 'Could not update status');
+    }
+  };
 
   return (
     <div>
@@ -66,12 +81,12 @@ export function Partners() {
       )}
 
       {state === 'live' && data && (
-        <DataTable cols={COLS} headers={['Partner', 'Token', 'Default basis', 'Commission', 'Webhook', '']}>
+        <DataTable cols={COLS} headers={['Partner', 'Token', 'Default basis', 'Commission', 'Webhook', 'Status']}>
           {data.map((p) => (
             <Row key={p.id} cols={COLS} onClick={() => navigate(`/super-admin/partnerDetail/${p.id}`)}>
               <div className={styles.nameCell}>
                 <div className={styles.name}>{p.name}</div>
-                <StatusPill label={p.active ? p.status : 'Disabled'} tone={p.active ? statusTone[p.status] : 'neutral'} />
+                <StatusPill label={p.status} tone={statusTone[p.status]} />
               </div>
               <div className={styles.key}>••{p.apiTokenLast4 ?? '····'}</div>
               <div className={s.muted}>{p.priceField}</div>
@@ -81,7 +96,17 @@ export function Partners() {
                 <span className={s.muted}>{p.webhookUrl ? 'Configured' : 'None'}</span>
               </div>
               <div className={styles.rowActions}>
-                <span className={s.muted}>{p._count?.orders ?? 0} orders</span>
+                <select
+                  className={styles.selectSm}
+                  value={p.status}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => changeStatus(e, p.id)}
+                  aria-label="Partner status"
+                >
+                  <option value="ONBOARDING">Onboarding</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="SUSPENDED">Suspended</option>
+                </select>
               </div>
             </Row>
           ))}
