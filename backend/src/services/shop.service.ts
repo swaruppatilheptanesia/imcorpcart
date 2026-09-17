@@ -847,11 +847,13 @@ function verifyRazorpaySignature(orderId: string, paymentId: string, signature: 
 // Refund a captured payment we've decided not to honour (amount/method mismatch),
 // so the shopper is never charged for an order that isn't created. Best-effort:
 // a refund failure is logged, not surfaced — the caller still rejects the order.
-async function refundQuietly(paymentId: string) {
+async function refundQuietly(paymentId: string): Promise<boolean> {
   try {
     await getRazorpay().payments.refund(paymentId, {});
+    return true;
   } catch (e) {
     console.error(`[shop] refund failed for ${paymentId}:`, e);
+    return false;
   }
 }
 
@@ -946,14 +948,13 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     if (payment.status !== 'captured' && payment.status !== 'authorized') {
       throw AppError.badRequest('Payment was not completed — please retry checkout');
     }
-    // The instrument actually used must match the method the cart was priced for
-    // (surcharge differs by method); otherwise the paid amount would be for a
-    // different fee than we recorded. Refund the mismatch and place no order.
+    // Record the instrument actually used. We do NOT require it to equal the method
+    // the cart was priced for: the Razorpay order amount is fixed at creation, so the
+    // customer always pays exactly what we charged, whichever instrument they pick in
+    // the modal (e.g. Card when the checkout config offers Card + UPI). Enforcing
+    // equality here refunded valid card payments and placed no order — the amount is
+    // already verified above, which is the only integrity check that matters.
     payMethod = mapRazorpayMethod(payment as { method?: string });
-    if (input.method && payMethod !== input.method) {
-      await refundQuietly(razorpayPaymentId);
-      throw AppError.badRequest('You paid with a different method than selected — you have been refunded, please retry checkout');
-    }
 
     gatewayOrderId = razorpayOrderId;
     gatewayTxnId = razorpayPaymentId;
@@ -963,7 +964,9 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
   const baseNo = Date.now().toString().slice(-8);
   const D = (n: number) => new Prisma.Decimal(n);
 
-  const created = await prisma.$transaction(async (tx) => {
+  let created: { orderIds: string[]; voucherItemIds: string[] };
+  try {
+    created = await prisma.$transaction(async (tx) => {
     // Shipping address (shared across the split orders): the chosen one, else the
     // default, else an auto-created fallback.
     let address = input.addressId
@@ -1097,7 +1100,36 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     }
 
     return { orderIds, voucherItemIds };
-  });
+    });
+  } catch (e) {
+    // The payment is already captured at this point. If we can't turn it into an
+    // order, refund the shopper (never charge for nothing) and record the failure
+    // so the admin sees it — there is no Order to inspect otherwise.
+    if (gatewayTxnId) {
+      const reason = e instanceof Error ? e.message : 'Unknown error';
+      console.error('[shop] order creation failed after capture; refunding', gatewayTxnId, e);
+      const refunded = await refundQuietly(gatewayTxnId);
+      try {
+        await prisma.auditLog.create({
+          data: {
+            actorId: userId,
+            action: 'checkout.failed_refunded',
+            entityType: 'Payment',
+            entityId: gatewayTxnId,
+            after: { reason, amountInr: grandTotal, rzpOrderId: gatewayOrderId, employeeId, companyId, refunded },
+          },
+        });
+      } catch (logErr) {
+        console.error('[shop] failed to write checkout-failure audit', logErr);
+      }
+      throw AppError.badRequest(
+        refunded
+          ? "We couldn't complete your order, so your payment has been refunded. Please try again."
+          : "We couldn't complete your order and the automatic refund failed — our team has been notified and will refund you.",
+      );
+    }
+    throw e; // ₹0 cart — no captured payment to refund
+  }
 
   // Fire off voucher (Hubble) fulfilment for any gift-card lines, AFTER the paid
   // order is committed — a Hubble outage never rolls back the payment, and the

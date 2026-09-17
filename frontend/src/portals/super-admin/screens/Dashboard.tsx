@@ -84,6 +84,32 @@ export function Dashboard() {
           <StatCard label="Orders" value={String(data.stats.orders)} sub={`avg ${inr(data.stats.avgOrderValue)}`} />
           <StatCard label="Gross margin" value={compactInr(data.stats.grossMargin)} sub="surcharge + GST proxy" />
 
+          {data.paymentAlerts.length > 0 && (
+            <Card className={styles.wideCard}>
+              <div className={styles.cardTitle}>
+                <AlertTriangle size={15} style={{ verticalAlign: '-2px', marginRight: 6, color: 'var(--warning)' }} />
+                Checkout failures — payment auto-refunded
+              </div>
+              <div style={{ marginTop: 4 }}>
+                {data.paymentAlerts.map((a) => (
+                  <div
+                    key={a.txn}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderTop: '1px solid var(--border)' }}
+                  >
+                    <span style={{ fontWeight: 600, minWidth: 84 }}>{inr(a.amount)}</span>
+                    <span
+                      style={{ flex: 1, minWidth: 0, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={`${a.reason} · payment ${a.txn}`}
+                    >
+                      {a.reason} · {new Date(a.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <StatusPill label={a.refunded ? 'Refunded' : 'Refund failed'} tone={a.refunded ? 'neutral' : 'error'} />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card className={styles.listCard}>
             <div className={styles.cardTitle}>Top companies by spend</div>
             <div className={styles.barList}>

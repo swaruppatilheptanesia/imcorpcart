@@ -970,6 +970,7 @@ export interface DashboardData {
   topWishlisted: { productId: string; name: string; saves: number }[];
   recentOrders: { id: string; company: string; product: string; value: number; status: string }[];
   deliveryDonut: { status: string; count: number }[];
+  paymentAlerts: { txn: string; reason: string; amount: number; refunded: boolean; at: string }[];
 }
 export function getDashboard(range: DateRange): Promise<DashboardData> {
   return apiFetch('/dashboard', { query: { range } });

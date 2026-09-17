@@ -126,6 +126,14 @@ export async function getDashboard(range: DashboardRange) {
     select: { id: true, name: true },
   });
 
+  // Paid checkouts that couldn't be turned into an order (payment auto-refunded).
+  // Range-independent — rare and must not be missed; needs admin attention.
+  const paymentFailures = await prisma.auditLog.findMany({
+    where: { action: 'checkout.failed_refunded' },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  });
+
   const nameOf = <T extends { id: string; name: string }>(list: T[], id: string) =>
     list.find((x) => x.id === id)?.name ?? 'Unknown';
 
@@ -178,5 +186,15 @@ export async function getDashboard(range: DashboardRange) {
       status: o.status,
     })),
     deliveryDonut: deliveryBuckets.map((b) => ({ status: b.status, count: b._count._all })),
+    paymentAlerts: paymentFailures.map((a) => {
+      const d = (a.after ?? {}) as Record<string, unknown>;
+      return {
+        txn: a.entityId ?? '',
+        reason: String(d.reason ?? 'Unknown error'),
+        amount: Number(d.amountInr ?? 0),
+        refunded: Boolean(d.refunded),
+        at: a.createdAt.toISOString(),
+      };
+    }),
   };
 }
