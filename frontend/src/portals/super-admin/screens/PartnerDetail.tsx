@@ -31,6 +31,10 @@ import s from './screen.module.css';
 import styles from './Partners.module.css';
 
 const BASE_URL = `${window.location.origin}/partner-api/v1`;
+// Docs are served under the /api prefix too, so the Swagger link works in
+// production via the reverse proxy that already forwards /api to the backend
+// (the bare /partner-api path may not be proxied).
+const DOCS_URL = `${window.location.origin}/api/partner-api/v1/docs`;
 const webhookTone: Record<string, SemanticTone> = { DELIVERED: 'success', PENDING: 'warning', FAILED: 'error' };
 
 // Hidden for now — flip to true to bring back the IP allowlist + webhook card.
@@ -180,7 +184,7 @@ function IntegrationCard({ partner, onRotateToken, onRotateWebhook }: { partner:
       <div className={styles.cardTitle}>Integration</div>
       <p className={styles.cardHint}>Share the base URL + token with the vendor. The token is shown once — keep it server-side only.</p>
       <CopyRow label="Base URL" value={BASE_URL} mono />
-      <a href={`${BASE_URL}/docs`} target="_blank" rel="noreferrer" className={s.muted} style={{ fontSize: 12.5, display: 'inline-block', margin: '2px 2px 8px', textDecoration: 'underline' }}>
+      <a href={DOCS_URL} target="_blank" rel="noreferrer" className={s.muted} style={{ fontSize: 12.5, display: 'inline-block', margin: '2px 2px 8px', textDecoration: 'underline' }}>
         Open API docs (Swagger) ↗
       </a>
       <div className={styles.signBox}>

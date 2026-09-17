@@ -22,6 +22,7 @@ import companyRoutes from './company.routes';
 import resellerRoutes from './reseller.routes';
 import shopRoutes from './shop.routes';
 import reviewRoutes from './review.routes';
+import { partnerDocsRouter } from './partner/docs';
 
 const router = Router();
 
@@ -35,6 +36,12 @@ router.use('/auth', authRoutes);
 
 // Public storefront catalog (no auth) — MOP-priced, EPP never exposed.
 router.use('/catalog', publicRoutes);
+
+// Public partner-API docs mirrored under the /api prefix, so the Swagger UI stays
+// reachable in production via the reverse proxy that forwards /api to the backend
+// (→ /api/partner-api/v1/docs + /api/partner-api/v1/openapi.json). The canonical
+// /partner-api/v1/docs still works too.
+router.use('/partner-api/v1', partnerDocsRouter);
 
 // Role-scoped route groups. Each guard resolves the caller's org in-service, so
 // a principal can only ever touch their own data.
