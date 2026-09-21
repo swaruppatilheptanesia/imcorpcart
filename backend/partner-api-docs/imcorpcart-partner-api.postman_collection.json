@@ -1,0 +1,363 @@
+{
+  "info": {
+    "name": "Imcorpcart Partner API",
+    "description": "Machine-to-machine Partner API for Imcorpcart (`/partner-api/v1`).\n\n## Setup\n1. Import this collection **and** one of the environment files (Dev or Prod).\n2. Pick an environment from the top-right dropdown (**Imcorpcart Partner – Dev** or **… Prod**).\n3. Open the environment, paste your bearer token into the `token` variable, and Save.\n4. Run any request — auth (`Authorization: Bearer {{token}}`) is inherited by every request.\n\n## Notes\n- **All list parameters are query-string parameters, not a request body.** A JSON body on a GET request is ignored.\n- `category` is a category **slug** (lowercase, e.g. `phones`), not a display name.\n- Prices returned are *your* price (basis + commission). The catalogue is a snapshot — price and availability are re-validated at order time with structured error codes.\n- `externalRef` on an order is your own order id and the dedup key: re-posting the same value returns the existing order (`200`, `duplicate:true`) instead of creating a second one.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://imcorpcart.com/partner-api/v1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Ping (auth smoke test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ping",
+              "host": ["{{baseUrl}}"],
+              "path": ["ping"]
+            },
+            "description": "Verifies your token works. Returns your partner name."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/ping", "host": ["{{baseUrl}}"], "path": ["ping"] }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"ok\": true,\n  \"partner\": \"GenieMart\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/ping", "host": ["{{baseUrl}}"], "path": ["ping"] }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"error\": {\n    \"code\": \"UNAUTHORIZED\",\n    \"message\": \"Invalid credentials\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Catalogue",
+      "item": [
+        {
+          "name": "List catalogue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/catalogue?page=1&pageSize=20&category=phones",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalogue"],
+              "query": [
+                { "key": "page", "value": "1", "description": "1-based page number (optional)" },
+                { "key": "pageSize", "value": "20", "description": "1–200 (optional, default applies)" },
+                { "key": "category", "value": "phones", "description": "Category slug filter (optional). Lowercase slug, e.g. 'phones' — not a display name.", "disabled": false },
+                { "key": "q", "value": "", "description": "Free-text search on name/SKU (optional)", "disabled": true }
+              ]
+            },
+            "description": "Only products Imcorpcart has enabled for you. `price` is your price (basis + commission). Snapshot — not live inventory."
+          },
+          "response": [
+            {
+              "name": "200 A page of catalogue products",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/catalogue?page=1&pageSize=20&category=phones",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["catalogue"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "pageSize", "value": "20" },
+                    { "key": "category", "value": "phones" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"sku\": \"GP-AN-1000\",\n      \"name\": \"GadgetPro Aura Nova 1000\",\n      \"brand\": \"GadgetPro\",\n      \"category\": \"phones\",\n      \"subCategory\": \"Smartphones\",\n      \"price\": 3299,\n      \"discountPercent\": 18,\n      \"priceBasis\": \"MOP\",\n      \"commissionPct\": 5,\n      \"mrp\": 3999,\n      \"gstPercent\": 18,\n      \"hsnCode\": \"8517\",\n      \"stock\": 42,\n      \"description\": \"6.5-inch AMOLED, 5000mAh.\",\n      \"images\": [\"https://imcorpcart.com/uploads/gp-an-1000-1.jpg\"],\n      \"warrantyText\": \"1 year manufacturer warranty\",\n      \"termsText\": null,\n      \"freebie\": \"Free tempered glass\"\n    }\n  ],\n  \"meta\": {\n    \"total\": 1,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"pageCount\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get one catalogue product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/catalogue/GP-AN-1000",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalogue", "GP-AN-1000"]
+            },
+            "description": "Fetch a single product by SKU (path parameter)."
+          },
+          "response": [
+            {
+              "name": "200 Product",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/catalogue/GP-AN-1000", "host": ["{{baseUrl}}"], "path": ["catalogue", "GP-AN-1000"] }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"sku\": \"GP-AN-1000\",\n  \"name\": \"GadgetPro Aura Nova 1000\",\n  \"brand\": \"GadgetPro\",\n  \"category\": \"phones\",\n  \"subCategory\": \"Smartphones\",\n  \"price\": 3299,\n  \"discountPercent\": 18,\n  \"priceBasis\": \"MOP\",\n  \"commissionPct\": 5,\n  \"mrp\": 3999,\n  \"gstPercent\": 18,\n  \"hsnCode\": \"8517\",\n  \"stock\": 42,\n  \"description\": \"6.5-inch AMOLED, 5000mAh.\",\n  \"images\": [\"https://imcorpcart.com/uploads/gp-an-1000-1.jpg\"],\n  \"warrantyText\": \"1 year manufacturer warranty\",\n  \"termsText\": null,\n  \"freebie\": \"Free tempered glass\"\n}"
+            },
+            {
+              "name": "404 Not found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/catalogue/NOPE-123", "host": ["{{baseUrl}}"], "path": ["catalogue", "NOPE-123"] }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Product not found or not available to this partner\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Delivery",
+      "item": [
+        {
+          "name": "Delivery ETA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/delivery?pincode=400001&sku=GP-AN-1000",
+              "host": ["{{baseUrl}}"],
+              "path": ["delivery"],
+              "query": [
+                { "key": "pincode", "value": "400001", "description": "Required. Exactly 6 digits." },
+                { "key": "sku", "value": "GP-AN-1000", "description": "Optional. When given, `available` reflects this item's stock." }
+              ]
+            },
+            "description": "Serviceability + tentative delivery days for a pincode, optionally scoped to an item."
+          },
+          "response": [
+            {
+              "name": "200 Delivery estimate",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/delivery?pincode=400001&sku=GP-AN-1000",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["delivery"],
+                  "query": [
+                    { "key": "pincode", "value": "400001" },
+                    { "key": "sku", "value": "GP-AN-1000" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"pincode\": \"400001\",\n  \"sku\": \"GP-AN-1000\",\n  \"serviceable\": true,\n  \"available\": true,\n  \"tentativeDeliveryDays\": 3,\n  \"dispatchDays\": 1,\n  \"courier\": \"Bluedart\",\n  \"etaDate\": \"2026-09-06T00:00:00.000Z\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Place an order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"externalRef\": \"GM-9921\",\n  \"dealerCode\": \"HK-4471\",\n  \"dealerName\": \"Sharma Mobiles\",\n  \"dealerMobile\": \"9812345678\",\n  \"deliveryInstructions\": \"Call before delivery\",\n  \"items\": [\n    { \"sku\": \"GP-AN-1000\", \"qty\": 1, \"price\": 3299 }\n  ],\n  \"shipping\": {\n    \"name\": \"Rahul\",\n    \"phone\": \"9812345678\",\n    \"line1\": \"12 MG Road\",\n    \"city\": \"Mumbai\",\n    \"state\": \"MH\",\n    \"pincode\": \"400001\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Each line is validated against your catalogue price, availability, and pincode serviceability. `externalRef` is your order id and dedup key. `items[].price` is optional and validated to your catalogue price (±₹1)."
+          },
+          "response": [
+            {
+              "name": "201 Accepted (created)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"externalRef\": \"GM-9921\",\n  \"items\": [{ \"sku\": \"GP-AN-1000\", \"qty\": 1, \"price\": 3299 }],\n  \"shipping\": { \"name\": \"Rahul\", \"phone\": \"9812345678\", \"line1\": \"12 MG Road\", \"city\": \"Mumbai\", \"state\": \"MH\", \"pincode\": \"400001\" }\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"ACCEPTED\",\n  \"orderNo\": \"IMC-44469003\",\n  \"checkoutGroup\": \"abc123def456\",\n  \"orderCount\": 1,\n  \"orderNos\": [\"IMC-44469003\"]\n}"
+            },
+            {
+              "name": "200 Accepted (duplicate externalRef)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"externalRef\": \"GM-9921\",\n  \"items\": [{ \"sku\": \"GP-AN-1000\", \"qty\": 1 }],\n  \"shipping\": { \"name\": \"Rahul\", \"phone\": \"9812345678\", \"line1\": \"12 MG Road\", \"city\": \"Mumbai\", \"state\": \"MH\", \"pincode\": \"400001\" }\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"ACCEPTED\",\n  \"orderNo\": \"IMC-44469003\",\n  \"checkoutGroup\": \"abc123def456\",\n  \"duplicate\": true\n}"
+            },
+            {
+              "name": "422 Rejected (nothing created)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"externalRef\": \"GM-9922\",\n  \"items\": [{ \"sku\": \"GP-AN-1000\", \"qty\": 1, \"price\": 2999 }],\n  \"shipping\": { \"name\": \"Rahul\", \"phone\": \"9812345678\", \"line1\": \"12 MG Road\", \"city\": \"Mumbai\", \"state\": \"MH\", \"pincode\": \"400001\" }\n}"
+                },
+                "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"REJECTED\",\n  \"reasons\": [\n    {\n      \"code\": \"PRICE_MISMATCH\",\n      \"sku\": \"GP-AN-1000\",\n      \"message\": \"Price mismatch for GP-AN-1000\",\n      \"expected\": 3299,\n      \"got\": 2999\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Read an order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/GM-9921",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "GM-9921"]
+            },
+            "description": "Read by our `orderNo` or your `externalRef` (path parameter). Split orders share one `externalRef`, so `data` is an array."
+          },
+          "response": [
+            {
+              "name": "200 Order",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/orders/GM-9921", "host": ["{{baseUrl}}"], "path": ["orders", "GM-9921"] }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"orderNo\": \"IMC-44469003\",\n      \"externalRef\": \"GM-9921\",\n      \"status\": \"PLACED\",\n      \"checkoutGroup\": \"abc123def456\",\n      \"dealerCode\": \"HK-4471\",\n      \"dealerName\": \"Sharma Mobiles\",\n      \"dealerMobile\": \"9812345678\",\n      \"deliveryInstructions\": \"Call before delivery\",\n      \"cancelReason\": null,\n      \"subtotal\": 3299,\n      \"total\": 3299,\n      \"createdAt\": \"2026-09-03T10:15:00.000Z\",\n      \"items\": [\n        {\n          \"sku\": \"GP-AN-1000\",\n          \"name\": \"GadgetPro Aura Nova 1000\",\n          \"quantity\": 1,\n          \"unitPrice\": 3299,\n          \"lineTotal\": 3299\n        }\n      ]\n    }\n  ]\n}"
+            },
+            {
+              "name": "404 Not found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/orders/NOPE", "host": ["{{baseUrl}}"], "path": ["orders", "NOPE"] }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"error\": {\n    \"code\": \"NOT_FOUND\",\n    \"message\": \"Order not found\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cancel an order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"reason\": \"Customer changed their mind\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/GM-9921/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "GM-9921", "cancel"]
+            },
+            "description": "Cancels the whole order (all split orders in the checkout group). Only orders not yet dispatched (PLACED/CONFIRMED) can be cancelled. `reason` is optional."
+          },
+          "response": [
+            {
+              "name": "200 Cancelled",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer changed their mind\"\n}" },
+                "url": { "raw": "{{baseUrl}}/orders/GM-9921/cancel", "host": ["{{baseUrl}}"], "path": ["orders", "GM-9921", "cancel"] }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"CANCELLED\",\n  \"orderNo\": \"IMC-44469003\",\n  \"orderNos\": [\"IMC-44469003\"]\n}"
+            },
+            {
+              "name": "422 Not cancellable (already dispatched)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer changed their mind\"\n}" },
+                "url": { "raw": "{{baseUrl}}/orders/GM-9921/cancel", "host": ["{{baseUrl}}"], "path": ["orders", "GM-9921", "cancel"] }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"REJECTED\",\n  \"reasons\": [\n    {\n      \"code\": \"NOT_CANCELLABLE\",\n      \"orderNo\": \"IMC-44469003\",\n      \"message\": \"Order IMC-44469003 is DISPATCHED and can no longer be cancelled\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
