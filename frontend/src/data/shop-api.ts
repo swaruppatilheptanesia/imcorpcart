@@ -193,8 +193,10 @@ export interface SeppAdvanceOrder {
   currency: string;
   total: number; // rupees
 }
-export function createSeppAdvanceOrder(): Promise<SeppAdvanceOrder> {
-  return client.apiFetch('/shop/sepp/payments/order', { method: 'POST' });
+// `payMethod` only picks the Checkout Configuration (and the modal lock applied
+// storefront-side) — the advance carries no surcharge, unlike an EPP checkout.
+export function createSeppAdvanceOrder(payMethod?: string): Promise<SeppAdvanceOrder> {
+  return client.apiFetch('/shop/sepp/payments/order', { method: 'POST', body: { method: payMethod } });
 }
 
 export function submitSeppRequest(addressId: string, payment?: RazorpayHandoff): Promise<SeppRequestView> {

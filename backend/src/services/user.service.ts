@@ -378,46 +378,111 @@ export async function createCompany(input: CreateCompanyInput) {
   });
 }
 
+// Approving a company opens its email domain, so employees who self-registered on
+// that domain and are still waiting are admitted in the same breath — otherwise the
+// very first registrant (the one whose sign-up created the ONBOARDING company) stays
+// locked out after their own company is approved. The email-domain filter is what
+// keeps GSTIN-matched personal-email registrants PENDING: their sign-in code goes to
+// a personal inbox, which proves nothing about where they work. Mirrors the autoAdmit
+// rule in auth.service.register(). Returns how many accounts were activated.
+async function admitPendingDomainEmployees(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  emailDomain: string | null,
+): Promise<number> {
+  if (!emailDomain) return 0;
+  const { count } = await tx.user.updateMany({
+    where: {
+      status: 'PENDING',
+      deletedAt: null,
+      email: { endsWith: `@${emailDomain}`, mode: 'insensitive' },
+      employee: { is: { companyId, deletedAt: null } },
+    },
+    data: { status: 'ACTIVE' },
+  });
+  return count;
+}
+
+// Audit the bulk activation above — company approval otherwise leaves no trail.
+async function logAutoAdmit(
+  actorId: string | undefined,
+  companyId: string,
+  emailDomain: string | null,
+  activated: number,
+) {
+  if (activated < 1) return;
+  await prisma.auditLog.create({
+    data: {
+      actorId: actorId ?? null,
+      action: 'company.auto_admit_employees',
+      entityType: 'Company',
+      entityId: companyId,
+      after: { emailDomain, activated },
+    },
+  });
+}
+
 // Super-Admin edits a company's org-level settings: Smart-EPP enablement + its
 // lease inputs (leasing partner, ADLD %, tax slab), name, and status.
-export async function updateCompany(id: string, input: UpdateCompanyInput) {
+export async function updateCompany(id: string, input: UpdateCompanyInput, actorId?: string) {
   const company = await prisma.company.findFirst({ where: { id, deletedAt: null } });
   if (!company) throw AppError.notFound('Company not found');
   if (input.leasingCompanyId) {
     const lc = await prisma.leasingCompany.findUnique({ where: { id: input.leasingCompanyId }, select: { id: true } });
     if (!lc) throw AppError.notFound('Leasing company not found');
   }
-  const updated = await prisma.company.update({
-    where: { id },
-    data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.smartEppEnabled !== undefined ? { smartEppEnabled: input.smartEppEnabled } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.leasingCompanyId !== undefined ? { leasingCompanyId: input.leasingCompanyId } : {}),
-      ...(input.adldPct !== undefined ? { adldPct: input.adldPct === null ? null : D(input.adldPct) } : {}),
-      ...(input.incomeTaxPct !== undefined ? { incomeTaxPct: D(input.incomeTaxPct) } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      smartEppEnabled: true,
-      leasingCompanyId: true,
-      adldPct: true,
-      incomeTaxPct: true,
-      leasingCompany: { select: { name: true } },
-    },
+  // Only on the ONBOARDING/SUSPENDED → ACTIVE transition. The screen resends
+  // `status` on every save, so keying off the value alone would re-activate a user
+  // a Super Admin had deliberately suspended whenever the company is merely renamed.
+  const approving = input.status === 'ACTIVE' && company.status !== 'ACTIVE';
+
+  const { updated, admitted } = await prisma.$transaction(async (tx) => {
+    const c = await tx.company.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.smartEppEnabled !== undefined ? { smartEppEnabled: input.smartEppEnabled } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.leasingCompanyId !== undefined ? { leasingCompanyId: input.leasingCompanyId } : {}),
+        ...(input.adldPct !== undefined ? { adldPct: input.adldPct === null ? null : D(input.adldPct) } : {}),
+        ...(input.incomeTaxPct !== undefined ? { incomeTaxPct: D(input.incomeTaxPct) } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        smartEppEnabled: true,
+        leasingCompanyId: true,
+        adldPct: true,
+        incomeTaxPct: true,
+        leasingCompany: { select: { name: true } },
+      },
+    });
+    const n = approving ? await admitPendingDomainEmployees(tx, id, company.emailDomain) : 0;
+    return { updated: c, admitted: n };
   });
-  return serialize({ ...updated, leasingCompanyName: updated.leasingCompany?.name ?? null, leasingCompany: undefined });
+
+  await logAutoAdmit(actorId, id, company.emailDomain, admitted);
+
+  return serialize({
+    ...updated,
+    leasingCompanyName: updated.leasingCompany?.name ?? null,
+    leasingCompany: undefined,
+    employeesActivated: admitted,
+  });
 }
 
 // Grant company-admin rights to an org that has none. Either promote an existing
 // user (e.g. a self-registered employee) or invite a fresh admin account.
-export async function assignCompanyAdmin(companyId: string, input: AssignAdminInput) {
+export async function assignCompanyAdmin(companyId: string, input: AssignAdminInput, actorId?: string) {
   const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null } });
   if (!company) throw AppError.notFound('Company not found');
 
   let tempPassword: string | undefined;
+  // This path approves the company as a side effect (status: 'ACTIVE' below), so it
+  // opens the domain for waiting employees exactly like updateCompany does.
+  const approving = company.status !== 'ACTIVE';
+  let admitted = 0;
 
   const updated = await prisma.$transaction(async (tx) => {
     let adminUserId: string;
@@ -450,12 +515,18 @@ export async function assignCompanyAdmin(companyId: string, input: AssignAdminIn
       if (input.adminPassword) tempPassword = undefined;
     }
 
-    return tx.company.update({
+    const c = await tx.company.update({
       where: { id: company.id },
       data: { adminUserId, status: 'ACTIVE' },
       include: { adminUser: { select: { fullName: true, email: true } } },
     });
+    if (approving) {
+      admitted = await admitPendingDomainEmployees(tx, company.id, company.emailDomain);
+    }
+    return c;
   });
+
+  await logAutoAdmit(actorId, company.id, company.emailDomain, admitted);
 
   return serialize({
     id: updated.id,
@@ -464,6 +535,7 @@ export async function assignCompanyAdmin(companyId: string, input: AssignAdminIn
     adminName: updated.adminUser?.fullName ?? null,
     adminEmail: updated.adminUser?.email ?? null,
     tempPassword,
+    employeesActivated: admitted,
   });
 }
 

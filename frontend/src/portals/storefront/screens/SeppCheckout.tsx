@@ -7,7 +7,7 @@ import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { getSeppQuote, createSeppAdvanceOrder } from '@/data/shop-api';
 import type { SeppBranch } from '@/data/sepp-types';
-import { openRazorpay } from '@/lib/razorpay';
+import { openRazorpay, RZP_INSTRUMENT, lockToMethod } from '@/lib/razorpay';
 import { useStore } from '../store-context';
 import styles from './Checkout.module.css';
 
@@ -21,9 +21,10 @@ const fmtAddr = (a: SeppBranch) =>
 export function SeppCheckout() {
   const navigate = useNavigate();
   const { flash } = useToast();
-  const { ready, cart, cartCount, submitSepp, sepp } = useStore();
+  const { ready, cart, cartCount, submitSepp, sepp, paymentMethods } = useStore();
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [methodKey, setMethodKey] = useState<string | null>(null);
 
   const cartKey = cart.map((l) => `${l.itemId}:${l.qty}`).join('|');
   const { data: quote, state, error } = useAsync(() => (ready && cart.length ? getSeppQuote() : Promise.resolve(null)), [ready, cartKey]);
@@ -39,10 +40,19 @@ export function SeppCheckout() {
     setSelectedId((cur) => cur ?? quote.branches.find((b) => b.isDefault)?.id ?? quote.branches[0]?.id ?? null);
   }, [quote]);
 
+  // Default to the first method once the profile loads. Unlike EPP the order is
+  // unaffected by the choice (no surcharge) — it only decides what the Razorpay
+  // modal offers.
+  useEffect(() => {
+    if (methodKey === null && paymentMethods.length) setMethodKey(paymentMethods[0].method);
+  }, [paymentMethods, methodKey]);
+
   if (!ready || cart.length === 0) return null;
 
   const selected = quote?.branches.find((b) => b.id === selectedId) ?? null;
-  const canSubmit = Boolean(quote?.canSubmit && selected && !busy);
+  const needsPayment = Boolean(quote && quote.advance > 0);
+  const selectedMethod = paymentMethods.find((m) => m.method === methodKey) ?? null;
+  const canSubmit = Boolean(quote?.canSubmit && selected && !busy && (!needsPayment || selectedMethod));
 
   const finish = (requestNo: string) => navigate('/shop/sepp/success', { state: { requestNo } });
 
@@ -59,8 +69,11 @@ export function SeppCheckout() {
         finish(req.requestNo);
         return;
       }
-      // Pay the leasing company's advance, then submit with the signed result.
-      const po = await createSeppAdvanceOrder();
+      // Pay the leasing company's advance, then submit with the signed result. The
+      // modal is locked to the chosen method, same as an EPP checkout; here the
+      // choice does not move the amount (the advance carries no surcharge).
+      const payMethod = selectedMethod?.method;
+      const po = await createSeppAdvanceOrder(payMethod);
       let paid = false;
       await openRazorpay({
         key: po.keyId,
@@ -70,6 +83,8 @@ export function SeppCheckout() {
         name: 'imcorpcart',
         description: `Smart EPP advance · ${cartCount} item${cartCount > 1 ? 's' : ''}`,
         theme: { color: '#0071e3' },
+        prefill: { method: payMethod ? RZP_INSTRUMENT[payMethod]?.method : undefined },
+        config: lockToMethod(payMethod),
         handler: (r) => {
           paid = true;
           void (async () => {
@@ -175,6 +190,35 @@ export function SeppCheckout() {
             </div>
           </div>
         </section>
+
+        {/* ── Payment method (advance only) ── */}
+        {needsPayment && paymentMethods.length > 0 && (
+          <section className={styles.card}>
+            <div className={styles.cardTitle}>Payment method</div>
+            <div className={styles.payMethods}>
+              {paymentMethods.map((m) => (
+                <button
+                  key={m.method}
+                  className={cn(styles.payOption, m.method === methodKey && styles.payOptionOn)}
+                  onClick={() => setMethodKey(m.method)}
+                >
+                  <Radio checked={m.method === methodKey} />
+                  <div className={styles.payOptionBody}>
+                    <div className={styles.payOptionLabel}>{m.label}</div>
+                    {/* No surcharge here: the advance is the leasing company's own
+                        fee and is refunded in full if the request is declined. */}
+                    <div className={styles.payOptionFee}>No fee</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className={styles.muted} style={{ marginTop: 12 }}>
+              {selectedMethod
+                ? `The Razorpay window will open on ${selectedMethod.label.toLowerCase()} only. The ${inr(quote?.advance ?? 0)} advance is the same whichever you pick.`
+                : 'Choose how you want to pay the advance.'}
+            </div>
+          </section>
+        )}
       </div>
 
       <aside className={styles.summary}>

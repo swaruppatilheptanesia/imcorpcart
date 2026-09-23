@@ -1,6 +1,16 @@
 import { z } from 'zod';
+import { PaymentMethod } from '@prisma/client';
 
 // ── Storefront (employee) ────────────────────────────────────────────────────
+
+// Open the Razorpay order for the leasing advance. `method` is the instrument the
+// shopper picked; it only selects the Checkout Configuration (and the modal lock
+// the storefront applies) — unlike EPP it carries NO surcharge, because the advance
+// is the leasing company's own fee and is refunded in full if the request is
+// declined. Optional so an older client still works.
+export const seppAdvanceOrderBody = z.object({
+  method: z.nativeEnum(PaymentMethod).optional(),
+});
 
 // Submit a Smart-EPP request for the current cart. Delivery is to one of the
 // company's office branches; the Razorpay handoff is required whenever the

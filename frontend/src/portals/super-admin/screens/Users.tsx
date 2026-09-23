@@ -259,8 +259,15 @@ export function UsersScreen() {
   // users can't log in until it's set Active.
   const setCompanyStatus = async (row: UserRowWithId, next: CompanySettableStatus) => {
     try {
-      await updateCompany(row.id, { status: next });
-      flash(`Company set to ${COMPANY_STATUS_LABEL[next]}`);
+      const res = await updateCompany(row.id, { status: next });
+      // Approving also releases the employees who self-registered on this
+      // company's email domain and were waiting — say so, or it happens silently.
+      const admitted = res.employeesActivated;
+      flash(
+        admitted > 0
+          ? `Company set to ${COMPANY_STATUS_LABEL[next]} — ${admitted} waiting employee${admitted === 1 ? '' : 's'} activated`
+          : `Company set to ${COMPANY_STATUS_LABEL[next]}`,
+      );
       reload();
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Update failed');

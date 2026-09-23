@@ -1,4 +1,5 @@
 import { Role, RegistrationSource } from '@prisma/client';
+import { nanoid } from 'nanoid';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { OTP_PURPOSE, DEMO_LOGIN_EMAILS } from '../config/constants';
@@ -175,7 +176,14 @@ function companyNameFromDomain(domain: string): string {
 // Employee self-registration. The email domain resolves the company: if none
 // exists for that domain, a new ONBOARDING company is created (no admin yet —
 // Super Admin grants company-admin rights later). The new account is an
-// EMPLOYEE_EPP that starts PENDING and must be activated by a Super Admin.
+// EMPLOYEE_EPP.
+//
+// It starts PENDING (Super Admin activates it) EXCEPT when the corporate email
+// domain matches a company that is already ACTIVE — approving a company is what
+// opens its domain, so colleagues who register afterwards are admitted straight
+// away and get the sign-in code immediately. See autoAdmit below for why that is
+// safe, and user.service.admitPendingDomainEmployees for the same rule applied
+// retroactively at the moment a company is approved.
 export async function register(
   input: RegisterInput,
 ): Promise<LoginResult | SessionResult | PendingResult> {
@@ -210,12 +218,16 @@ export async function register(
       })
     : null;
 
-  await prisma.$transaction(async (tx) => {
+  const { user, autoAdmit } = await prisma.$transaction(async (tx) => {
     // Free mail: the company is keyed on GSTIN (no email domain). Corporate
-    // mail: keyed on the email domain, as before.
+    // mail: keyed on the email domain, as before. Both filter soft-deleted rows
+    // like every other company query — a deleted company can still be ACTIVE,
+    // and login()'s own deletedAt-filtered lookup would then find no company at
+    // all and skip the company gate entirely.
     let company = freeMail
-      ? await tx.company.findFirst({ where: { gstin: input.gstin } })
-      : await tx.company.findFirst({ where: { emailDomain: domain } });
+      ? await tx.company.findFirst({ where: { gstin: input.gstin, deletedAt: null } })
+      : await tx.company.findFirst({ where: { emailDomain: domain, deletedAt: null } });
+    const joinedExisting = Boolean(company);
     if (!company) {
       company = await tx.company.create({
         data: freeMail
@@ -223,6 +235,13 @@ export async function register(
           : { name: companyNameFromDomain(domain), emailDomain: domain, status: 'ONBOARDING' },
       });
     }
+
+    // Admit straight away only when joining an existing, already-approved company
+    // by corporate email domain. That is self-verifying: the sign-in code can only
+    // be read from a mailbox on the company's own domain. The free-mail path proves
+    // nothing of the sort — a GSTIN is public and the code lands in the registrant's
+    // personal inbox — so those accounts still wait for a Super Admin.
+    const admit = joinedExisting && !freeMail && company.status === 'ACTIVE';
 
     const u = await tx.user.create({
       data: {
@@ -232,9 +251,7 @@ export async function register(
         passwordHash: null,
         fullName: input.fullName,
         role: Role.EMPLOYEE_EPP,
-        // Self-registrations start PENDING and cannot sign in until a Super Admin
-        // activates them (applies to QR-exhibition sign-ups too).
-        status: 'PENDING',
+        status: admit ? 'ACTIVE' : 'PENDING',
         registrationSource: campaign ? RegistrationSource.QR_EXHIBITION : RegistrationSource.ADMIN,
         qrDiscountEligible: Boolean(campaign),
         qrCampaignId: campaign?.id ?? null,
@@ -242,11 +259,28 @@ export async function register(
     });
 
     await tx.employee.create({
-      data: { companyId: company.id, userId: u.id, employeeCode: `EMP-${Date.now()}`, monthlySalary: 0 },
+      data: {
+        companyId: company.id,
+        userId: u.id,
+        // Random suffix: the timestamp alone collides against the
+        // @@unique([companyId, employeeCode]) for same-company registrations that
+        // land in the same millisecond, surfacing as a raw P2002.
+        employeeCode: `EMP-${Date.now()}-${nanoid(6)}`,
+        monthlySalary: 0,
+      },
     });
 
-    return u;
+    return { user: u, autoAdmit: admit };
   });
+
+  // Approved company: skip the waiting room and send the sign-in code now, so the
+  // frontend moves straight to the code screen (Register.tsx branches on the
+  // challengeToken). Seed the cooldown as login() would, so an immediate resend
+  // from the OTP screen is throttled the same way.
+  if (autoAdmit) {
+    otpCooldown.set(email, Date.now());
+    return issueLoginOtp(user);
+  }
 
   // No session or OTP: the account is PENDING and must be activated by a Super
   // Admin before it can sign in. The frontend shows this message.

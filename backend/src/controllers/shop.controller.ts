@@ -63,7 +63,7 @@ export async function seppQuote(req: Request, res: Response) {
 }
 
 export async function seppAdvanceOrder(req: Request, res: Response) {
-  res.status(201).json(await sepp.createAdvanceOrder(userId(req)));
+  res.status(201).json(await sepp.createAdvanceOrder(userId(req), req.body?.method));
 }
 
 export async function listSeppRequests(req: Request, res: Response) {

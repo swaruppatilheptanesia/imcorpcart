@@ -38,8 +38,16 @@ const schema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   // Optional saved Checkout Configuration id (dashboard → Payment methods config,
-  // e.g. "config_XXXX") — restricts/orders the methods shown in the modal.
+  // e.g. "config_XXXX") — restricts/orders the methods shown in the modal. One
+  // configuration enabling UPI + card + net banking is enough: the shopper's choice
+  // is locked per order by the checkout `config.display` block the storefront sends.
   RAZORPAY_CHECKOUT_CONFIG_ID: z.string().optional(),
+  // Optional per-method overrides, for enforcing the choice in the dashboard as
+  // well. When the shopper's method has one set it is used instead of the shared
+  // id above; unset methods fall back to it.
+  RAZORPAY_CHECKOUT_CONFIG_ID_UPI: z.string().optional(),
+  RAZORPAY_CHECKOUT_CONFIG_ID_CARD: z.string().optional(),
+  RAZORPAY_CHECKOUT_CONFIG_ID_NETBANKING: z.string().optional(),
 
   // Partner integration API (/partner-api/v1). Master switch parsed as a literal
   // string (same reason as CHECKOUT_ENABLED). PARTNER_SECRET_ENC_KEY is the master

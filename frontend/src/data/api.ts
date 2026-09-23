@@ -909,7 +909,9 @@ export interface UpdateCompanyInput {
 export function updateCompany(
   id: string,
   input: UpdateCompanyInput,
-): Promise<{ id: string; name: string; status: string; smartEppEnabled: boolean; leasingCompanyId: string | null; leasingCompanyName: string | null }> {
+): Promise<{ id: string; name: string; status: string; smartEppEnabled: boolean; leasingCompanyId: string | null; leasingCompanyName: string | null; employeesActivated: number }> {
+  // employeesActivated: approving a company also activates the employees who
+  // self-registered on its email domain and were waiting (0 on any other edit).
   return apiFetch(`/users/companies/${id}`, { method: 'PATCH', body: input });
 }
 

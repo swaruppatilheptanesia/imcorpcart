@@ -14,7 +14,7 @@ import {
   updateAddressBody,
 } from '../validators/shop.schema';
 import { reviewBody } from '../validators/review.schema';
-import { submitSeppRequestBody, requestNoParam } from '../validators/sepp.schema';
+import { submitSeppRequestBody, requestNoParam, seppAdvanceOrderBody } from '../validators/sepp.schema';
 
 const router = Router();
 
@@ -39,7 +39,7 @@ router.post('/orders', validate({ body: placeOrderBody }), asyncHandler(ctrl.pla
 // Smart EPP (lease-financed) — quote the cart, pay the leasing advance, submit
 // the request into HR → Leasing approval, and track it.
 router.get('/sepp/quote', asyncHandler(ctrl.seppQuote));
-router.post('/sepp/payments/order', asyncHandler(ctrl.seppAdvanceOrder));
+router.post('/sepp/payments/order', validate({ body: seppAdvanceOrderBody }), asyncHandler(ctrl.seppAdvanceOrder));
 router.get('/sepp/requests', asyncHandler(ctrl.listSeppRequests));
 router.post('/sepp/requests', validate({ body: submitSeppRequestBody }), asyncHandler(ctrl.submitSeppRequest));
 router.get('/sepp/requests/:no', validate({ params: requestNoParam }), asyncHandler(ctrl.getSeppRequest));

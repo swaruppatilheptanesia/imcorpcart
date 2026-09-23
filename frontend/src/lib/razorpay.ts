@@ -32,6 +32,39 @@ declare global {
   }
 }
 
+// Our PaymentMethod → the Razorpay instrument the modal is locked to. CREDIT_CARD
+// is the canonical row behind the merged "Card" option the picker shows, so it must
+// stay an unfiltered `card` — narrowing it to credit would reject debit cards the
+// shopper was offered. DEBIT_CARD is only reachable if an admin un-merges the two,
+// and then `types` is what keeps each on its own surcharge.
+export const RZP_INSTRUMENT: Record<string, { label: string; method: string; types?: string[] }> = {
+  UPI: { label: 'Pay by UPI', method: 'upi' },
+  NET_BANKING: { label: 'Pay by net banking', method: 'netbanking' },
+  CREDIT_CARD: { label: 'Pay by card', method: 'card' },
+  DEBIT_CARD: { label: 'Pay by debit card', method: 'card', types: ['debit'] },
+};
+
+// Show only the chosen instrument in the modal. `show_default_blocks: false` is what
+// suppresses everything else — without it our block is merely added to the full list.
+// Returns undefined for an unknown method so the modal falls back to showing all,
+// rather than opening with nothing payable.
+export function lockToMethod(method: string | null | undefined) {
+  const m = method ? RZP_INSTRUMENT[method] : undefined;
+  if (!m) return undefined;
+  return {
+    display: {
+      blocks: {
+        chosen: {
+          name: m.label,
+          instruments: [m.types ? { method: m.method, types: m.types } : { method: m.method }],
+        },
+      },
+      sequence: ['block.chosen'],
+      preferences: { show_default_blocks: false },
+    },
+  };
+}
+
 let loader: Promise<void> | null = null;
 
 function loadScript(): Promise<void> {

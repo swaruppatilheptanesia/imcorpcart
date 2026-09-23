@@ -5,7 +5,7 @@ import { Button, Radio, Toggle, useToast } from '@/components';
 import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
 import { getAddresses, createPaymentOrder } from '@/data/shop-api';
-import { openRazorpay } from '@/lib/razorpay';
+import { openRazorpay, RZP_INSTRUMENT, lockToMethod } from '@/lib/razorpay';
 import type { ShopAddress } from '@/data/store-types';
 import { useStore } from '../store-context';
 import { computeTotals } from '../coupon';
@@ -15,10 +15,6 @@ import styles from './Checkout.module.css';
 
 const fmtAddr = (a: ShopAddress) =>
   [a.line1, a.line2, `${a.city}, ${a.state}`, a.pincode].filter(Boolean).join(', ');
-
-// Our PaymentMethod → the Razorpay instrument key used to lock the modal.
-const razorpayMethod = (method: string): string =>
-  method === 'NET_BANKING' ? 'netbanking' : method === 'UPI' ? 'upi' : 'card';
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -123,12 +119,11 @@ export function Checkout() {
         return;
       }
       // Open a Razorpay order for the server-priced total (incl. the method's
-      // surcharge), pre-select the chosen method, then place the order with the
-      // signed result. Surcharge integrity is enforced server-side (placeOrder
-      // verifies the captured method and refunds a mismatch) — we don't hard-lock
-      // the modal, which would conflict with the account's Checkout Configuration.
+      // surcharge), then lock the modal to that one method so the shopper pays by
+      // what they were quoted for. The account's Checkout Configuration must allow
+      // the method (see checkoutConfigIdFor server-side); this narrows within it.
       const po = await createPaymentOrder(appliedCoupon?.code, method, useWallet);
-      const rzpMethod = razorpayMethod(method);
+      const instrument = RZP_INSTRUMENT[method];
       let paid = false;
       await openRazorpay({
         key: po.keyId,
@@ -138,7 +133,8 @@ export function Checkout() {
         name: 'imcorpcart',
         description: `${cartCount} item${cartCount > 1 ? 's' : ''}`,
         theme: { color: '#0071e3' },
-        prefill: { method: rzpMethod },
+        prefill: { method: instrument?.method },
+        config: lockToMethod(method),
         handler: (r) => {
           paid = true;
           void (async () => {
@@ -312,7 +308,9 @@ export function Checkout() {
             <div>
               <div className={styles.payNoteTitle}>Secure payment via Razorpay</div>
               <div className={styles.payNoteSub}>
-                You'll complete payment with your selected method in the Razorpay window.
+                {selectedMethod
+                  ? `The Razorpay window will open on ${selectedMethod.label.toLowerCase()} only. Go back here to switch.`
+                  : "You'll complete payment in the Razorpay window."}
               </div>
             </div>
           </div>

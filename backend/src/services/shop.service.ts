@@ -868,12 +868,28 @@ function mapRazorpayMethod(payment: { method?: string }): PaymentMethod {
   switch (payment.method) {
     case 'netbanking':
       return PaymentMethod.NET_BANKING;
+    // CREDIT_CARD is the canonical row for the merged "Card" option (see
+    // PAYMENT_METHOD_LABELS) — a debit card is priced and recorded as that too.
     case 'card':
       return PaymentMethod.CREDIT_CARD;
     case 'upi':
     default:
       return PaymentMethod.UPI;
   }
+}
+
+// Which saved Checkout Configuration to open the order against. Credit and debit
+// are one Razorpay method ('card') and cannot be told apart by a configuration —
+// only the storefront's per-order lock can — so they share the card id. An absent
+// method (e.g. an older client) falls through to the shared id.
+export function checkoutConfigIdFor(method?: PaymentMethod): string | undefined {
+  const perMethod =
+    method === PaymentMethod.UPI
+      ? env.RAZORPAY_CHECKOUT_CONFIG_ID_UPI
+      : method === PaymentMethod.NET_BANKING
+        ? env.RAZORPAY_CHECKOUT_CONFIG_ID_NETBANKING
+        : env.RAZORPAY_CHECKOUT_CONFIG_ID_CARD;
+  return perMethod || env.RAZORPAY_CHECKOUT_CONFIG_ID || undefined;
 }
 
 // Razorpay signs `order_id|payment_id` with the key secret; a mismatch means the
@@ -933,11 +949,14 @@ export async function createPaymentOrder(userId: string, input: CreatePaymentOrd
     currency: 'INR',
     receipt: `imc_${nanoid(10)}`,
   };
-  // The account's Checkout Configuration decides which methods the modal renders
-  // (the account needs this to show any methods). Surcharge integrity is enforced
-  // server-side in placeOrder (verify captured method + auto-refund a mismatch).
-  if (env.RAZORPAY_CHECKOUT_CONFIG_ID) {
-    orderParams.checkout_config_id = env.RAZORPAY_CHECKOUT_CONFIG_ID;
+  // The account's Checkout Configuration decides which methods the order may use.
+  // The storefront additionally locks the modal to the one method the shopper
+  // picked (a `config.display` block), so this only has to be wide enough to allow
+  // that method — a single configuration covering UPI + card + net banking does.
+  // A per-method id, when set, enforces the same choice dashboard-side too.
+  const methodConfigId = checkoutConfigIdFor(input.method);
+  if (methodConfigId) {
+    orderParams.checkout_config_id = methodConfigId;
   }
   const rzOrder = await razorpay.orders.create(orderParams as unknown as Parameters<typeof razorpay.orders.create>[0]);
 
@@ -996,12 +1015,12 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     if (payment.status !== 'captured' && payment.status !== 'authorized') {
       throw AppError.badRequest('Payment was not completed — please retry checkout');
     }
-    // Record the instrument actually used. We do NOT require it to equal the method
-    // the cart was priced for: the Razorpay order amount is fixed at creation, so the
-    // customer always pays exactly what we charged, whichever instrument they pick in
-    // the modal (e.g. Card when the checkout config offers Card + UPI). Enforcing
-    // equality here refunded valid card payments and placed no order — the amount is
-    // already verified above, which is the only integrity check that matters.
+    // Record the instrument actually used. The modal is locked to the method the
+    // shopper chose, so this normally equals it — but we still do NOT require
+    // equality: the Razorpay order amount is fixed at creation, so the customer pays
+    // exactly what we charged whichever instrument they end up on. Enforcing equality
+    // here once refunded valid card payments and placed no order; the amount check
+    // above is the integrity guarantee that actually matters.
     payMethod = mapRazorpayMethod(payment as { method?: string });
 
     gatewayOrderId = razorpayOrderId;

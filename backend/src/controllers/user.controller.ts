@@ -17,7 +17,7 @@ export async function createCompany(req: Request, res: Response) {
 }
 
 export async function assignAdmin(req: Request, res: Response) {
-  res.json(await service.assignCompanyAdmin(getParam(req, 'companyId'), req.body));
+  res.json(await service.assignCompanyAdmin(getParam(req, 'companyId'), req.body, req.user?.id));
 }
 
 export async function update(req: Request, res: Response) {
@@ -29,7 +29,7 @@ export async function updateReseller(req: Request, res: Response) {
 }
 
 export async function updateCompany(req: Request, res: Response) {
-  res.json(await service.updateCompany(getParam(req, 'id'), req.body));
+  res.json(await service.updateCompany(getParam(req, 'id'), req.body, req.user?.id));
 }
 
 export async function importUsers(req: Request, res: Response) {

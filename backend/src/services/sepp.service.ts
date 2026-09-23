@@ -1,4 +1,4 @@
-import { Prisma, SmartEppStatus, ApprovalStage } from '@prisma/client';
+import { Prisma, SmartEppStatus, ApprovalStage, PaymentMethod } from '@prisma/client';
 import { nanoid } from 'nanoid';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
@@ -15,6 +15,7 @@ import {
   verifyRazorpaySignature,
   refundQuietly,
   assertNotViewOnly,
+  checkoutConfigIdFor,
 } from './shop.service';
 import { getSeppContext } from './sepp-context';
 import { computeSeppQuote, computeAdvance, scaleSeppQuote, sumSeppQuotes, type SeppQuote } from './sepp-calc';
@@ -303,7 +304,7 @@ function assertSubmittable(q: Awaited<ReturnType<typeof quoteCart>>) {
 
 // ─── Advance payment (Razorpay order for the leasing company's fee) ──────────
 
-export async function createAdvanceOrder(userId: string) {
+export async function createAdvanceOrder(userId: string, method?: PaymentMethod) {
   assertCheckoutOpen();
   await assertNotViewOnly(userId);
   const q = await quoteCart(userId);
@@ -311,13 +312,17 @@ export async function createAdvanceOrder(userId: string) {
   if (q.advance <= 0) throw AppError.badRequest('No advance is payable — submit the request directly');
 
   const razorpay = getRazorpay();
+  // The amount is the leasing company's advance exactly — no per-method surcharge
+  // (unlike EPP): it is a pass-through fee refunded in full when a request is
+  // declined, so loading it would leave the refund short.
   const orderParams: Record<string, unknown> = {
     amount: Math.round(q.advance * 100),
     currency: 'INR',
     receipt: `sepp_${nanoid(10)}`,
     notes: { kind: 'SMART_EPP_ADVANCE', employeeId: q.employeeId },
   };
-  if (env.RAZORPAY_CHECKOUT_CONFIG_ID) orderParams.checkout_config_id = env.RAZORPAY_CHECKOUT_CONFIG_ID;
+  const configId = checkoutConfigIdFor(method);
+  if (configId) orderParams.checkout_config_id = configId;
   const rz = await razorpay.orders.create(orderParams as unknown as Parameters<typeof razorpay.orders.create>[0]);
   return { keyId: env.RAZORPAY_KEY_ID, rzpOrderId: rz.id, amount: Number(rz.amount), currency: rz.currency, total: q.advance };
 }
