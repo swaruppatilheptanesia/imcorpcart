@@ -8,6 +8,13 @@ import {
   createEmployeeBody,
   updateEmployeeBody,
 } from '../validators/company.schema';
+import {
+  seppRequestListQuery,
+  seppDecisionBody,
+  installmentParams,
+  companyAddressBody,
+  updateCompanyAddressBody,
+} from '../validators/sepp.schema';
 
 const router = Router();
 
@@ -21,5 +28,25 @@ router.patch(
   validate({ params: idParam, body: updateEmployeeBody }),
   asyncHandler(ctrl.updateEmployee),
 );
+
+// Smart EPP — HR stage-1 approval queue.
+router.get('/sepp/requests', validate({ query: seppRequestListQuery }), asyncHandler(ctrl.listSeppRequests));
+router.get('/sepp/requests/:id', validate({ params: idParam }), asyncHandler(ctrl.getSeppRequest));
+router.post(
+  '/sepp/requests/:id/decision',
+  validate({ params: idParam, body: seppDecisionBody }),
+  asyncHandler(ctrl.decideSeppRequest),
+);
+router.post(
+  '/sepp/requests/:id/installments/:no/paid',
+  validate({ params: installmentParams }),
+  asyncHandler(ctrl.markInstallmentPaid),
+);
+
+// Office branches — the only delivery points for Smart-EPP orders.
+router.get('/addresses', asyncHandler(ctrl.listAddresses));
+router.post('/addresses', validate({ body: companyAddressBody }), asyncHandler(ctrl.createAddress));
+router.patch('/addresses/:id', validate({ params: idParam, body: updateCompanyAddressBody }), asyncHandler(ctrl.updateAddress));
+router.delete('/addresses/:id', validate({ params: idParam }), asyncHandler(ctrl.deleteAddress));
 
 export default router;

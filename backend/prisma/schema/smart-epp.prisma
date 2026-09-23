@@ -9,21 +9,45 @@ model SmartEppRequest {
   requestNo   String         @unique
   employeeId  String
   employee    Employee       @relation(fields: [employeeId], references: [id])
+  companyId   String
+  company     Company        @relation(fields: [companyId], references: [id])
   status      SmartEppStatus @default(DRAFT)
-  totalAmount Decimal        @db.Decimal(12, 2)
+  totalAmount Decimal        @db.Decimal(12, 2) // asset cost total (incl. GST)
   submittedAt DateTime?
   decidedAt   DateTime?
+
+  // Smart-EPP orders ship only to a company-defined office branch (Address.companyId set).
+  addressId String
+  address   Address @relation("SmartEppRequestAddress", fields: [addressId], references: [id])
+
+  // Snapshot of the lease calculation (services/sepp-calc.ts SeppQuote) at
+  // submission, so approvals and the resulting orders never recompute against
+  // parameters that changed later.
+  quote Json?
+
+  // Advance levied by the leasing company, paid via Razorpay at submission.
+  // Refunded (advanceRefundedAt) when HR / Leasing rejects or the employee cancels.
+  advanceAmount         Decimal   @default(0) @map("advance_amount") @db.Decimal(12, 2)
+  advanceGatewayOrderId String?   @map("advance_gateway_order_id")
+  advanceTxnId          String?   @unique @map("advance_txn_id")
+  advancePaidAt         DateTime? @map("advance_paid_at")
+  advanceRefundedAt     DateTime? @map("advance_refunded_at")
+
+  // Set when leasing approval creates the orders (one per fulfilling seller).
+  checkoutGroup String? @map("checkout_group")
 
   items      SmartEppRequestItem[]
   approvals  ApprovalStep[]
   leaseTerms LeaseTerms?
-  order      Order?
+  orders     Order[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId])
+  @@index([companyId])
   @@index([status])
+  @@index([addressId])
   @@map("smart_epp_requests")
 }
 
@@ -87,7 +111,9 @@ model LeaseTerms {
   @@map("lease_terms")
 }
 
-// Schedule supplied by the leasing co; portal DISPLAYS only, does not track repayments.
+// Schedule generated at leasing approval. Repayments themselves happen via
+// payroll outside the platform; HR marks an installment paid (paidAt), which
+// replenishes the employee's Smart-EPP purchase limit by that EMI.
 model LeaseScheduleInstallment {
   id            String     @id @default(cuid())
   leaseTermsId  String
@@ -95,6 +121,8 @@ model LeaseScheduleInstallment {
   installmentNo Int
   dueDate       DateTime
   amount        Decimal    @db.Decimal(12, 2)
+  paidAt        DateTime?  @map("paid_at")
+  paidById      String?    @map("paid_by_id")
 
   @@unique([leaseTermsId, installmentNo])
   @@index([leaseTermsId])

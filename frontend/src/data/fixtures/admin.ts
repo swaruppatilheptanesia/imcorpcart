@@ -40,6 +40,12 @@ export const userDatasets: Record<UserTab, UserDataset> = {
       { name: 'PrimeCarry', meta1: 'East', meta2: '—', state: 'Invited', initials: 'PC', avBg: '#5B6270' },
     ],
   },
+  leasing: {
+    headers: ['Leasing company', 'Operator', 'Companies', 'Status', ''],
+    rows: [
+      { name: 'LeaseFin Capital', meta1: 'ops@leasefin.com', meta2: '1 company', state: 'Active', initials: 'LC', avBg: '#7A5AF0' },
+    ],
+  },
 };
 
 export const userTabLabels: Record<UserTab, string> = {
@@ -47,6 +53,7 @@ export const userTabLabels: Record<UserTab, string> = {
   employees: 'Employees',
   resellers: 'Resellers',
   partners: 'Fulfillment',
+  leasing: 'Leasing',
 };
 
 export const addUserLabel: Record<UserTab, string> = {
@@ -54,6 +61,7 @@ export const addUserLabel: Record<UserTab, string> = {
   employees: 'Add employee',
   resellers: 'Add reseller',
   partners: 'Add partner',
+  leasing: 'Add leasing company',
 };
 
 /** Payments config — from payConfig. */

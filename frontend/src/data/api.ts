@@ -896,11 +896,46 @@ export interface CreateCompanyInput {
 export function createCompany(input: CreateCompanyInput): Promise<{ name: string; emailDomain: string | null; adminEmail: string; tempPassword?: string }> {
   return apiFetch('/users/companies', { method: 'POST', body: input });
 }
+export interface UpdateCompanyInput {
+  name?: string;
+  smartEppEnabled?: boolean;
+  status?: 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED';
+  // Smart EPP inputs: lease partner (null = detach), ADLD insurance % p.a. of
+  // asset cost (null = none), income-tax slab % for the employee illustration.
+  leasingCompanyId?: string | null;
+  adldPct?: number | null;
+  incomeTaxPct?: number;
+}
 export function updateCompany(
   id: string,
-  input: { name?: string; smartEppEnabled?: boolean; status?: 'ACTIVE' | 'ONBOARDING' | 'SUSPENDED' },
-): Promise<{ id: string; name: string; status: string; smartEppEnabled: boolean }> {
+  input: UpdateCompanyInput,
+): Promise<{ id: string; name: string; status: string; smartEppEnabled: boolean; leasingCompanyId: string | null; leasingCompanyName: string | null }> {
   return apiFetch(`/users/companies/${id}`, { method: 'PATCH', body: input });
+}
+
+// Smart EPP lease partners (for the company edit modal + the Leasing tab).
+export interface LeasingCompanyOption {
+  id: string;
+  name: string;
+  status: string;
+  tenureMonths: number;
+  companyCount: number;
+}
+export async function getLeasingCompanies(): Promise<LeasingCompanyOption[]> {
+  const r = await apiFetch<{ data: LeasingCompanyOption[] }>('/users/leasing-companies');
+  return r.data;
+}
+export interface CreateLeasingCompanyInput {
+  name: string;
+  gstin?: string;
+  contactPhone?: string;
+  operatorName: string;
+  operatorEmail: string;
+}
+export function createLeasingCompany(
+  input: CreateLeasingCompanyInput,
+): Promise<{ id: string; name: string; operatorName: string; operatorEmail: string; status: string }> {
+  return apiFetch('/users/leasing-companies', { method: 'POST', body: input });
 }
 
 export interface AssignAdminInput {
@@ -1070,6 +1105,7 @@ export interface VendorImportRun {
   created: number;
   updated: number;
   failed: number;
+  deactivated: number; // taken off sale because the vendor stopped listing them
   errors: { ref: string; field: string; message: string }[] | null;
   startedAt: string;
   finishedAt: string | null;

@@ -147,6 +147,14 @@ export const orderFullInclude = {
 // list payloads. `hubbleOrderRef` stays internal — serialize() strips *Ref keys.
 export const shopOrderFullInclude = {
   ...orderFullInclude,
+  // Smart-EPP orders carry their lease request so the buyer sees EMI × tenure
+  // where an EPP order shows its payment.
+  smartEppRequest: {
+    select: {
+      requestNo: true,
+      leaseTerms: { select: { tenureMonths: true, emiAmount: true, leasingCompany: { select: { name: true } } } },
+    },
+  },
   items: {
     select: {
       id: true,

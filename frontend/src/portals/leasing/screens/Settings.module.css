@@ -1,0 +1,32 @@
+.section {
+  display: grid;
+  gap: 2px;
+}
+.section + .section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hair);
+}
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+}
+.sectionNote {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text2);
+  margin: -4px 0 12px;
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+.problem {
+  font-size: 12.5px;
+  color: var(--error);
+}

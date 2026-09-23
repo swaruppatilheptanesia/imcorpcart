@@ -18,6 +18,8 @@ import { Dashboard } from './screens/Dashboard';
 import { Employees } from './screens/Employees';
 import { Orders } from './screens/Orders';
 import { Profile } from './screens/Profile';
+import { SeppRequests } from './screens/SeppRequests';
+import { Addresses } from './screens/Addresses';
 import styles from '../super-admin/SuperAdminApp.module.css';
 
 type Stage = 'checking' | 'out' | 'in';
@@ -123,7 +125,9 @@ function Console({ onSignOut }: { onSignOut: () => void }) {
               <Route element={<Outlet context={ctx} />}>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="employees" element={<Employees />} />
+                <Route path="sepp" element={<SeppRequests />} />
                 <Route path="orders" element={<Orders />} />
+                <Route path="addresses" element={<Addresses />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="dashboard" replace />} />
               </Route>

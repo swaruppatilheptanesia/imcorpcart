@@ -5,6 +5,7 @@
 import { createAuthStore } from './auth-store';
 import { createHttpClient, createAuthApi } from './http';
 import type { StoreProduct, StoreCoupon, Shade, Freebie, Spec, ShopAddress, FamilyMember, Review, VoucherSpec } from './store-types';
+import type { SeppProfile, SeppCartQuote, SeppRequestView } from './sepp-types';
 
 export const shopStore = createAuthStore('shopper');
 const client = createHttpClient(shopStore);
@@ -176,6 +177,41 @@ export function placeOrder(
   });
 }
 
+// ─── Smart EPP (lease-financed request) ──────────────────────────────────────
+
+// Price the current cart on the lease calculator (+ the advance due, the
+// company's office branches, and any blockers such as "no phone in cart").
+export function getSeppQuote(): Promise<SeppCartQuote> {
+  return client.apiFetch('/shop/sepp/quote');
+}
+
+// Razorpay order for the leasing company's advance (only when it's > ₹0).
+export interface SeppAdvanceOrder {
+  keyId: string;
+  rzpOrderId: string;
+  amount: number; // paise
+  currency: string;
+  total: number; // rupees
+}
+export function createSeppAdvanceOrder(): Promise<SeppAdvanceOrder> {
+  return client.apiFetch('/shop/sepp/payments/order', { method: 'POST' });
+}
+
+export function submitSeppRequest(addressId: string, payment?: RazorpayHandoff): Promise<SeppRequestView> {
+  return client.apiFetch('/shop/sepp/requests', { method: 'POST', body: { addressId, ...payment } });
+}
+
+export async function getSeppRequests(): Promise<SeppRequestView[]> {
+  const r = await client.apiFetch<{ data: SeppRequestView[] }>('/shop/sepp/requests');
+  return r.data;
+}
+export function getSeppRequest(no: string): Promise<SeppRequestView> {
+  return client.apiFetch(`/shop/sepp/requests/${encodeURIComponent(no)}`);
+}
+export function cancelSeppRequest(no: string): Promise<SeppRequestView> {
+  return client.apiFetch(`/shop/sepp/requests/${encodeURIComponent(no)}/cancel`, { method: 'POST' });
+}
+
 // ─── Orders / tracking ───────────────────────────────────────────────────────
 
 export interface ShopOrderRow {
@@ -258,6 +294,8 @@ export interface ShopProfileApi {
   program: string;
   creditLimit: number | null;
   creditUsed: number;
+  // Smart EPP entitlement — null unless the company has SEPP on + a leasing partner.
+  sepp: SeppProfile | null;
   walletBalance: number; // spendable cashback balance
   addresses: ShopAddress[];
   // Active payment methods + their surcharge, for the Checkout method picker.

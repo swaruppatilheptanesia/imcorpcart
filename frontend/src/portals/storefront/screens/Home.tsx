@@ -1,5 +1,7 @@
-import { SlidersHorizontal, LayoutGrid, List } from 'lucide-react';
+import { SlidersHorizontal, LayoutGrid, List, Landmark } from 'lucide-react';
+import { EmptyState } from '@/components';
 import { cn } from '@/lib/cn';
+import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { categoryChips, sortOptions } from '@/data/fixtures/storefront';
 import type { StoreProduct } from '@/data/store-types';
@@ -9,17 +11,21 @@ import { getCatalog, groupByCategory } from '../data';
 import { ProductGrid, GridSkeleton } from '../components/ProductGrid';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { PromoCarousel } from '../components/PromoCarousel';
+import { PurchaseModeToggle } from '../components/PurchaseModeToggle';
 import s from './store-screen.module.css';
 
 export function Home() {
   const { openFilter } = useShopShell();
-  const { filters, setFilters, sortBy, setSortBy, grid, setGrid, activeFilterCount, search } = useStore();
+  const { filters, setFilters, sortBy, setSortBy, grid, setGrid, activeFilterCount, search, purchaseMode, sepp } = useStore();
 
   const { data, state } = useAsync(
     () => getCatalog({ filters, search, sort: sortBy }),
     [filters, search, sortBy],
   );
-  const items: StoreProduct[] = data ?? [];
+  const all: StoreProduct[] = data ?? [];
+  // Smart EPP mode shows only what the employee can lease within their limit.
+  const seppMode = purchaseMode === 'SEPP';
+  const items = seppMode ? all.filter((p) => p.sepp?.withinLimit) : all;
 
   // Grouped sections only when browsing "all" with no narrowing facet.
   const grouped = filters.category === 'all' && activeFilterCount === 0 && !search;
@@ -28,6 +34,7 @@ export function Home() {
   return (
     <div>
       <PromoCarousel />
+      <PurchaseModeToggle />
 
       <div className={s.chips}>
         {categoryChips.map((c) => (
@@ -46,7 +53,7 @@ export function Home() {
 
         <div className={s.catalogResults}>
           <div className={s.sectionHead}>
-            <span className={s.sectionTitle}>Featured this month</span>
+            <span className={s.sectionTitle}>{seppMode ? 'Available on Smart EPP' : 'Featured this month'}</span>
             <span className={s.count}>{items.length} products</span>
             <div className={s.controls}>
               <button className={s.filterBtn} onClick={openFilter}>
@@ -76,7 +83,15 @@ export function Home() {
 
           {state === 'loading' && <GridSkeleton count={6} />}
 
-          {state !== 'loading' && grouped && (
+          {state !== 'loading' && seppMode && items.length === 0 && (
+            <EmptyState
+              icon={<Landmark size={24} />}
+              title="Nothing within your Smart EPP limit"
+              body={`Products whose lease fits your available limit (${inr(sepp?.available ?? 0)}) appear here. Ask your HR admin to review your limit, or switch to EPP to pay now.`}
+            />
+          )}
+
+          {state !== 'loading' && grouped && items.length > 0 && (
             <>
               {groups.map((g) => (
                 <section key={g.key} className={s.groupSection}>
@@ -90,7 +105,7 @@ export function Home() {
             </>
           )}
 
-          {state !== 'loading' && !grouped && <ProductGrid items={items} list={!grid} />}
+          {state !== 'loading' && !grouped && items.length > 0 && <ProductGrid items={items} list={!grid} />}
         </div>
       </div>
     </div>

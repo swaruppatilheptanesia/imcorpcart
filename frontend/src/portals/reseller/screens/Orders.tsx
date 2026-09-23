@@ -109,7 +109,10 @@ export function Orders() {
             const canUpdate = o.status !== 'Cancelled' && o.status !== 'Delivered';
             return (
               <Row key={o.id} cols={COLS} onClick={() => setDetailId(o.id)}>
-                <div className={styles.orderId}>{o.id}</div>
+                <div>
+                  <div className={styles.orderId}>{o.id}</div>
+                  {o.smartEpp && <StatusPill label="Smart EPP" tone="info" />}
+                </div>
                 <div className={s.cellName}>
                   {o.productName}
                   {o.itemCount > 1 && <span className={s.cellSub}> +{o.itemCount - 1}</span>}

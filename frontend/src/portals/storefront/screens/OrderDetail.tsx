@@ -134,6 +134,41 @@ export function OrderDetail() {
             <div className={styles.totalRow}><span>Total</span><span>{inr(order.total)}</span></div>
           </Card>
 
+          {order.type === 'SMART_EPP' && (
+            <Card>
+              <div className={styles.cardTitle}>Smart EPP lease</div>
+              {order.smartEppRequest?.leaseTerms ? (
+                <>
+                  <div className={styles.row}>
+                    <span>Salary deduction</span>
+                    <span>
+                      {inr(order.smartEppRequest.leaseTerms.emiAmount)}/mo × {order.smartEppRequest.leaseTerms.tenureMonths}
+                    </span>
+                  </div>
+                  <div className={styles.row}>
+                    <span>Leasing company</span>
+                    <span>{order.smartEppRequest.leaseTerms.leasingCompany?.name ?? '—'}</span>
+                  </div>
+                </>
+              ) : null}
+              <div className={styles.row}>
+                <span>Paid via</span>
+                <span>Monthly payroll deduction</span>
+              </div>
+              {order.smartEppRequest?.requestNo && (
+                <div className={styles.row}>
+                  <span>Request</span>
+                  <button
+                    className={styles.txn}
+                    style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--accent)' }}
+                    onClick={() => navigate(`/shop/sepp/requests/${order.smartEppRequest.requestNo}`)}
+                  >
+                    {order.smartEppRequest.requestNo}
+                  </button>
+                </div>
+              )}
+            </Card>
+          )}
           {order.payments?.length > 0 && (() => {
             // One captured payment per order (a split checkout shares one gateway txn).
             const pay = order.payments[0];

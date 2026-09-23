@@ -196,3 +196,98 @@ export async function sendVoucherEmail(to: string, data: VoucherEmailData): Prom
     console.error(`[mailer] Failed to send voucher email to ${to}:`, e instanceof Error ? e.message : e);
   }
 }
+
+// ─── Smart EPP lifecycle emails ──────────────────────────────────────────────
+
+export interface SeppEmailData {
+  heading: string; // e.g. "HR approved your request"
+  intro: string; // one-paragraph plain sentence
+  lines: [string, string][]; // key/value facts (request no, device, EMI …)
+  cta?: { label: string; url: string };
+  note?: string; // small-print footer line
+}
+
+export type MailResult = 'sent' | 'skipped' | 'failed';
+
+/** Public app base (first CORS origin, else prod) for deep-links in emails. */
+export function appBaseUrl(): string {
+  return appBase();
+}
+
+function seppEmail(d: SeppEmailData): { subject: string; html: string; text: string } {
+  const subject = `${d.heading} — imcorpcart Smart EPP`;
+  const text = [
+    d.heading,
+    '',
+    d.intro,
+    '',
+    ...d.lines.map(([k, v]) => `${k}: ${v}`),
+    d.cta ? `\n${d.cta.label}: ${d.cta.url}` : '',
+    d.note ? `\n${d.note}` : '',
+  ]
+    .filter((l) => l !== '')
+    .join('\n');
+
+  const rows = d.lines
+    .map(
+      ([k, v]) => `<tr>
+        <td style="padding:7px 0;font-size:13px;color:#6e6e73;border-bottom:1px solid #f0f0f2;">${esc(k)}</td>
+        <td align="right" style="padding:7px 0;font-size:13px;font-weight:600;color:#1d1d1f;border-bottom:1px solid #f0f0f2;">${esc(v)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const html = `
+  <div style="margin:0;padding:24px 12px;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
+    <table role="presentation" align="center" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;margin:0 auto;background:#ffffff;border:1px solid #e5e5ea;border-radius:18px;overflow:hidden;">
+      <tr><td style="background:${VOUCHER_ACCENT};padding:22px 32px;">
+        <div style="font-size:16px;font-weight:800;letter-spacing:-0.01em;color:#ffffff;">imcorpcart</div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.72);margin-top:2px;">Smart EPP</div>
+      </td></tr>
+      <tr><td style="padding:26px 32px 4px;">
+        <div style="font-size:20px;font-weight:700;letter-spacing:-0.02em;">${esc(d.heading)}</div>
+        <p style="font-size:14px;line-height:1.6;color:#6e6e73;margin:8px 0 14px;">${esc(d.intro)}</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+      </td></tr>
+      ${
+        d.cta
+          ? `<tr><td style="padding:20px 32px 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;"><tr><td align="center" style="border-radius:12px;background:${VOUCHER_ACCENT};">
+          <a href="${esc(d.cta.url)}" target="_blank" style="display:block;padding:13px 20px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:12px;">${esc(d.cta.label)} &rarr;</a>
+        </td></tr></table>
+      </td></tr>`
+          : ''
+      }
+      <tr><td style="padding:18px 32px 30px;">
+        <div style="font-size:12px;line-height:1.6;color:#8e8e93;">${esc(d.note ?? 'You are receiving this because you take part in the imcorpcart Smart EPP programme.')}</div>
+      </td></tr>
+    </table>
+  </div>`;
+  return { subject, html, text };
+}
+
+// Best-effort Smart-EPP lifecycle email. Returns the outcome so the caller can
+// record a Notification row; never throws into the approval flow.
+export async function sendSeppEmail(to: string, data: SeppEmailData): Promise<{ result: MailResult; error?: string }> {
+  const resend = getResend();
+  if (!resend) {
+    // eslint-disable-next-line no-console
+    console.log(`[mailer] RESEND_API_KEY not set — skipping Smart EPP email to ${to}: ${data.heading}`);
+    return { result: 'skipped', error: 'mailer not configured' };
+  }
+  const { subject, html, text } = seppEmail(data);
+  try {
+    const { error } = await resend.emails.send({ from: env.RESEND_FROM, to, subject, html, text });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error(`[mailer] Resend rejected Smart EPP email to ${to}:`, error);
+      return { result: 'failed', error: String((error as { message?: string }).message ?? error) };
+    }
+    return { result: 'sent' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // eslint-disable-next-line no-console
+    console.error(`[mailer] Failed to send Smart EPP email to ${to}:`, msg);
+    return { result: 'failed', error: msg };
+  }
+}

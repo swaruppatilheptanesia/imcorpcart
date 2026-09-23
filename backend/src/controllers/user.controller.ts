@@ -35,3 +35,11 @@ export async function updateCompany(req: Request, res: Response) {
 export async function importUsers(req: Request, res: Response) {
   res.json(await service.importUsers(req.body));
 }
+
+export async function listLeasingCompanies(_req: Request, res: Response) {
+  res.json(await service.listLeasingCompanies());
+}
+
+export async function createLeasingCompany(req: Request, res: Response) {
+  res.status(201).json(await service.createLeasingCompany(req.body));
+}

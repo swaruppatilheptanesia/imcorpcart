@@ -13,6 +13,7 @@ const PORTALS = {
   company: { store: createAuthStore('company'), path: '/company' },
   reseller: { store: createAuthStore('reseller'), path: '/reseller' },
   shopper: { store: createAuthStore('shopper'), path: '/shop' },
+  leasing: { store: createAuthStore('leasing'), path: '/leasing' },
 } as const;
 
 export type PortalKey = keyof typeof PORTALS;
@@ -24,6 +25,7 @@ export const ROLE_TO_PORTAL: Record<string, PortalKey> = {
   RESELLER: 'reseller',
   EMPLOYEE_EPP: 'shopper',
   EMPLOYEE_SMART_EPP: 'shopper',
+  LEASING_COMPANY: 'leasing',
 };
 
 // Inverse map, for the portal apps' RBAC guard (checking-stage role check).
@@ -32,11 +34,12 @@ export const PORTAL_ROLES: Record<PortalKey, string[]> = {
   company: [],
   reseller: [],
   shopper: [],
+  leasing: [],
 };
 for (const [role, portal] of Object.entries(ROLE_TO_PORTAL)) PORTAL_ROLES[portal].push(role);
 
 /** Store the session in the portal store the role maps to and return that
- *  portal's path. Throws for roles with no portal (LEASING_COMPANY, …). */
+ *  portal's path. Throws for roles with no portal (FULFILLMENT_PARTNER, …). */
 export function persistSession(accessToken: string, user: AuthUser): string {
   const key = ROLE_TO_PORTAL[user.role];
   if (!key) throw new Error('No portal is available for your account');

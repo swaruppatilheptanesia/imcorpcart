@@ -54,11 +54,15 @@ model VendorImportRun {
   sourceId String
   source   VendorSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
-  status      String  @default("RUNNING") // RUNNING | SUCCESS | PARTIAL | FAILED
-  fetched     Int     @default(0)
-  created     Int     @default(0)
-  updated     Int     @default(0)
-  failed      Int     @default(0)
+  status  String @default("RUNNING") // RUNNING | SUCCESS | PARTIAL | FAILED
+  fetched Int    @default(0)
+  created Int    @default(0)
+  updated Int    @default(0)
+  failed  Int    @default(0)
+  // Products this run took off sale because the vendor stopped listing them (or
+  // marked them inactive). Always 0 for a run that failed or was page-capped —
+  // a partial feed is never treated as "the vendor dropped these".
+  deactivated Int     @default(0)
   errors      Json? // [{ ref, field, message }]
   startedById String? @map("started_by_id")
 

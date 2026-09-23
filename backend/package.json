@@ -16,6 +16,7 @@
     "db:seed": "prisma db seed",
     "db:seed-demo": "ts-node prisma/seed-demo-user.ts",
     "db:seed-demo-reseller": "ts-node prisma/seed-demo-reseller.ts",
+    "db:seed-demo-sepp": "ts-node prisma/seed-demo-sepp.ts",
     "studio": "prisma studio"
   },
   "prisma": {

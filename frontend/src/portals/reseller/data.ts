@@ -152,6 +152,7 @@ const ORDER_STATUS_IN: Record<string, StoreOrderStatus> = {
 
 export interface ResellerOrderRow {
   id: string; // orderNo (drives transit + display)
+  smartEpp: boolean; // lease-financed order (created at leasing approval, no gateway payment)
   customer: string;
   company: string;
   status: StoreOrderStatus;
@@ -168,6 +169,7 @@ export async function getResellerOrders(bucket?: string): Promise<ResellerOrderR
   const r = await api.getOrders(bucket);
   return r.data.map((o) => ({
     id: o.orderNo,
+    smartEpp: o.type === 'SMART_EPP',
     customer: o.employee?.user.fullName ?? '—',
     company: o.company?.name ?? '—',
     status: ORDER_STATUS_IN[o.status] ?? 'Processing',

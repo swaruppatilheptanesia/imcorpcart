@@ -18,8 +18,10 @@ const ASPECT: Record<string, string> = {
 
 export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boolean }) {
   const navigate = useNavigate();
-  const { toggleWishlist, isWished, authed } = useStore();
+  const { toggleWishlist, isWished, authed, purchaseMode } = useStore();
   const wished = isWished(p.id);
+  // Smart EPP mode: lead with the monthly EMI + the tenure's "effective purchase".
+  const seppView = purchaseMode === 'SEPP' && p.sepp ? p.sepp : null;
 
   // Amazon-style spec highlights under the title: the first few spec values
   // ("6.7\" OLED · 120Hz | Exynos 1480 | …"). Packaging rows aren't a selling point.
@@ -75,12 +77,29 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
           </div>
         )}
         {specLine && <div className={styles.specs}>{specLine}</div>}
-        <div className={styles.priceRow}>
-          <span className={styles.price}>{inr(p.price)}</span>
-          {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
-          <span className={styles.priceTag}>{authed ? 'EPP' : 'MOP'}</span>
-        </div>
-        {p.cashback > 0 && <div className={styles.cashback}>Earn {inr(p.cashback)} cashback</div>}
+        {seppView ? (
+          <>
+            <div className={styles.priceRow}>
+              <span className={styles.price}>
+                {inr(seppView.monthlyEmi)}
+                <span className={styles.perMo}>/mo</span>
+              </span>
+              <span className={styles.priceTag}>SMART EPP</span>
+            </div>
+            <div className={styles.seppMeta}>
+              Effective purchase <strong>{inr(seppView.totalDeduction)}</strong> · {seppView.tenureMonths} months
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={styles.priceRow}>
+              <span className={styles.price}>{inr(p.price)}</span>
+              {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
+              <span className={styles.priceTag}>{authed ? 'EPP' : 'MOP'}</span>
+            </div>
+            {p.cashback > 0 && <div className={styles.cashback}>Earn {inr(p.cashback)} cashback</div>}
+          </>
+        )}
         {p.freebie.enabled && (
           <div className={styles.freebie}>
             <Gift size={11} /> Free gift

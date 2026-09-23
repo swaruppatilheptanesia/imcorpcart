@@ -93,6 +93,12 @@ model Product {
   source      VendorSource? @relation(fields: [sourceId], references: [id])
   externalRef String?       @map("external_ref")
 
+  // Set when an import run took this product off sale because the vendor stopped
+  // listing it; cleared (and the product put back on sale) if the vendor lists it
+  // again. Distinguishes a sync-driven deactivation from an admin's own one, so a
+  // re-sync never revives something the admin deliberately switched off.
+  deactivatedBySyncAt DateTime? @map("deactivated_by_sync_at")
+
   // Admin per-product show/hide on the storefront (independent of `status`; a
   // re-sync never touches it). Combined with VendorSource.active (vendor suspend).
   hidden Boolean @default(false)

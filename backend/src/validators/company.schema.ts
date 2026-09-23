@@ -7,8 +7,9 @@ export const companyEmployeeListQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
 
-// HR adds an employee under their own company. Credit limit is the employee's
-// annual salary (a plain stored ceiling for now — no ledger).
+// HR adds an employee under their own company. `creditLimit` is the employee's
+// Smart-EPP purchase limit (the total pre-tax EMI they may commit — typically
+// derived from salary); the ledger in credit.service tracks what's used.
 export const createEmployeeBody = z.object({
   fullName: z.string().trim().min(1),
   email: z.string().email(),

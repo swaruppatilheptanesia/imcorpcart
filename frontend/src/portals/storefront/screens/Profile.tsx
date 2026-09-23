@@ -47,9 +47,12 @@ export function Profile({ onSignOut }: { onSignOut: () => void }) {
       />
     );
 
-  const limit = p.creditLimit ?? 0;
-  const available = Math.max(0, limit - p.creditUsed);
-  const usedPct = limit > 0 ? Math.min(100, Math.round((p.creditUsed / limit) * 100)) : 0;
+  // Smart EPP purchase limit — ledger-backed when the lease programme is live for
+  // the company; otherwise the plain HR-set ceiling.
+  const limit = p.sepp ? p.sepp.limit : p.creditLimit ?? 0;
+  const used = p.sepp ? p.sepp.reserved + p.sepp.consumed : p.creditUsed;
+  const available = p.sepp ? p.sepp.available : Math.max(0, limit - p.creditUsed);
+  const usedPct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const onboarding = p.companyStatus === 'ONBOARDING';
 
   const shipping = p.addresses.filter((a) => !a.isBilling);
@@ -198,7 +201,7 @@ export function Profile({ onSignOut }: { onSignOut: () => void }) {
               <span className={`${styles.iconTile} ${styles.iconTileCredit}`}>
                 <Landmark size={18} />
               </span>
-              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Smart EPP credit limit</div>
+              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Smart EPP purchase limit</div>
             </div>
             {limit > 0 ? (
               <>
@@ -209,10 +212,19 @@ export function Profile({ onSignOut }: { onSignOut: () => void }) {
                 <div className={styles.bar}>
                   <span className={styles.barFill} style={{ width: `${usedPct}%` }} />
                 </div>
-                <div className={styles.creditNote}>{inr(p.creditUsed)} used</div>
+                <div className={styles.creditNote}>
+                  {p.sepp
+                    ? `${inr(p.sepp.reserved)} awaiting approval · ${inr(p.sepp.consumed)} on active leases · restored as HR records each EMI`
+                    : `${inr(p.creditUsed)} used`}
+                </div>
+                {p.sepp && (
+                  <div className={styles.creditNote}>
+                    Lease partner {p.sepp.leasingCompany} · {p.sepp.tenureMonths}-month tenure
+                  </div>
+                )}
               </>
             ) : (
-              <div className={styles.creditNote}>No credit limit set. Ask your HR admin to enable Smart EPP financing.</div>
+              <div className={styles.creditNote}>No purchase limit set. Ask your HR admin to set your Smart EPP limit.</div>
             )}
           </Card>
         )}

@@ -21,6 +21,7 @@ import uploadRoutes from './uploads.routes';
 import companyRoutes from './company.routes';
 import resellerRoutes from './reseller.routes';
 import shopRoutes from './shop.routes';
+import leasingRoutes from './leasing.routes';
 import reviewRoutes from './review.routes';
 import { partnerDocsRouter } from './partner/docs';
 
@@ -49,6 +50,7 @@ const admin = [requireAuth, requireRole(Role.SUPER_ADMIN)];
 const company = [requireAuth, requireRole(Role.COMPANY_ADMIN, Role.COMPANY_HR)];
 const reseller = [requireAuth, requireRole(Role.RESELLER)];
 const shop = [requireAuth, requireRole(Role.EMPLOYEE_EPP, Role.EMPLOYEE_SMART_EPP)];
+const leasing = [requireAuth, requireRole(Role.LEASING_COMPANY)];
 
 // Super Admin console.
 router.use('/products', ...admin, productRoutes);
@@ -76,5 +78,8 @@ router.use('/reseller', ...reseller, resellerRoutes);
 
 // Storefront (employee) app.
 router.use('/shop', ...shop, shopRoutes);
+
+// Leasing-company portal (Smart EPP stage-2 approval + lease parameters).
+router.use('/leasing', ...leasing, leasingRoutes);
 
 export default router;

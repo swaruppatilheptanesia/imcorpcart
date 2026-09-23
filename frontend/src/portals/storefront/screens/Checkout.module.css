@@ -358,3 +358,39 @@
     position: static;
   }
 }
+
+/* ── Smart EPP request checkout ── */
+.steps {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  font-size: 13.5px;
+  color: var(--text2);
+  line-height: 1.55;
+  display: grid;
+  gap: 6px;
+}
+.lineName {
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-right: 12px;
+}
+.issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, var(--surface));
+  border-radius: 10px;
+  padding: 9px 12px;
+  line-height: 1.4;
+}
+.issue svg {
+  flex: none;
+  margin-top: 2px;
+}

@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, AlertTriangle, ShoppingBag } from 'lucide-react';
+import { ChevronRight, AlertTriangle, ShoppingBag, Landmark } from 'lucide-react';
 import { Chip, StatusPill, EmptyState, Skeleton } from '@/components';
 import type { SemanticTone } from '@/data/types';
 import type { StoreOrderStatus } from '@/data/store-types';
+import { SEPP_STATUS_LABEL, SEPP_STATUS_TONE } from '@/data/sepp-types';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
 import { fmtDate } from '@/data/map';
-import { getOrders } from '@/data/shop-api';
+import { getOrders, getSeppRequests } from '@/data/shop-api';
+import { useStore } from '../store-context';
 import styles from './Orders.module.css';
 
 const tone: Record<StoreOrderStatus, SemanticTone> = {
@@ -36,8 +38,14 @@ function bucket(s: StoreOrderStatus): Filter {
 
 export function Orders() {
   const navigate = useNavigate();
+  const { sepp } = useStore();
   const [filter, setFilter] = useState<Filter>('all');
   const { data, state, error, reload } = useAsync(() => getOrders(), [], (d) => d.length === 0);
+  // Smart EPP requests still in the approval chain (only fetched when SEPP is offered).
+  const { data: requests } = useAsync(() => (sepp?.enabled ? getSeppRequests() : Promise.resolve([])), [sepp?.enabled]);
+  // Once a request becomes an order it shows in the orders list — keep only the
+  // in-flight (and recently declined) ones here to avoid duplicates.
+  const pending = (requests ?? []).filter((r) => r.status !== 'ORDERED');
 
   // A single checkout can split into several orders (one per seller); count the
   // siblings so we can flag split orders.
@@ -61,6 +69,38 @@ export function Orders() {
 
   return (
     <div>
+      {pending.length > 0 && (
+        <>
+          <div className={styles.title}>
+            <Landmark size={18} style={{ verticalAlign: '-3px', marginRight: 8 }} />
+            Smart EPP requests
+          </div>
+          <div className={styles.list} style={{ marginBottom: 28 }}>
+            {pending.map((r) => (
+              <button key={r.id} className={styles.order} onClick={() => navigate(`/shop/sepp/requests/${r.requestNo}`)}>
+                <div className={styles.orderMain}>
+                  <div className={styles.orderTop}>
+                    <span className={styles.orderId}>{r.requestNo}</span>
+                    <span className={styles.orderDate}>{fmtDate(r.submittedAt ?? r.createdAt)}</span>
+                  </div>
+                  <div className={styles.orderSummary}>
+                    {r.items.map((i) => (i.quantity > 1 ? `${i.name} × ${i.quantity}` : i.name)).join(', ')}
+                  </div>
+                  <div className={styles.orderVendor}>
+                    {r.quote ? `${inr(r.quote.monthlyRental)}/mo · ${r.quote.tenureMonths} months` : 'Smart EPP lease'}
+                  </div>
+                </div>
+                <div className={styles.orderRight}>
+                  <StatusPill label={SEPP_STATUS_LABEL[r.status]} tone={SEPP_STATUS_TONE[r.status]} />
+                  <span className={styles.orderTotal}>{inr(r.totalAmount)}</span>
+                  <ChevronRight size={18} className={styles.chevron} />
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className={styles.title}>Your orders</div>
       <div className={styles.filters}>
         {(['all', 'active', 'delivered', 'cancelled'] as Filter[]).map((f) => (

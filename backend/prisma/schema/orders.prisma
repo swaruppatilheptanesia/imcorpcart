@@ -24,8 +24,9 @@ model Address {
   isDefault    Boolean @default(false)
   isBilling    Boolean @default(false)
 
-  orders        Order[] @relation("OrderShippingAddress")
-  billingOrders Order[] @relation("OrderBillingAddress")
+  orders           Order[]           @relation("OrderShippingAddress")
+  billingOrders    Order[]           @relation("OrderBillingAddress")
+  smartEppRequests SmartEppRequest[] @relation("SmartEppRequestAddress")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -61,8 +62,9 @@ model Order {
   companyId  String?
   company    Company?  @relation(fields: [companyId], references: [id])
 
-  // Smart EPP orders reference the approved request (null for EPP).
-  smartEppRequestId String?          @unique
+  // Smart EPP orders reference the approved request (null for EPP). Not unique:
+  // a mixed-seller request splits into one order per seller (see checkoutGroup).
+  smartEppRequestId String?
   smartEppRequest   SmartEppRequest? @relation(fields: [smartEppRequestId], references: [id])
 
   // Reseller attribution (spec §2: reseller own-order dashboard).
@@ -114,6 +116,7 @@ model Order {
   @@index([employeeId])
   @@index([companyId])
   @@index([resellerId])
+  @@index([smartEppRequestId])
   @@index([partnerId])
   @@index([checkoutGroup])
   @@index([couponId])

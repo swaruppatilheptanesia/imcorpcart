@@ -13,14 +13,15 @@ import styles from './Search.module.css';
 
 export function Search() {
   const { openFilter } = useShopShell();
-  const { filters, sortBy, setSortBy, activeFilterCount, search, setSearch, clearFilters } = useStore();
+  const { filters, sortBy, setSortBy, activeFilterCount, search, setSearch, clearFilters, purchaseMode } = useStore();
 
   const { data, state } = useAsync(
     () => getCatalog({ filters, search, sort: sortBy }),
     [filters, search, sortBy],
     (d) => d.length === 0,
   );
-  const items: StoreProduct[] = data ?? [];
+  // Smart EPP mode shows only what the employee can lease within their limit.
+  const items: StoreProduct[] = purchaseMode === 'SEPP' ? (data ?? []).filter((p) => p.sepp?.withinLimit) : data ?? [];
 
   return (
     <div>

@@ -23,6 +23,7 @@ export const TAB_HIDDEN = new Set([
   'product',
   'tracking',
   'orderDetail',
+  'sepp',
 ]);
 
 // Routes that show a back chevron in the mobile header.
@@ -33,6 +34,7 @@ export const SHOW_BACK = new Set([
   'orderDetail',
   'tracking',
   'notifs',
+  'sepp',
 ]);
 
 // Per-route mobile header title.
@@ -47,6 +49,7 @@ export const routeTitles: Record<string, string> = {
   failed: 'Payment failed',
   orders: 'Your orders',
   orderDetail: 'Order detail',
+  sepp: 'Smart EPP',
   tracking: 'Tracking',
   wishlist: 'Saved',
   notifs: 'Alerts',

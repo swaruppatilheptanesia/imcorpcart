@@ -10,6 +10,7 @@ import type { ShopAddress } from '@/data/store-types';
 import { useStore } from '../store-context';
 import { computeTotals } from '../coupon';
 import { AddressModal } from '../overlays/AddressModal';
+import { SeppCheckout } from './SeppCheckout';
 import styles from './Checkout.module.css';
 
 const fmtAddr = (a: ShopAddress) =>
@@ -22,7 +23,7 @@ const razorpayMethod = (method: string): string =>
 export function Checkout() {
   const navigate = useNavigate();
   const { flash } = useToast();
-  const { cart, subtotal, appliedCoupon, cartCount, placeOrder, paymentMethods, walletBalance, qrDiscount, checkoutEnabled, viewOnly } =
+  const { ready, cart, subtotal, appliedCoupon, cartCount, placeOrder, paymentMethods, walletBalance, qrDiscount, checkoutEnabled, viewOnly, purchaseMode } =
     useStore();
   const [busy, setBusy] = useState(false);
   const [methodKey, setMethodKey] = useState<string | null>(null);
@@ -47,9 +48,10 @@ export function Checkout() {
     void loadAddresses();
   }, []);
 
+  // Only bounce once the cart has actually loaded (deep links land here before it does).
   useEffect(() => {
-    if (cart.length === 0) navigate('/shop/cart');
-  }, [cart.length, navigate]);
+    if (ready && cart.length === 0) navigate('/shop/cart');
+  }, [ready, cart.length, navigate]);
 
   // Default to the first (lowest-surcharge) active method once the profile loads.
   useEffect(() => {
@@ -73,6 +75,9 @@ export function Checkout() {
       </div>
     );
   }
+
+  // Smart EPP mode: the lease-request flow replaces the pay-now checkout.
+  if (purchaseMode === 'SEPP') return <SeppCheckout />;
 
   if (cart.length === 0) return null;
 

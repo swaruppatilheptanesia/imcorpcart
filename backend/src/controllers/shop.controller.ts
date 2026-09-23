@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as service from '../services/shop.service';
 import * as reviewService from '../services/review.service';
+import * as sepp from '../services/sepp.service';
 import { getParam } from '../middleware/validate';
 import { AppError } from '../utils/AppError';
 
@@ -9,12 +10,12 @@ function userId(req: Request): string {
   return req.user.id;
 }
 
-export async function listProducts(_req: Request, res: Response) {
-  res.json(await service.listProducts());
+export async function listProducts(req: Request, res: Response) {
+  res.json(await service.listProducts(userId(req)));
 }
 
 export async function getProduct(req: Request, res: Response) {
-  res.json(await service.getProduct(getParam(req, 'id')));
+  res.json(await service.getProduct(getParam(req, 'id'), userId(req)));
 }
 
 export async function submitReview(req: Request, res: Response) {
@@ -55,6 +56,30 @@ export async function createPaymentOrder(req: Request, res: Response) {
 
 export async function placeOrder(req: Request, res: Response) {
   res.status(201).json(await service.placeOrder(userId(req), req.body));
+}
+
+export async function seppQuote(req: Request, res: Response) {
+  res.json(await sepp.getCartQuote(userId(req)));
+}
+
+export async function seppAdvanceOrder(req: Request, res: Response) {
+  res.status(201).json(await sepp.createAdvanceOrder(userId(req)));
+}
+
+export async function listSeppRequests(req: Request, res: Response) {
+  res.json(await sepp.listRequests(userId(req)));
+}
+
+export async function submitSeppRequest(req: Request, res: Response) {
+  res.status(201).json(await sepp.submitRequest(userId(req), req.body));
+}
+
+export async function getSeppRequest(req: Request, res: Response) {
+  res.json(await sepp.getRequest(userId(req), getParam(req, 'no')));
+}
+
+export async function cancelSeppRequest(req: Request, res: Response) {
+  res.json(await sepp.cancelRequest(userId(req), getParam(req, 'no')));
 }
 
 export async function listOrders(req: Request, res: Response) {

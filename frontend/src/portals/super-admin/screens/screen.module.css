@@ -112,3 +112,12 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Inner cell wrapper: lets .cellName / sub-lines ellipsise inside a flex or grid
+   cell (DataTable only zeroes min-width on direct children). */
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

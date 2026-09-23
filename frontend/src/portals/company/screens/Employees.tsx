@@ -16,7 +16,7 @@ import { inr } from '@/lib/format';
 import { useCompany } from '../context';
 import s from '../../super-admin/screens/screen.module.css';
 
-const COLS = '2fr 1.4fr 1.2fr 1fr 1.3fr';
+const COLS = '2fr 1.4fr 1.3fr 1.2fr 1fr 1.3fr';
 
 const tone: Record<string, SemanticTone> = {
   ACTIVE: 'success',
@@ -83,21 +83,28 @@ export function Employees() {
       )}
 
       {state === 'live' && data && (
-        <DataTable cols={COLS} headers={['Employee', 'Code · Department', 'Credit limit', 'Status', '']}>
+        <DataTable cols={COLS} headers={['Employee', 'Code · Department', 'Smart EPP limit', 'Available', 'Status', '']}>
           {data.map((e) => (
             <Row key={e.id} cols={COLS}>
               <div className={s.cellMain}>
                 <Avatar initials={initialsOf(e.name)} size={36} />
-                <div>
+                <div className={s.truncate}>
                   <div className={s.cellName}>{e.name}</div>
-                  <div className={s.cellSub}>{e.email}</div>
+                  <div className={`${s.cellSub} ${s.truncate}`}>{e.email}</div>
                 </div>
               </div>
               <div className={s.muted}>
                 <span className={s.mono}>{e.employeeCode}</span>
                 {e.department ? ` · ${e.department}` : ''}
               </div>
-              <div className={s.price}>{e.creditLimit === null ? '—' : inr(e.creditLimit)}</div>
+              <div className={s.price}>
+                {e.creditLimit === null ? '—' : inr(e.creditLimit)}
+                {e.monthlySalary > 0 && <div className={s.cellSub}>{inr(e.monthlySalary)}/mo salary</div>}
+              </div>
+              <div className={s.price}>
+                {e.creditLimit === null ? '—' : inr(e.creditAvailable ?? e.creditLimit)}
+                {e.creditReserved > 0 && <div className={s.cellSub}>{inr(e.creditReserved)} pending</div>}
+              </div>
               <div>
                 <StatusPill label={e.status} tone={tone[e.status] ?? 'neutral'} />
               </div>

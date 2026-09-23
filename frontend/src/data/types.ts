@@ -63,6 +63,7 @@ export interface OrderItem {
 
 export interface Order {
   id: string; // #IMC-#####
+  type?: 'EPP' | 'SMART_EPP' | string; // SMART_EPP = lease-financed (no payment row; paid via payroll)
   company: string;
   buyer: string;
   buyerEmail?: string | null; // buyer's email (order detail only; for voucher "emailed to" line)
@@ -131,7 +132,7 @@ export interface RecentOrder {
 }
 
 /* ── Users ── */
-export type UserTab = 'companies' | 'employees' | 'resellers' | 'partners';
+export type UserTab = 'companies' | 'employees' | 'resellers' | 'partners' | 'leasing';
 export type UserState = 'Active' | 'Suspended' | 'Invited' | 'Pending';
 
 export interface UserRow {

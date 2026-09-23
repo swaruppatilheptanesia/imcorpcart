@@ -13,12 +13,16 @@ import {
   assignAdminBody,
   companyIdParam,
   updateResellerBody,
+  createLeasingCompanyBody,
 } from '../validators/user.schema';
 
 const router = Router();
 
 router.get('/', validate({ query: userListQuery }), asyncHandler(ctrl.list));
 router.post('/', validate({ body: inviteUserBody }), asyncHandler(ctrl.invite));
+// Smart EPP lease partners (+ operator account for the Leasing portal).
+router.get('/leasing-companies', asyncHandler(ctrl.listLeasingCompanies));
+router.post('/leasing-companies', validate({ body: createLeasingCompanyBody }), asyncHandler(ctrl.createLeasingCompany));
 router.post('/companies', validate({ body: createCompanyBody }), asyncHandler(ctrl.createCompany));
 router.post(
   '/companies/:companyId/assign-admin',

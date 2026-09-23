@@ -11,6 +11,7 @@ import { submitReview, getDeliveryEstimate, type DeliveryEstimate } from '@/data
 import { QtyStepper } from '../components/QtyStepper';
 import { ProductGrid } from '../components/ProductGrid';
 import { RatingStars, StarInput } from '../components/RatingStars';
+import { SeppCalcCard } from '../components/SeppCalcCard';
 import s from './store-screen.module.css';
 import styles from './Product.module.css';
 
@@ -58,7 +59,12 @@ export function Product() {
 function Detail({ p }: { p: ProductDetail }) {
   const navigate = useNavigate();
   const { flash } = useToast();
-  const { addToCart, cart, setLineQty, removeLine, toggleWishlist, isWished, authed, checkoutEnabled } = useStore();
+  const { addToCart, cart, setLineQty, removeLine, toggleWishlist, isWished, authed, checkoutEnabled, purchaseMode, sepp } = useStore();
+  // Smart EPP mode: the buy box leads with the EMI and the "Buy now" path becomes
+  // a lease request (via the cart). Products without lease figures (gift cards,
+  // out of stock) can't be added in this mode.
+  const seppMode = purchaseMode === 'SEPP';
+  const seppView = seppMode && p.sepp ? p.sepp : null;
 
   const hasShades = p.shades.length > 0;
   const [shadeIdx, setShadeIdx] = useState(0);
@@ -98,7 +104,11 @@ function Detail({ p }: { p: ProductDetail }) {
   // Cart key: normal products use the colour name; vouchers use the amount token.
   const lineShade = isVoucher ? (voucherAmount != null ? String(voucherAmount) : '') : shade?.name ?? '';
   const displayPrice = isVoucher && voucherAmount ? voucherAmount : p.price;
-  const canBuy = isVoucher ? voucherAmount != null : shadeStock > 0;
+  const canBuy = seppMode
+    ? Boolean(seppView?.withinLimit) && shadeStock > 0
+    : isVoucher
+      ? voucherAmount != null
+      : shadeStock > 0;
   const inStock = shadeStock > 0;
   const savings = p.mrp - displayPrice;
   const related = getRelated(p);
@@ -367,6 +377,8 @@ function Detail({ p }: { p: ProductDetail }) {
             </div>
           )}
 
+          {seppView && sepp && <SeppCalcCard sepp={seppView} profile={sepp} />}
+
           {(p.specs.length > 0 || p.hsnCode || p.gstPercent != null) && (
             <div className={styles.specs}>
               <div className={styles.blockTitle}>Specifications</div>
@@ -419,18 +431,45 @@ function Detail({ p }: { p: ProductDetail }) {
 
         {/* ── Buy box ── */}
         <aside className={styles.buyBox}>
-          <div className={styles.priceBlock}>
-            <span className={styles.price}>{inr(displayPrice)}</span>
-            {!isVoucher && p.mrp > displayPrice && <span className={styles.mrp}>{inr(p.mrp)}</span>}
-            <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MOP'}</span>
-          </div>
-          {!isVoucher && authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
-          {p.cashback > 0 && (
-            <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
+          {seppView ? (
+            <>
+              <div className={styles.priceBlock}>
+                <span className={styles.price}>{inr(seppView.monthlyEmi)}</span>
+                <span className={styles.priceKind}>/ month · Smart EPP</span>
+              </div>
+              <div className={styles.savings}>
+                Effective purchase {inr(seppView.totalDeduction)} over {seppView.tenureMonths} months
+              </div>
+              <div className={styles.priceCaption}>
+                {seppView.withinLimit
+                  ? `Net ${inr(seppView.postTaxEmi)}/mo after tax saving · within your limit`
+                  : `Exceeds your available Smart EPP limit (${inr(sepp?.available ?? 0)})`}
+              </div>
+            </>
+          ) : seppMode && !isVoucher ? (
+            <>
+              <div className={styles.priceBlock}>
+                <span className={styles.price}>{inr(displayPrice)}</span>
+                <span className={styles.priceKind}>EPP price</span>
+              </div>
+              <div className={styles.priceCaption}>Not available on Smart EPP — switch to EPP to buy it now.</div>
+            </>
+          ) : (
+            <>
+              <div className={styles.priceBlock}>
+                <span className={styles.price}>{inr(displayPrice)}</span>
+                {!isVoucher && p.mrp > displayPrice && <span className={styles.mrp}>{inr(p.mrp)}</span>}
+                <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MOP'}</span>
+              </div>
+              {!isVoucher && authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
+              {p.cashback > 0 && (
+                <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
+              )}
+              <div className={styles.priceCaption}>
+                {authed ? 'Inclusive of taxes · corporate rate' : 'Market operating price · inclusive of taxes'}
+              </div>
+            </>
           )}
-          <div className={styles.priceCaption}>
-            {authed ? 'Inclusive of taxes · corporate rate' : 'Market operating price · inclusive of taxes'}
-          </div>
 
           {!authed && !isVoucher && (
             <button className={styles.eppCta} onClick={() => navigate('/')}>
@@ -576,7 +615,7 @@ function Detail({ p }: { p: ProductDetail }) {
               <Button size="lg" block onClick={() => navigate('/shop/cart')}>
                 Go to cart
               </Button>
-              {checkoutEnabled && (
+              {checkoutEnabled && !seppMode && (
                 <Button size="lg" variant="secondary" block onClick={() => navigate('/shop/checkout')}>
                   Buy now
                 </Button>
@@ -593,7 +632,7 @@ function Detail({ p }: { p: ProductDetail }) {
               </Button>
               {checkoutEnabled && (
                 <Button size="lg" variant="secondary" block disabled={!canBuy} onClick={() => add(true)}>
-                  Buy now
+                  {seppMode ? 'Request on Smart EPP' : 'Buy now'}
                 </Button>
               )}
             </>

@@ -8,6 +8,7 @@ import { encryptSecret, decryptSecret } from '../../utils/secretbox';
 import { hubbleConfigured, hubbleWalletBalance, HUBBLE_ADAPTER } from '../../config/hubble';
 import { D, upsertCategoryBySlug } from '../catalog-write';
 import { getAdapter, allAdapters } from './adapter-registry';
+import { isPageCapExplicit } from './paging';
 import type { NormalizedRow } from './types';
 import type { VendorSourceContext } from './types';
 import type { UpdateSourceInput, RunsQuery } from '../../validators/vendor-source.schema';
@@ -127,7 +128,10 @@ async function upsertVendorProduct(
   catCache: Map<string, string>,
 ): Promise<'created' | 'updated'> {
   const sku = `${source.slug}-${row.externalRef}`;
-  const existing = await prisma.product.findUnique({ where: { sku }, select: { id: true } });
+  const existing = await prisma.product.findUnique({
+    where: { sku },
+    select: { id: true, deactivatedBySyncAt: true },
+  });
   const specRows = row.specRows ?? [];
   const images = row.images ?? [];
   // specs = { rows, ...specsExtra } (e.g. voucher denominations). Written whenever
@@ -179,6 +183,11 @@ async function upsertVendorProduct(
     return 'created';
   }
 
+  // The vendor is listing it again after a sync-driven deactivation → put it back on
+  // sale and drop the marker. A product the ADMIN switched off has no marker, so it
+  // stays off.
+  const revived = existing.deactivatedBySyncAt !== null;
+
   // Re-sync: refresh vendor-owned fields + stock only; preserve admin overrides.
   await prisma.$transaction(async (tx) => {
     await tx.product.update({
@@ -186,15 +195,23 @@ async function upsertVendorProduct(
       data: {
         ...vendorScalars,
         ...(hasSpecs ? { specs: specsData } : {}),
+        ...(revived ? { status: ProductStatus.ACTIVE, deactivatedBySyncAt: null } : {}),
         ...(images.length
           ? { images: { deleteMany: {}, create: images.map((url, i) => ({ url, position: i })) } }
           : {}),
       },
     });
-    // House offer: refresh stock only (eppPrice + isActive/status are admin-owned).
+    // House offer: refresh stock only (eppPrice + isActive/status are admin-owned,
+    // except when reviving a product this importer had taken off sale).
     const house = await tx.productOffer.findFirst({ where: { productId: existing.id, resellerId: null } });
     if (house) {
-      await tx.productOffer.update({ where: { id: house.id }, data: { quantity: row.stock ?? house.quantity } });
+      await tx.productOffer.update({
+        where: { id: house.id },
+        data: {
+          quantity: row.stock ?? house.quantity,
+          ...(revived ? { status: ProductStatus.ACTIVE, isActive: true } : {}),
+        },
+      });
     } else {
       const eppPrice = D(round(eppBasis * (1 - discountPct / 100)));
       await tx.productOffer.create({
@@ -206,6 +223,58 @@ async function upsertVendorProduct(
 }
 
 type VendorSourceFull = Prisma.VendorSourceGetPayload<{}>;
+
+// A prune that fires on a partial feed would take a live catalog off sale, so it is
+// skipped unless the run saw at least this share of what we already hold.
+const MIN_FEED_COVERAGE = 0.5;
+
+export type PruneOutcome = { deactivated: number; warning?: string };
+
+/**
+ * Take off sale every product of this source the vendor no longer lists (or now
+ * lists as inactive): `status = INACTIVE`, house offer deactivated, and a
+ * `deactivatedBySyncAt` marker so a later run can revive it if the vendor brings it
+ * back. Only ever called after a run that walked the vendor's feed to its end.
+ *
+ * Without this, a brand that disappears upstream stays purchasable forever and the
+ * vendor rejects the order at fulfilment time.
+ */
+async function pruneVanished(source: VendorSourceFull, seenRefs: Set<string>): Promise<PruneOutcome> {
+  // A deliberately capped run is a slice of the catalog, not the whole of it.
+  if (isPageCapExplicit()) {
+    return { deactivated: 0, warning: 'Skipped removing delisted products — VENDOR_IMPORT_MAX_PAGES caps this run to part of the vendor catalog.' };
+  }
+
+  const live = await prisma.product.findMany({
+    where: { sourceId: source.id, status: ProductStatus.ACTIVE, ...notDeleted },
+    select: { id: true, externalRef: true },
+  });
+  const vanished = live.filter((p) => !p.externalRef || !seenRefs.has(p.externalRef));
+  if (vanished.length === 0) return { deactivated: 0 };
+
+  // Safety rail: a feed that suddenly returns a fraction of what we hold is far more
+  // likely to be truncated upstream than a genuine mass delisting.
+  if (live.length > 0 && seenRefs.size < live.length * MIN_FEED_COVERAGE) {
+    return {
+      deactivated: 0,
+      warning: `Skipped removing ${vanished.length} delisted product(s) — the vendor returned only ${seenRefs.size} item(s) against ${live.length} live product(s), which looks like a truncated feed.`,
+    };
+  }
+
+  const ids = vanished.map((p) => p.id);
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.product.updateMany({
+      where: { id: { in: ids } },
+      data: { status: ProductStatus.INACTIVE, deactivatedBySyncAt: now },
+    }),
+    prisma.productOffer.updateMany({
+      where: { productId: { in: ids }, resellerId: null },
+      data: { status: ProductStatus.INACTIVE, isActive: false },
+    }),
+  ]);
+  return { deactivated: ids.length };
+}
 
 const STALE_RUN_MS = 30 * 60 * 1000; // a RUNNING run older than this is treated as dead (process restart)
 
@@ -277,6 +346,9 @@ async function runImportJob(runId: string, source: VendorSourceFull, actorId?: s
   let created = 0;
   let updated = 0;
   let failed = 0;
+  // Every externalRef the vendor listed in this run — the basis for taking
+  // everything it no longer lists off sale once the feed ends.
+  const seenRefs = new Set<string>();
 
   // Throttled progress persistence (≤ every 1.5s) so polling sees counts climb.
   let lastFlush = 0;
@@ -298,6 +370,7 @@ async function runImportJob(runId: string, source: VendorSourceFull, actorId?: s
         if (!(row.mrp > 0)) throw new Error('mrp must be greater than 0');
 
         const outcome = await upsertVendorProduct(source, row, discountPct, catCache);
+        seenRefs.add(row.externalRef);
         if (outcome === 'created') created += 1;
         else updated += 1;
       } catch (e) {
@@ -324,10 +397,25 @@ async function runImportJob(runId: string, source: VendorSourceFull, actorId?: s
     return;
   }
 
+  // The feed ran to its end, so anything it didn't list has been delisted upstream.
+  // (An adapter-level failure returns above and never reaches this.)
+  let deactivated = 0;
+  try {
+    const prune = await pruneVanished(source, seenRefs);
+    deactivated = prune.deactivated;
+    if (prune.warning) errors.push({ ref: '(prune)', field: '—', message: prune.warning });
+  } catch (e) {
+    errors.push({
+      ref: '(prune)',
+      field: '—',
+      message: `Could not remove delisted products: ${e instanceof Error ? e.message : 'unknown'}`,
+    });
+  }
+
   const finalStatus = failed === 0 ? 'SUCCESS' : created + updated > 0 ? 'PARTIAL' : 'FAILED';
   await prisma.vendorImportRun.update({
     where: { id: runId },
-    data: { status: finalStatus, fetched, created, updated, failed, errors, finishedAt: new Date() },
+    data: { status: finalStatus, fetched, created, updated, failed, deactivated, errors, finishedAt: new Date() },
   });
   await prisma.vendorSource.update({ where: { id: source.id }, data: { lastSyncedAt: new Date() } });
   await prisma.auditLog.create({
@@ -336,7 +424,7 @@ async function runImportJob(runId: string, source: VendorSourceFull, actorId?: s
       action: 'catalog.vendor_import',
       entityType: 'VendorSource',
       entityId: source.id,
-      after: { runId, created, updated, failed },
+      after: { runId, created, updated, failed, deactivated },
     },
   });
 }

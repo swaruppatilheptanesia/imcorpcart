@@ -3,6 +3,7 @@ import SuperAdminApp from './portals/super-admin/SuperAdminApp';
 import CompanyApp from './portals/company/CompanyApp';
 import ResellerApp from './portals/reseller/ResellerApp';
 import StorefrontApp from './portals/storefront/StorefrontApp';
+import LeasingApp from './portals/leasing/LeasingApp';
 import { AuthGate } from './auth/AuthGate';
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
       <Route path="/company/*" element={<CompanyApp />} />
       <Route path="/reseller/*" element={<ResellerApp />} />
       <Route path="/shop/*" element={<StorefrontApp />} />
+      <Route path="/leasing/*" element={<LeasingApp />} />
       <Route path="/" element={<AuthGate />} />
       <Route path="*" element={<AuthGate />} />
     </Routes>

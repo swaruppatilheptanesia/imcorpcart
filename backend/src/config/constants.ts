@@ -28,6 +28,17 @@ export const DEMO_LOGIN_EMAILS = new Set([
   'admin@imcorpcart.local',
   'demo@imcorpcart.com',
   'reseller@imcorpcart.com',
+  // Smart EPP demo set (prisma/seed-demo-sepp.ts): shopper → HR → leasing company.
+  'employee@imcorpcart.com',
+  'hr@imcorpcart.com',
+  'leasing@imcorpcart.com',
 ]);
 export const isDemoLoginEmail = (email?: string | null): boolean =>
   !!email && DEMO_LOGIN_EMAILS.has(email.toLowerCase());
+
+// Demo logins that may browse but never buy (checkout + Smart EPP requests are
+// refused server-side, independent of the CHECKOUT_ENABLED gate). The other demo
+// logins are full-function so the Smart EPP chain can be demoed end to end.
+export const DEMO_VIEW_ONLY_EMAILS = new Set(['demo@imcorpcart.com']);
+export const isDemoViewOnlyEmail = (email?: string | null): boolean =>
+  !!email && DEMO_VIEW_ONLY_EMAILS.has(email.toLowerCase());

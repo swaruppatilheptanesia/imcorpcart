@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const USER_TABS = ['companies', 'employees', 'resellers', 'partners'] as const;
+export const USER_TABS = ['companies', 'employees', 'resellers', 'partners', 'leasing'] as const;
 export type UserTab = (typeof USER_TABS)[number];
 
 export const userListQuery = z.object({
@@ -83,12 +83,29 @@ export const createCompanyBody = z.object({
   smartEppEnabled: z.boolean().optional(),
 });
 
-// Super Admin edits a company's org-level settings (Smart-EPP enablement, name,
-// and approval status — ONBOARDING = pending approval, ACTIVE = approved).
+// Super Admin edits a company's org-level settings (Smart-EPP enablement + its
+// lease inputs, name, and approval status — ONBOARDING = pending approval,
+// ACTIVE = approved).
 export const updateCompanyBody = z.object({
   name: z.string().trim().min(1).optional(),
   smartEppEnabled: z.boolean().optional(),
   status: z.enum(['ACTIVE', 'ONBOARDING', 'SUSPENDED']).optional(),
+  // Smart EPP inputs: the leasing partner (null = detach), ADLD insurance as an
+  // annual % of asset cost (null = none), and the income-tax slab % used for
+  // the employee's tax-shelter illustration.
+  leasingCompanyId: z.string().min(1).nullable().optional(),
+  adldPct: z.number().min(0).max(100).nullable().optional(),
+  incomeTaxPct: z.number().min(0).max(100).optional(),
+});
+
+// Super Admin onboards a leasing company AND its operator account (who signs
+// into the Leasing portal to set lease parameters and approve requests).
+export const createLeasingCompanyBody = z.object({
+  name: z.string().trim().min(1).max(120),
+  gstin: z.string().trim().max(20).optional(),
+  contactPhone: z.string().trim().max(20).optional(),
+  operatorName: z.string().trim().min(1).max(120),
+  operatorEmail: z.string().email(),
 });
 
 // Assign an admin to a company that has none (e.g. a self-registration-created
@@ -129,4 +146,5 @@ export type ImportUsersInput = z.infer<typeof importUsersBody>;
 export type UserListQuery = z.infer<typeof userListQuery>;
 export type CreateCompanyInput = z.infer<typeof createCompanyBody>;
 export type UpdateCompanyInput = z.infer<typeof updateCompanyBody>;
+export type CreateLeasingCompanyInput = z.infer<typeof createLeasingCompanyBody>;
 export type AssignAdminInput = z.infer<typeof assignAdminBody>;

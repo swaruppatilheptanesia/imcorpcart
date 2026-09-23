@@ -22,7 +22,7 @@ import { statusTone } from './Partners';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
-const RUN_COLS = '1.1fr 0.7fr 0.7fr 0.7fr 0.7fr 1.1fr';
+const RUN_COLS = '1.1fr 0.7fr 0.7fr 0.7fr 0.8fr 0.7fr 1.1fr';
 const PROD_COLS = '1.6fr 0.9fr 0.7fr 0.8fr 150px';
 const PROD_PAGE_SIZE = 20;
 const runTone: Record<string, SemanticTone> = {
@@ -283,13 +283,19 @@ export function VendorSourceDetail() {
         {runs.items.length === 0 ? (
           <EmptyState icon={<Download size={22} />} title="No imports yet" body="Run a sync to pull this vendor's products." />
         ) : (
-          <DataTable cols={RUN_COLS} headers={['Started', 'Fetched', 'Created', 'Updated', 'Failed', 'Status']}>
+          <DataTable cols={RUN_COLS} headers={['Started', 'Fetched', 'Created', 'Updated', 'Delisted', 'Failed', 'Status']}>
             {runs.items.map((r) => (
               <Row key={r.id} cols={RUN_COLS}>
                 <div className={s.muted}>{fmtDate(r.startedAt)}</div>
                 <div>{r.fetched}</div>
                 <div>{r.created}</div>
                 <div>{r.updated}</div>
+                <div
+                  className={r.deactivated ? undefined : s.muted}
+                  title={r.deactivated ? 'Taken off sale — the vendor no longer lists them' : undefined}
+                >
+                  {r.deactivated ?? 0}
+                </div>
                 <div className={r.failed ? undefined : s.muted}>{r.failed}</div>
                 <div><StatusPill label={r.status} tone={runTone[r.status] ?? 'neutral'} /></div>
               </Row>
@@ -297,6 +303,9 @@ export function VendorSourceDetail() {
           </DataTable>
         )}
         <RunErrors runs={runs.items} />
+        <p className={s.muted} style={{ fontSize: 12.5, margin: '10px 2px 0' }}>
+          Products the vendor stops listing are taken off sale automatically and go back on sale if the vendor lists them again.
+        </p>
       </Card>
     </div>
   );
@@ -305,10 +314,16 @@ export function VendorSourceDetail() {
 function RunErrors({ runs }: { runs: VendorImportRun[] }) {
   const latestWithErrors = runs.find((r) => r.errors && r.errors.length > 0);
   if (!latestWithErrors || !latestWithErrors.errors?.length) return null;
+  // A run can finish SUCCESS and still leave a note (e.g. pruning was skipped),
+  // so only call these "errors" when rows actually failed.
+  const failedRows = latestWithErrors.failed > 0;
+  const label = failedRows
+    ? `${latestWithErrors.errors.length} error(s) in the most recent run that had failures`
+    : `Note from the run on ${fmtDate(latestWithErrors.startedAt)}`;
   return (
     <div style={{ marginTop: 12 }}>
       <div className={s.muted} style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <AlertTriangle size={14} /> {latestWithErrors.errors.length} error(s) in the latest failing run
+        <AlertTriangle size={14} /> {label}
       </div>
       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
         {latestWithErrors.errors.slice(0, 12).map((e, i) => (

@@ -14,7 +14,7 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { getRazorpay } from '../config/razorpay';
 import { HUBBLE_ADAPTER } from '../config/hubble';
-import { isDemoLoginEmail } from '../config/constants';
+import { isDemoViewOnlyEmail } from '../config/constants';
 import { AppError } from '../utils/AppError';
 import { serialize, toNumber } from '../models/serializers';
 import { notDeleted, orderFullInclude, shopOrderFullInclude } from '../models/selectors';
@@ -23,6 +23,9 @@ import { isLive as isCampaignLive } from './campaign.service';
 import { listActiveBanners } from './banner.service';
 import { listApprovedReviews } from './review.service';
 import { kickoffVoucherFulfilments } from './voucher-fulfilment.service';
+import { computeSeppQuote } from './sepp-calc';
+import { getSeppContext, type SeppContext } from './sepp-context';
+import { getCreditSummary } from './credit.service';
 import type {
   AddToCartInput,
   UpdateCartInput,
@@ -137,9 +140,39 @@ function cashbackPerUnit(
   return 0;
 }
 
+// Smart-EPP asset cost for a product: the winning offer's smartEppPrice, else its
+// EPP price (both GST-inclusive). Null when the product can't be leased (no
+// live offer, or a gift card).
+export function seppAssetCost(p: ShopProductRow, winner: ShopOfferRow | null): number | null {
+  if (!winner || isVoucherProduct(p)) return null;
+  const v = winner.smartEppPrice != null ? toNumber(winner.smartEppPrice) : toNumber(winner.eppPrice);
+  return v > 0 ? v : null;
+}
+
+// Per-unit Smart-EPP figures for a product card / detail page. `withinLimit`
+// compares the tenure's pre-tax deduction against the employee's available limit.
+function seppBlockFor(p: ShopProductRow, winner: ShopOfferRow | null, ctx: SeppContext) {
+  const assetCost = seppAssetCost(p, winner);
+  if (assetCost == null) return null;
+  const q = computeSeppQuote(assetCost, { ...ctx.params, gstPct: p.gstPercent != null ? toNumber(p.gstPercent) : 18 });
+  return {
+    assetCost: q.assetCost,
+    monthlyEmi: q.monthlyRental,
+    emiExGst: q.preTaxDeduction,
+    postTaxEmi: q.postTaxDeduction,
+    tenureMonths: q.tenureMonths,
+    totalDeduction: q.totalPreTaxDeduction, // "effective purchase" on the card (limit basis)
+    effectivePrice: q.effectivePrice,
+    withinLimit: q.totalPreTaxDeduction <= ctx.available,
+    quote: q,
+  };
+}
+
 // Map a DB product (+ its seeded presentation blob + marketplace offers) to the
-// storefront's StoreProduct shape so the frontend adapter stays trivial.
-export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {}) {
+// storefront's StoreProduct shape so the frontend adapter stays trivial. Pass a
+// SeppContext (signed-in employee of a Smart-EPP company) to attach the `sepp`
+// lease figures the storefront shows in Smart EPP mode.
+export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp?: SeppContext | null } = {}) {
   const pres = (p.specs ?? {}) as Presentation;
   const mrp = toNumber(p.mrp);
   const elig = eligibleOffers(p.offers);
@@ -202,10 +235,21 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean } = {
     // checkout picker + a flag so the storefront renders the amount selector and
     // the "code delivered after purchase" note. Null for normal products.
     voucher: isVoucherProduct(p) ? pres.voucher ?? { denominations: [], min: null, max: null, type: null } : null,
+    // Smart-EPP lease figures (null when SEPP isn't offered to this shopper or the
+    // product can't be leased). The storefront switches to these in SEPP mode.
+    sepp: opts.sepp && !opts.public ? seppBlockFor(p, winner, opts.sepp) : null,
   };
 }
 
 type StoreProductLite = ReturnType<typeof toStoreProduct>;
+
+// SeppContext for a signed-in shopper (null when not offered). Shared by the
+// catalog endpoints so cards/detail carry the lease figures.
+async function seppFor(userId?: string): Promise<SeppContext | null> {
+  if (!userId) return null;
+  const emp = await prisma.employee.findFirst({ where: { userId, ...notDeleted }, select: { id: true } });
+  return emp ? getSeppContext(emp.id) : null;
+}
 
 // Buy-box winner for checkout (authed EPP): the offer whose price/stock/reseller
 // a line is fulfilled by. Returns null when nothing is buyable.
@@ -261,24 +305,28 @@ function toFamilyMember(sp: StoreProductLite) {
   };
 }
 
-export async function listProducts() {
-  const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
-    include: shopProductInclude,
-    orderBy: { createdAt: 'desc' },
-  });
+export async function listProducts(userId?: string) {
+  const [rows, sepp] = await Promise.all([
+    prisma.product.findMany({
+      where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
+      include: shopProductInclude,
+      orderBy: { createdAt: 'desc' },
+    }),
+    seppFor(userId),
+  ]);
   // Every SKU is shown as its own card — variant families are NOT collapsed
   // (each colour/variant combination is a separate product on the storefront).
-  return { data: serialize(rows.map((r) => toStoreProduct(r))) };
+  return { data: serialize(rows.map((r) => toStoreProduct(r, { sepp }))) };
 }
 
-export async function getProduct(id: string) {
+export async function getProduct(id: string, userId?: string) {
   const p = await prisma.product.findFirst({
     where: { id, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');
-  const product = toStoreProduct(p);
+  const sepp = await seppFor(userId);
+  const product = toStoreProduct(p, { sepp });
   const family = await familyMembersOf(p, {});
   const reviews = await listApprovedReviews(p.id);
 
@@ -295,7 +343,7 @@ export async function getProduct(id: string) {
     take: 4,
   });
 
-  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r)), family, reviews });
+  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r, { sepp })), family, reviews });
 }
 
 // ─── Public catalog (no auth) — MOP-priced, EPP never exposed ────────────────
@@ -391,7 +439,7 @@ const cartItemInclude = {
   product: { include: shopProductInclude },
 } satisfies Prisma.CartItemInclude;
 
-async function loadCart(employeeId: string) {
+export async function loadCart(employeeId: string) {
   const cart = await prisma.cart.findUnique({
     where: { employeeId },
     include: { items: { include: cartItemInclude, orderBy: { createdAt: 'asc' } } },
@@ -830,7 +878,7 @@ function mapRazorpayMethod(payment: { method?: string }): PaymentMethod {
 
 // Razorpay signs `order_id|payment_id` with the key secret; a mismatch means the
 // callback fields were tampered with (or belong to another merchant).
-function verifyRazorpaySignature(orderId: string, paymentId: string, signature: string) {
+export function verifyRazorpaySignature(orderId: string, paymentId: string, signature: string) {
   if (!env.RAZORPAY_KEY_SECRET) {
     throw AppError.badRequest('Payment gateway is not configured (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)');
   }
@@ -847,7 +895,7 @@ function verifyRazorpaySignature(orderId: string, paymentId: string, signature: 
 // Refund a captured payment we've decided not to honour (amount/method mismatch),
 // so the shopper is never charged for an order that isn't created. Best-effort:
 // a refund failure is logged, not surfaced — the caller still rejects the order.
-async function refundQuietly(paymentId: string): Promise<boolean> {
+export async function refundQuietly(paymentId: string): Promise<boolean> {
   try {
     await getRazorpay().payments.refund(paymentId, {});
     return true;
@@ -859,9 +907,9 @@ async function refundQuietly(paymentId: string): Promise<boolean> {
 
 // View-only demo accounts can browse/cart but never purchase — enforced
 // server-side (not just hidden in the UI) regardless of the global flag.
-async function assertNotViewOnly(userId: string) {
+export async function assertNotViewOnly(userId: string) {
   const u = await prisma.user.findUnique({ where: { id: userId }, select: { viewOnly: true, email: true } });
-  if (u?.viewOnly || isDemoLoginEmail(u?.email))
+  if (u?.viewOnly || isDemoViewOnlyEmail(u?.email))
     throw AppError.forbidden('This is a view-only demo account — checkout is disabled');
 }
 
@@ -1158,9 +1206,19 @@ const NOTIF_SHAPE: Record<string, { type: string; title: string; body: (o: strin
   RETURNED: { type: 'order', title: 'Order returned', body: (o) => `${o} was returned.` },
 };
 
+// Smart-EPP request milestones, phrased for the employee.
+const SEPP_NOTIF: Record<string, { title: string; body: (no: string) => string }> = {
+  SUBMITTED: { title: 'Smart EPP request submitted', body: (n) => `${n} is awaiting your HR's approval.` },
+  HR_APPROVED: { title: 'HR approved your request', body: (n) => `${n} is now with the leasing company for approval.` },
+  APPROVED: { title: 'Smart EPP request approved', body: (n) => `${n} was approved by the leasing company.` },
+  ORDERED: { title: 'Smart EPP order placed', body: (n) => `Your order for ${n} has been placed.` },
+  REJECTED: { title: 'Smart EPP request rejected', body: (n) => `${n} was not approved. Any advance paid has been refunded.` },
+  CANCELLED: { title: 'Smart EPP request cancelled', body: (n) => `${n} was cancelled.` },
+};
+
 export async function listNotifications(userId: string) {
   const { id: employeeId } = await resolveEmployee(userId);
-  const [rows, vouchers] = await Promise.all([
+  const [rows, vouchers, seppRequests, paidInstallments] = await Promise.all([
     prisma.orderStatusHistory.findMany({
       where: { order: { employeeId } },
       orderBy: { createdAt: 'desc' },
@@ -1178,7 +1236,46 @@ export async function listNotifications(userId: string) {
         orderItem: { select: { product: { select: { brand: true, name: true } }, order: { select: { orderNo: true } } } },
       },
     }),
+    // Smart-EPP requests: one alert for the current stage of each request.
+    prisma.smartEppRequest.findMany({
+      where: { employeeId, status: { not: 'DRAFT' } },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+      select: { id: true, requestNo: true, status: true, updatedAt: true },
+    }),
+    // EMIs HR recorded as paid → "limit restored" alerts.
+    prisma.leaseScheduleInstallment.findMany({
+      where: { paidAt: { not: null }, leaseTerms: { request: { employeeId } } },
+      orderBy: { paidAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        installmentNo: true,
+        paidAt: true,
+        leaseTerms: { select: { tenureMonths: true, request: { select: { requestNo: true, quote: true } } } },
+      },
+    }),
   ]);
+  const installmentAlerts = paidInstallments.map((i) => {
+    const q = i.leaseTerms.request.quote as { preTaxDeduction?: number } | null;
+    const restored = q?.preTaxDeduction;
+    return {
+      id: `emi-${i.id}`,
+      type: 'order',
+      title: `EMI #${i.installmentNo} recorded`,
+      body: `Installment ${i.installmentNo} of ${i.leaseTerms.tenureMonths} for #${i.leaseTerms.request.requestNo} was deducted${restored ? ` — ₹${restored.toLocaleString('en-IN')} of your Smart EPP limit is available again` : ''}.`,
+      at: i.paidAt as Date,
+    };
+  });
+  const seppAlerts = seppRequests
+    .filter((r) => SEPP_NOTIF[r.status])
+    .map((r) => ({
+      id: `sepp-${r.id}-${r.status}`,
+      type: 'order',
+      title: SEPP_NOTIF[r.status].title,
+      body: SEPP_NOTIF[r.status].body(`#${r.requestNo}`),
+      at: r.updatedAt,
+    }));
   const statusAlerts = rows.map((h) => {
     const shape = NOTIF_SHAPE[h.status] ?? NOTIF_SHAPE.CONFIRMED;
     const orderNo = `#${h.order.orderNo}`;
@@ -1200,7 +1297,7 @@ export async function listNotifications(userId: string) {
     body: `Your ${v.orderItem.product.brand || v.orderItem.product.name} gift card is ready — tap order #${v.orderItem.order.orderNo} to view the code.`,
     at: v.deliveredAt as Date,
   }));
-  const data = [...statusAlerts, ...voucherAlerts].sort((a, b) => +new Date(b.at) - +new Date(a.at));
+  const data = [...statusAlerts, ...voucherAlerts, ...seppAlerts, ...installmentAlerts].sort((a, b) => +new Date(b.at) - +new Date(a.at));
   return { data: serialize(data) };
 }
 
@@ -1306,6 +1403,35 @@ export async function getProfile(userId: string) {
     _sum: { total: true },
   });
 
+  // Smart EPP: offered only when the company has it enabled AND a leasing
+  // company attached. Carries the ledger-backed purchase limit + the company's
+  // office branches (the only allowed delivery points for a lease order).
+  const seppCtx = await getSeppContext(employee.id);
+  let sepp: Record<string, unknown> | null = null;
+  if (seppCtx) {
+    const [credit, branches] = await Promise.all([
+      getCreditSummary(employee.id),
+      prisma.address.findMany({
+        where: { companyId: employee.companyId, employeeId: null },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      }),
+    ]);
+    sepp = {
+      enabled: true,
+      leasingCompany: seppCtx.leasingCompanyName,
+      tenureMonths: seppCtx.params.tenureMonths,
+      adldPct: seppCtx.params.adldPct,
+      incomeTaxPct: seppCtx.params.incomeTaxPct,
+      advanceFeeType: seppCtx.params.advanceFeeType,
+      advanceFeeValue: seppCtx.params.advanceFeeValue,
+      limit: credit.limit,
+      reserved: credit.reserved,
+      consumed: credit.consumed,
+      available: credit.available,
+      branches: branches.map(toAddress),
+    };
+  }
+
   // Exhibition (QR) discount the shopper is currently entitled to, for the
   // cart/checkout preview. The authoritative math stays in placeOrder.
   const qr = await qrDiscountFor(userId);
@@ -1339,6 +1465,7 @@ export async function getProfile(userId: string) {
     program: employee.program,
     creditLimit: employee.creditLimit === null ? null : toNumber(employee.creditLimit),
     creditUsed: toNumber(spent._sum.total),
+    sepp,
     walletBalance: await getWalletBalance(employee.id),
     addresses: employee.addresses.map(toAddress),
     paymentMethods,

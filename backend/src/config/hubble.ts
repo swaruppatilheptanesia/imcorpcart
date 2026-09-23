@@ -9,7 +9,11 @@ import { AppError } from '../utils/AppError';
 // auto-debits the client's Hubble wallet and issues the gift-card code (async —
 // PROCESSING → poll → SUCCESS with the credential).
 
-const DEFAULT_BASE = 'https://api.dev.myhubble.money'; // staging
+// Hubble PRODUCTION is the default — the staging host carries a different (smaller,
+// partly fictitious) brand catalogue whose product ids production rejects at order
+// time, so defaulting to it silently imports an unfulfillable catalogue. Point
+// HUBBLE_BASE_URL at https://api.dev.myhubble.money to opt into staging.
+const DEFAULT_BASE = 'https://api.myhubble.money';
 
 // Registry key of the Hubble inbound adapter (== the auto-provisioned source slug).
 // Used to detect a Hubble voucher product/line across services.

@@ -27,6 +27,7 @@ export interface ResellerDashboardApi {
 export interface ResellerOrderApi {
   id: string;
   orderNo: string;
+  type?: string; // EPP | SMART_EPP (lease — fulfil as usual, no payment attached)
   status: string;
   total: number;
   createdAt: string;

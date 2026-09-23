@@ -15,6 +15,7 @@ import type {
   UpdateCompanyInput,
   AssignAdminInput,
   UpdateResellerInput,
+  CreateLeasingCompanyInput,
 } from '../validators/user.schema';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -42,6 +43,7 @@ export async function listUsers(query: UserListQuery) {
           take: p.take,
           include: {
             adminUser: { select: { fullName: true, email: true } },
+            leasingCompany: { select: { id: true, name: true } },
             _count: { select: { employees: true } },
           },
         }),
@@ -54,6 +56,10 @@ export async function listUsers(query: UserListQuery) {
         gstin: c.gstin,
         status: c.status,
         smartEppEnabled: c.smartEppEnabled,
+        leasingCompanyId: c.leasingCompany?.id ?? null,
+        leasingCompanyName: c.leasingCompany?.name ?? null,
+        adldPct: c.adldPct,
+        incomeTaxPct: c.incomeTaxPct,
         adminName: c.adminUser?.fullName ?? null,
         adminEmail: c.adminUser?.email ?? null,
         employeeCount: c._count.employees,
@@ -162,6 +168,42 @@ export async function listUsers(query: UserListQuery) {
       return { data: serialize(data), meta: pageMeta(total, p) };
     }
 
+    case 'leasing': {
+      const where: Prisma.LeasingCompanyWhereInput = q ? { name: { contains: q, mode: 'insensitive' } } : {};
+      const [rows, total] = await prisma.$transaction([
+        prisma.leasingCompany.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: p.skip,
+          take: p.take,
+          include: {
+            user: { select: { fullName: true, email: true, status: true } },
+            _count: { select: { companies: true, leaseTerms: true } },
+          },
+        }),
+        prisma.leasingCompany.count({ where }),
+      ]);
+      const data = rows.map((l) => ({
+        id: l.id,
+        userId: l.userId,
+        name: l.name,
+        gstin: l.gstin,
+        contactEmail: l.contactEmail,
+        contactPhone: l.contactPhone,
+        status: l.status,
+        operatorName: l.user?.fullName ?? null,
+        operatorEmail: l.user?.email ?? null,
+        ptpm: l.ptpm,
+        defaultTenureMonths: l.defaultTenureMonths,
+        advanceFeeType: l.advanceFeeType,
+        advanceFeeValue: l.advanceFeeValue,
+        companyCount: l._count.companies,
+        leaseCount: l._count.leaseTerms,
+        createdAt: l.createdAt,
+      }));
+      return { data: serialize(data), meta: pageMeta(total, p) };
+    }
+
     default:
       throw AppError.badRequest('Unknown user type');
   }
@@ -174,6 +216,7 @@ const ROLE_FOR_TAB: Record<UserTab, Role> = {
   employees: Role.EMPLOYEE_EPP,
   resellers: Role.RESELLER,
   partners: Role.FULFILLMENT_PARTNER,
+  leasing: Role.LEASING_COMPANY,
 };
 
 export async function inviteUser(input: InviteUserInput) {
@@ -237,8 +280,53 @@ export async function inviteUser(input: InviteUserInput) {
         });
         return serialize({ id: partner.id, type: input.type, name: partner.name, userId: user.id, email: user.email });
       }
+      case 'leasing': {
+        const lc = await tx.leasingCompany.create({
+          data: { name: input.name, gstin: input.gstin || null, contactEmail: input.email, contactPhone: input.phone || null, userId: user.id, status: 'ACTIVE' },
+        });
+        return serialize({ id: lc.id, type: input.type, name: lc.name, userId: user.id, email: user.email });
+      }
     }
   });
+}
+
+// ─── Leasing companies (Smart EPP lease partners) ────────────────────────────
+
+// Onboard a leasing company + its operator (ACTIVE, signs into /leasing via
+// email OTP). Lease parameters start at the schema defaults; the operator tunes
+// them in the Leasing portal.
+export async function createLeasingCompany(input: CreateLeasingCompanyInput) {
+  const email = input.operatorEmail.toLowerCase();
+  const exists = await prisma.user.findFirst({ where: { email } });
+  if (exists) throw AppError.conflict('An account with this operator email already exists');
+  const passwordHash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
+
+  const lc = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: { email, phone: input.contactPhone, passwordHash, fullName: input.operatorName, role: Role.LEASING_COMPANY, status: 'ACTIVE' },
+    });
+    return tx.leasingCompany.create({
+      data: {
+        name: input.name,
+        gstin: input.gstin || null,
+        contactEmail: email,
+        contactPhone: input.contactPhone || null,
+        userId: user.id,
+        status: 'ACTIVE',
+      },
+      include: { user: { select: { fullName: true, email: true } } },
+    });
+  });
+  return serialize({ id: lc.id, name: lc.name, operatorName: lc.user?.fullName, operatorEmail: lc.user?.email, status: lc.status });
+}
+
+// Lightweight list for the company-settings dropdown.
+export async function listLeasingCompanies() {
+  const rows = await prisma.leasingCompany.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, status: true, defaultTenureMonths: true, _count: { select: { companies: true } } },
+  });
+  return { data: rows.map((l) => ({ id: l.id, name: l.name, status: l.status, tenureMonths: l.defaultTenureMonths, companyCount: l._count.companies })) };
 }
 
 // ─── Company + admin provisioning ────────────────────────────────────────────
@@ -290,21 +378,37 @@ export async function createCompany(input: CreateCompanyInput) {
   });
 }
 
-// Super-Admin edits a company's org-level settings (currently the Smart-EPP
-// enablement + name).
+// Super-Admin edits a company's org-level settings: Smart-EPP enablement + its
+// lease inputs (leasing partner, ADLD %, tax slab), name, and status.
 export async function updateCompany(id: string, input: UpdateCompanyInput) {
   const company = await prisma.company.findFirst({ where: { id, deletedAt: null } });
   if (!company) throw AppError.notFound('Company not found');
+  if (input.leasingCompanyId) {
+    const lc = await prisma.leasingCompany.findUnique({ where: { id: input.leasingCompanyId }, select: { id: true } });
+    if (!lc) throw AppError.notFound('Leasing company not found');
+  }
   const updated = await prisma.company.update({
     where: { id },
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.smartEppEnabled !== undefined ? { smartEppEnabled: input.smartEppEnabled } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.leasingCompanyId !== undefined ? { leasingCompanyId: input.leasingCompanyId } : {}),
+      ...(input.adldPct !== undefined ? { adldPct: input.adldPct === null ? null : D(input.adldPct) } : {}),
+      ...(input.incomeTaxPct !== undefined ? { incomeTaxPct: D(input.incomeTaxPct) } : {}),
     },
-    select: { id: true, name: true, status: true, smartEppEnabled: true },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      smartEppEnabled: true,
+      leasingCompanyId: true,
+      adldPct: true,
+      incomeTaxPct: true,
+      leasingCompany: { select: { name: true } },
+    },
   });
-  return serialize(updated);
+  return serialize({ ...updated, leasingCompanyName: updated.leasingCompany?.name ?? null, leasingCompany: undefined });
 }
 
 // Grant company-admin rights to an org that has none. Either promote an existing

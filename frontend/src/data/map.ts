@@ -241,6 +241,7 @@ export const ORDER_STATUS_OUT: Record<OrderStatus, string> = {
 
 interface ApiOrderListRow {
   orderNo: string;
+  type?: string;
   status: string;
   total: number;
   createdAt: string;
@@ -264,6 +265,7 @@ function orderVendor(o: ApiOrderListRow): string {
 export function toOrderListRow(o: ApiOrderListRow): Order {
   return {
     id: `#${o.orderNo}`,
+    type: o.type,
     company: o.company?.name ?? '—',
     buyer: o.employee?.user?.fullName ?? '—',
     date: fmtDate(o.createdAt),
@@ -318,6 +320,7 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
   return {
     cuid: o.id,
     id: `#${o.orderNo}`,
+    type: o.type,
     company: o.company?.name ?? '—',
     buyer: o.employee?.user?.fullName ?? '—',
     buyerEmail: o.employee?.user?.email ?? null,
@@ -341,6 +344,7 @@ const USER_HEADERS: Record<UserTab, string[]> = {
   employees: ['Employee', 'Company', 'Email', 'Status', ''],
   resellers: ['Reseller', 'Products', 'Commission', 'Status', ''],
   partners: ['Fulfillment partner', 'Region', 'On-time', 'Status', ''],
+  leasing: ['Leasing company', 'Operator', 'Companies', 'Status', ''],
 };
 
 function stateOf(status: string): UserState {
@@ -367,6 +371,11 @@ export interface UserRowWithId extends UserRow {
   userId?: string;
   commissionPct?: number;
   smartEppEnabled?: boolean;
+  // Company Smart-EPP inputs (companies tab) for the edit modal.
+  leasingCompanyId?: string | null;
+  leasingCompanyName?: string | null;
+  adldPct?: number | null;
+  incomeTaxPct?: number;
 }
 
 export function toUserDataset(tab: UserTab, rows: Record<string, unknown>[]): UserDataset {
@@ -387,6 +396,10 @@ export function toUserDataset(tab: UserTab, rows: Record<string, unknown>[]): Us
           meta2: r.gstin ? String(r.gstin) : '—',
           state: stateOf(String(r.status ?? '')),
           smartEppEnabled: Boolean(r.smartEppEnabled),
+          leasingCompanyId: r.leasingCompanyId ? String(r.leasingCompanyId) : null,
+          leasingCompanyName: r.leasingCompanyName ? String(r.leasingCompanyName) : null,
+          adldPct: r.adldPct == null ? null : Number(r.adldPct),
+          incomeTaxPct: r.incomeTaxPct == null ? 30 : Number(r.incomeTaxPct),
         };
       case 'employees':
         return {
@@ -410,6 +423,13 @@ export function toUserDataset(tab: UserTab, rows: Record<string, unknown>[]): Us
           meta2: `${Number(r.shipmentCount ?? 0)} shipments`,
           state: stateOf(String(r.status ?? '')),
         };
+      case 'leasing':
+        return {
+          ...base,
+          meta1: String(r.operatorEmail ?? r.contactEmail ?? '—'),
+          meta2: `${Number(r.companyCount ?? 0)} compan${Number(r.companyCount ?? 0) === 1 ? 'y' : 'ies'}`,
+          state: stateOf(String(r.status ?? '')),
+        };
     }
   });
   return { headers: USER_HEADERS[tab], rows: mapped };
@@ -421,4 +441,5 @@ export const USER_TAB_TO_TYPE: Record<UserTab, string> = {
   employees: 'employees',
   resellers: 'resellers',
   partners: 'partners',
+  leasing: 'leasing',
 };

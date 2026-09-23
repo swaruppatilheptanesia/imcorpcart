@@ -3,6 +3,7 @@ import * as service from '../services/company.service';
 import { getQuery, getParam } from '../middleware/validate';
 import { AppError } from '../utils/AppError';
 import type { CompanyEmployeeListQuery } from '../validators/company.schema';
+import type { SeppRequestListQuery } from '../validators/sepp.schema';
 
 function userId(req: Request): string {
   if (!req.user) throw AppError.unauthorized();
@@ -32,4 +33,40 @@ export async function createEmployee(req: Request, res: Response) {
 
 export async function updateEmployee(req: Request, res: Response) {
   res.json(await service.updateEmployee(userId(req), getParam(req, 'id'), req.body));
+}
+
+// ─── Smart EPP approvals ─────────────────────────────────────────────────────
+
+export async function listSeppRequests(req: Request, res: Response) {
+  res.json(await service.listSeppRequests(userId(req), getQuery<SeppRequestListQuery>(req)));
+}
+
+export async function getSeppRequest(req: Request, res: Response) {
+  res.json(await service.getSeppRequest(userId(req), getParam(req, 'id')));
+}
+
+export async function decideSeppRequest(req: Request, res: Response) {
+  res.json(await service.decideSeppRequest(userId(req), getParam(req, 'id'), req.body));
+}
+
+export async function markInstallmentPaid(req: Request, res: Response) {
+  res.json(await service.markInstallmentPaid(userId(req), getParam(req, 'id'), Number(getParam(req, 'no'))));
+}
+
+// ─── Office branches ─────────────────────────────────────────────────────────
+
+export async function listAddresses(req: Request, res: Response) {
+  res.json(await service.listCompanyAddresses(userId(req)));
+}
+
+export async function createAddress(req: Request, res: Response) {
+  res.status(201).json(await service.createCompanyAddress(userId(req), req.body));
+}
+
+export async function updateAddress(req: Request, res: Response) {
+  res.json(await service.updateCompanyAddress(userId(req), getParam(req, 'id'), req.body));
+}
+
+export async function deleteAddress(req: Request, res: Response) {
+  res.json(await service.deleteCompanyAddress(userId(req), getParam(req, 'id')));
 }

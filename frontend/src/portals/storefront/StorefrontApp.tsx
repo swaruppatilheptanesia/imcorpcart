@@ -21,6 +21,7 @@ import { Processing } from './screens/Processing';
 import { Result } from './screens/Result';
 import { Orders } from './screens/Orders';
 import { OrderDetail } from './screens/OrderDetail';
+import { SeppRequestDetail } from './screens/SeppRequestDetail';
 import { Tracking } from './screens/Tracking';
 import { Wishlist } from './screens/Wishlist';
 import { Notifs } from './screens/Notifs';
@@ -126,6 +127,9 @@ function ShopShell({ authed, onSignOut }: { authed: boolean; onSignOut: () => vo
             <Route path="failed" element={authOnly(<Result kind="failed" />)} />
             <Route path="orders" element={authOnly(<Orders />)} />
             <Route path="orderDetail/:id" element={authOnly(<OrderDetail />)} />
+            {/* Smart EPP (lease request) flow */}
+            <Route path="sepp/success" element={authOnly(<Result kind="sepp" />)} />
+            <Route path="sepp/requests/:no" element={authOnly(<SeppRequestDetail />)} />
             <Route path="tracking/:id" element={authOnly(<Tracking />)} />
             <Route path="wishlist" element={authOnly(<Wishlist />)} />
             <Route path="notifs" element={authOnly(<Notifs />)} />

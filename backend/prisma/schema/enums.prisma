@@ -177,6 +177,13 @@ enum OrderSource {
   PARTNER
 }
 
+// How a leasing company levies the Smart-EPP advance the employee pays at
+// checkout: a fixed rupee amount, or a percentage of the asset cost.
+enum AdvanceFeeType {
+  FIXED
+  PERCENT
+}
+
 // ── Partner integration ──────────────────────────────────────────────────────
 enum WebhookStatus {
   PENDING

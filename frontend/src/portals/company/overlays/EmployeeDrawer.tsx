@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Drawer, Field, Input, Button, useToast } from '@/components';
 import { createEmployee, updateEmployee, type CompanyEmployee } from '@/data/company-api';
+import { inr } from '@/lib/format';
 
 interface Props {
   open: boolean;
@@ -14,10 +15,11 @@ interface FormState {
   email: string;
   employeeCode: string;
   department: string;
+  monthlySalary: string;
   creditLimit: string;
 }
 
-const empty: FormState = { fullName: '', email: '', employeeCode: '', department: '', creditLimit: '' };
+const empty: FormState = { fullName: '', email: '', employeeCode: '', department: '', monthlySalary: '', creditLimit: '' };
 
 const num = (v: string): number | undefined => {
   const n = Number(v.replace(/[^0-9.]/g, ''));
@@ -39,6 +41,7 @@ export function EmployeeDrawer({ open, employee, onClose, onSaved }: Props) {
             email: employee.email,
             employeeCode: employee.employeeCode,
             department: employee.department ?? '',
+            monthlySalary: employee.monthlySalary ? String(employee.monthlySalary) : '',
             creditLimit: employee.creditLimit === null ? '' : String(employee.creditLimit),
           }
         : empty,
@@ -47,6 +50,10 @@ export function EmployeeDrawer({ open, employee, onClose, onSaved }: Props) {
 
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Suggested purchase limit = annual salary (the client's rule of thumb).
+  const salary = num(form.monthlySalary);
+  const suggested = salary ? salary * 12 : undefined;
 
   const save = async () => {
     if (!isEdit && (!form.fullName.trim() || !form.email.trim())) {
@@ -58,6 +65,7 @@ export function EmployeeDrawer({ open, employee, onClose, onSaved }: Props) {
       if (isEdit && employee) {
         await updateEmployee(employee.id, {
           department: form.department.trim() || undefined,
+          monthlySalary: num(form.monthlySalary),
           creditLimit: form.creditLimit.trim() === '' ? null : num(form.creditLimit),
         });
         flash('Employee updated');
@@ -67,6 +75,7 @@ export function EmployeeDrawer({ open, employee, onClose, onSaved }: Props) {
           email: form.email.trim(),
           employeeCode: form.employeeCode.trim() || undefined,
           department: form.department.trim() || undefined,
+          monthlySalary: num(form.monthlySalary),
           creditLimit: num(form.creditLimit),
         });
         flash(res.tempPassword ? `Employee added · temp password: ${res.tempPassword}` : 'Employee added');
@@ -109,9 +118,24 @@ export function EmployeeDrawer({ open, employee, onClose, onSaved }: Props) {
       <Field label="Department">
         <Input placeholder="Engineering" value={form.department} onChange={set('department')} />
       </Field>
-      <Field label="Credit limit (annual salary)" hint="Caps Smart EPP financing for this employee">
-        <Input placeholder="e.g. 1200000" value={form.creditLimit} onChange={set('creditLimit')} />
+      <Field label="Monthly salary" hint="Used to size the Smart EPP purchase limit">
+        <Input placeholder="e.g. 100000" inputMode="numeric" value={form.monthlySalary} onChange={set('monthlySalary')} />
       </Field>
+      <Field
+        label="Smart EPP purchase limit"
+        hint={
+          suggested
+            ? `Total pre-tax EMI the employee may commit across leases · suggested ${inr(suggested)} (annual salary)`
+            : 'Total pre-tax EMI the employee may commit across leases (typically annual salary). Blank = no Smart EPP.'
+        }
+      >
+        <Input placeholder={suggested ? String(suggested) : 'e.g. 1200000'} inputMode="numeric" value={form.creditLimit} onChange={set('creditLimit')} />
+      </Field>
+      {suggested && form.creditLimit.trim() === '' && (
+        <Button variant="ghost" size="sm" onClick={() => setForm((f) => ({ ...f, creditLimit: String(suggested) }))}>
+          Use suggested {inr(suggested)}
+        </Button>
+      )}
       {!isEdit && (
         <p style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 6 }}>
           The employee is created as active with a temporary password (shown after saving).

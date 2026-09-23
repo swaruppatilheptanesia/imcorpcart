@@ -23,8 +23,11 @@ import {
   updateUser,
   updateReseller,
   updateCompany,
+  getLeasingCompanies,
+  createLeasingCompany,
   userTabLabels,
   addUserLabel,
+  type LeasingCompanyOption,
 } from '@/data/api';
 import type { UserState, UserTab, SemanticTone } from '@/data/types';
 import type { UserRowWithId } from '@/data/map';
@@ -64,8 +67,18 @@ const stateToCompanyStatus = (st: UserState): CompanySettableStatus =>
   st === 'Active' ? 'ACTIVE' : st === 'Suspended' ? 'SUSPENDED' : 'ONBOARDING';
 
 const TABS: { value: UserTab; label: string }[] = (
-  ['companies', 'employees', 'resellers', 'partners'] as UserTab[]
+  ['companies', 'employees', 'resellers', 'partners', 'leasing'] as UserTab[]
 ).map((t) => ({ value: t, label: userTabLabels[t] }));
+
+// Per-company Smart EPP settings edited from the companies tab.
+interface CompanyEdit {
+  id: string;
+  name: string;
+  smartEpp: boolean;
+  leasingCompanyId: string;
+  adldPct: string;
+  incomeTaxPct: string;
+}
 
 const emptyForm = {
   name: '',
@@ -85,6 +98,9 @@ const emptyForm = {
   pincode: '',
   commission: '',
   smartEpp: false,
+  // leasing-company onboarding (operator account)
+  operatorName: '',
+  operatorEmail: '',
 };
 
 export function UsersScreen() {
@@ -95,7 +111,8 @@ export function UsersScreen() {
   const [assignTarget, setAssignTarget] = useState<{ id: string; name: string } | null>(null);
   const [assignForm, setAssignForm] = useState({ adminName: '', adminEmail: '' });
   const [editReseller, setEditReseller] = useState<{ id: string; name: string; commission: string } | null>(null);
-  const [editCompany, setEditCompany] = useState<{ id: string; name: string; smartEpp: boolean } | null>(null);
+  const [editCompany, setEditCompany] = useState<CompanyEdit | null>(null);
+  const [leasingOptions, setLeasingOptions] = useState<LeasingCompanyOption[]>([]);
   const [busy, setBusy] = useState(false);
 
   const { data: ds, state, error, reload } = useAsync(
@@ -105,6 +122,14 @@ export function UsersScreen() {
   );
 
   useEffect(() => setForm(emptyForm), [tab, modal]);
+
+  // Lease partners for the company Smart-EPP modal (loaded once it opens).
+  useEffect(() => {
+    if (!editCompany) return;
+    getLeasingCompanies()
+      .then(setLeasingOptions)
+      .catch(() => setLeasingOptions([]));
+  }, [editCompany?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sendInvite = async () => {
     setBusy(true);
@@ -124,6 +149,20 @@ export function UsersScreen() {
           smartEppEnabled: form.smartEpp,
         });
         flash(res.tempPassword ? `Company created · admin password: ${res.tempPassword}` : 'Company created');
+      } else if (tab === 'leasing') {
+        if (!form.name.trim() || !form.operatorName.trim() || !form.operatorEmail.trim()) {
+          flash('Leasing company name, operator name and operator email are required');
+          setBusy(false);
+          return;
+        }
+        await createLeasingCompany({
+          name: form.name.trim(),
+          gstin: form.gstin.trim() || undefined,
+          contactPhone: form.phone.trim() || undefined,
+          operatorName: form.operatorName.trim(),
+          operatorEmail: form.operatorEmail.trim(),
+        });
+        flash('Leasing company created — the operator can sign in at /leasing with email OTP');
       } else {
         if (!form.name.trim() || !form.email.trim()) {
           flash('Name and email are required');
@@ -182,9 +221,18 @@ export function UsersScreen() {
 
   const saveCompany = async () => {
     if (!editCompany) return;
+    if (editCompany.smartEpp && !editCompany.leasingCompanyId) {
+      flash('Attach a leasing company to enable Smart EPP');
+      return;
+    }
     setBusy(true);
     try {
-      await updateCompany(editCompany.id, { smartEppEnabled: editCompany.smartEpp });
+      await updateCompany(editCompany.id, {
+        smartEppEnabled: editCompany.smartEpp,
+        leasingCompanyId: editCompany.leasingCompanyId || null,
+        adldPct: editCompany.adldPct.trim() === '' ? null : Number(editCompany.adldPct),
+        incomeTaxPct: editCompany.incomeTaxPct.trim() === '' ? 30 : Number(editCompany.incomeTaxPct),
+      });
       flash(`Smart EPP ${editCompany.smartEpp ? 'enabled' : 'disabled'} for ${editCompany.name}`);
       setEditCompany(null);
       reload();
@@ -316,7 +364,14 @@ export function UsersScreen() {
                       variant="secondary"
                       size="sm"
                       onClick={() =>
-                        setEditCompany({ id: row.id, name: u.name, smartEpp: Boolean(row.smartEppEnabled) })
+                        setEditCompany({
+                          id: row.id,
+                          name: u.name,
+                          smartEpp: Boolean(row.smartEppEnabled),
+                          leasingCompanyId: row.leasingCompanyId ?? '',
+                          adldPct: row.adldPct == null ? '' : String(row.adldPct),
+                          incomeTaxPct: String(row.incomeTaxPct ?? 30),
+                        })
                       }
                     >
                       Smart EPP: {row.smartEppEnabled ? 'On' : 'Off'}
@@ -388,12 +443,36 @@ export function UsersScreen() {
               Cancel
             </Button>
             <Button onClick={sendInvite} disabled={busy}>
-              {busy ? 'Saving…' : tab === 'companies' ? 'Create company' : 'Send invite'}
+              {busy ? 'Saving…' : tab === 'companies' ? 'Create company' : tab === 'leasing' ? 'Create leasing company' : 'Send invite'}
             </Button>
           </>
         }
       >
-        {tab === 'companies' ? (
+        {tab === 'leasing' ? (
+          <>
+            <Field label="Leasing company name">
+              <Input placeholder="LeaseFin Capital" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </Field>
+            <div className={s.formRow2}>
+              <Field label="GSTIN" hint="Optional">
+                <Input placeholder="27AABCL1234K1Z5" value={form.gstin} onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value }))} />
+              </Field>
+              <Field label="Contact phone" hint="Optional">
+                <Input placeholder="+91 98765 43210" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Operator name" hint="Signs in to the Leasing portal to set lease terms and approve requests">
+              <Input placeholder="Full name" value={form.operatorName} onChange={(e) => setForm((f) => ({ ...f, operatorName: e.target.value }))} />
+            </Field>
+            <Field label="Operator email">
+              <Input type="email" placeholder="ops@leasefin.com" value={form.operatorEmail} onChange={(e) => setForm((f) => ({ ...f, operatorEmail: e.target.value }))} />
+            </Field>
+            <p style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>
+              Lease parameters (PTPM, tenure, PV discount, advance fee) start at defaults and are tuned by the operator in the Leasing portal.
+              Attach the leasing company to each corporate under <strong>Companies → Smart EPP</strong>.
+            </p>
+          </>
+        ) : tab === 'companies' ? (
           <>
             <Field label="Company name">
               <Input placeholder="Acme Corp" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
@@ -506,11 +585,12 @@ export function UsersScreen() {
         </Field>
       </Modal>
 
-      {/* Edit company — Smart EPP enablement */}
+      {/* Edit company — Smart EPP enablement + lease inputs */}
       <Modal
         open={Boolean(editCompany)}
         onClose={() => setEditCompany(null)}
         title={`Smart EPP — ${editCompany?.name ?? ''}`}
+        width={520}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditCompany(null)} disabled={busy}>
@@ -522,17 +602,52 @@ export function UsersScreen() {
           </>
         }
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Enable Smart EPP (EMI)</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Enable Smart EPP (lease / EMI)</div>
             <div className={s.muted} style={{ fontSize: 12.5, marginTop: 2 }}>
-              When on, this company's employees see the Smart EPP / EMI option at checkout.
+              When on, employees get an EPP ↔ Smart EPP switch on the storefront and can request a
+              salary-deducted lease. Needs a leasing company attached.
             </div>
           </div>
           <Toggle
             on={editCompany?.smartEpp ?? false}
             onClick={() => setEditCompany((c) => (c ? { ...c, smartEpp: !c.smartEpp } : c))}
           />
+        </div>
+        <Field label="Leasing company" hint="Supplies PTPM, tenure, PV discount and the advance fee; approves at stage 2">
+          <select
+            className={styles.statusSelect}
+            style={{ width: '100%' }}
+            value={editCompany?.leasingCompanyId ?? ''}
+            onChange={(e) => setEditCompany((c) => (c ? { ...c, leasingCompanyId: e.target.value } : c))}
+          >
+            <option value="">— None —</option>
+            {leasingOptions.map((l) => (
+              <option key={l.id} value={l.id} disabled={l.status !== 'ACTIVE'}>
+                {l.name}
+                {l.status !== 'ACTIVE' ? ` (${l.status.toLowerCase()})` : ''} · {l.tenureMonths} mo
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className={s.formRow2}>
+          <Field label="ADLD & theft insurance %" hint="Annual, % of asset cost · blank = none">
+            <Input
+              placeholder="e.g. 2"
+              inputMode="decimal"
+              value={editCompany?.adldPct ?? ''}
+              onChange={(e) => setEditCompany((c) => (c ? { ...c, adldPct: e.target.value.replace(/[^0-9.]/g, '') } : c))}
+            />
+          </Field>
+          <Field label="Income-tax slab %" hint="For the employee's tax-shelter illustration">
+            <Input
+              placeholder="30"
+              inputMode="decimal"
+              value={editCompany?.incomeTaxPct ?? ''}
+              onChange={(e) => setEditCompany((c) => (c ? { ...c, incomeTaxPct: e.target.value.replace(/[^0-9.]/g, '') } : c))}
+            />
+          </Field>
         </div>
       </Modal>
 

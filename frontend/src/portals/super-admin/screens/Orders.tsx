@@ -129,7 +129,10 @@ export function Orders() {
               cols={COLS}
               onClick={() => navigate(`/super-admin/orderDetail/${o.id.replace('#', '')}`)}
             >
-              <div className={styles.orderId}>{o.id}</div>
+              <div>
+                <div className={styles.orderId}>{o.id}</div>
+                {o.type === 'SMART_EPP' && <StatusPill label="Smart EPP" tone="info" />}
+              </div>
               <div className={styles.date}>{o.date}</div>
               <div className={styles.date}>{o.dispatchDate}</div>
               <div className={s.cellName}>

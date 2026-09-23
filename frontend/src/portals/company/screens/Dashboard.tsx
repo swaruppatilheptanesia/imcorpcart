@@ -48,6 +48,18 @@ export function Dashboard() {
           <StatCard label="Employees" value={String(data.stats.employees)} sub={`${data.stats.activeEmployees} active`} />
           <StatCard label="EPP orders" value={String(data.stats.orders)} sub="realised" />
           <StatCard label="Order value" value={compactInr(data.stats.orderValue)} sub={`avg ${inr(data.stats.avgOrderValue)}`} />
+          <StatCard
+            label="Smart EPP"
+            value={String(data.stats.seppPending)}
+            sub={`awaiting your approval · ${data.stats.seppActive} active lease${data.stats.seppActive === 1 ? '' : 's'}`}
+          />
+          <StatCard
+            label="EMIs to record"
+            value={String(data.stats.seppInstallmentsDue)}
+            sub="due to date, not yet marked paid"
+            delta={data.stats.seppInstallmentsDue > 0 ? 'Action needed' : undefined}
+            deltaTone={data.stats.seppInstallmentsDue > 0 ? 'error' : 'success'}
+          />
 
           <Card className={styles.listCard}>
             <div className={styles.cardTitle}>Top employees by spend</div>

@@ -3,8 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import * as shop from '@/data/shop-api';
 import type { CartLineView, PlacedOrder, RazorpayHandoff, ShopNotificationApi, PaymentMethodOption } from '@/data/shop-api';
 import type { FilterState, SortKey, StoreCoupon, StoreProduct } from '@/data/store-types';
+import type { SeppProfile, SeppRequestView } from '@/data/sepp-types';
 import { DEFAULT_FILTERS, PRICE_FLOOR, PRICE_CEIL } from '@/data/store-types';
 import { loadCatalog, coupons as catalogCoupons, priceCeil as catalogPriceCeil } from './data';
+
+// EPP = pay now at the corporate price; SEPP = Smart EPP lease (monthly salary
+// deduction, HR → leasing approval). Only offered when the profile carries a
+// Smart-EPP entitlement.
+export type PurchaseMode = 'EPP' | 'SEPP';
+const MODE_KEY = 'imc_shopper_mode';
 
 interface StoreCtxValue {
   ready: boolean;
@@ -12,6 +19,12 @@ interface StoreCtxValue {
   smartEppEnabled: boolean; // company has Smart EPP enabled (gates the EMI option)
   checkoutEnabled: boolean; // master switch — false hides all pay/checkout entry points
   viewOnly: boolean; // demo account — purchase/checkout permanently disabled
+  // Smart EPP entitlement (null = not offered) + the shopper's chosen mode.
+  sepp: SeppProfile | null;
+  purchaseMode: PurchaseMode;
+  setPurchaseMode: (m: PurchaseMode) => void;
+  refreshProfile: () => Promise<void>;
+  submitSepp: (addressId: string, payment?: RazorpayHandoff) => Promise<SeppRequestView>;
   // cart (server-backed)
   cart: CartLineView[];
   addToCart: (id: string, shade: string, qty: number) => Promise<void>;
@@ -77,6 +90,14 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     { percent: number; campaignName: string; categorySlug: string | null; categoryName: string | null } | null
   >(null);
   const [smartEppEnabled, setSmartEppEnabled] = useState(false);
+  const [sepp, setSepp] = useState<SeppProfile | null>(null);
+  const [modeState, setModeState] = useState<PurchaseMode>(() => {
+    try {
+      return localStorage.getItem(MODE_KEY) === 'SEPP' ? 'SEPP' : 'EPP';
+    } catch {
+      return 'EPP';
+    }
+  });
   // Default false so the Pay/checkout buttons never flash before the profile
   // confirms checkout is open.
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
@@ -96,6 +117,16 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
   const [sortBy, setSortBy] = useState<SortKey>('featured');
   const [grid, setGrid] = useState(true);
   const [search, setSearch] = useState('');
+
+  const applyProfile = useCallback((p: shop.ShopProfileApi | null) => {
+    setQrDiscount(p?.qrDiscount ?? null);
+    setSmartEppEnabled(p?.smartEppEnabled ?? false);
+    setSepp(p?.sepp ?? null);
+    setCheckoutEnabled(p?.checkoutEnabled ?? false);
+    setViewOnly(p?.viewOnly ?? false);
+    setPaymentMethods(p?.paymentMethods ?? []);
+    setWalletBalance(p?.walletBalance ?? 0);
+  }, []);
 
   // Initial load: the catalog (MOP prices when public, EPP when authed) plus —
   // only for signed-in employees — cart, wishlist, profile, notifications.
@@ -123,12 +154,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
         setCart(c.lines);
         setSubtotal(c.subtotal);
         setWishlist(w);
-        setQrDiscount(p?.qrDiscount ?? null);
-        setSmartEppEnabled(p?.smartEppEnabled ?? false);
-        setCheckoutEnabled(p?.checkoutEnabled ?? false);
-        setViewOnly(p?.viewOnly ?? false);
-        setPaymentMethods(p?.paymentMethods ?? []);
-        setWalletBalance(p?.walletBalance ?? 0);
+        applyProfile(p);
         setNotifs(n);
       } finally {
         if (!cancelled) setReady(true);
@@ -137,7 +163,23 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     return () => {
       cancelled = true;
     };
-  }, [authed]);
+  }, [authed, applyProfile]);
+
+  const refreshProfile = useCallback(async () => {
+    const p = await shop.getProfile().catch(() => null);
+    if (p) applyProfile(p);
+  }, [applyProfile]);
+
+  // Smart EPP mode is only meaningful when the entitlement exists.
+  const purchaseMode: PurchaseMode = sepp?.enabled ? modeState : 'EPP';
+  const setPurchaseMode = useCallback((m: PurchaseMode) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const applyCartState = (c: { lines: CartLineView[]; subtotal: number }) => {
     setCart(c.lines);
@@ -178,20 +220,32 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
       // A FIRST_ORDER exhibition discount is consumed by this order — refresh,
       // and the new order produces a fresh "order placed" alert. Wallet balance
       // changes too (redeemed now; cashback lands on delivery).
-      shop
-        .getProfile()
-        .then((p) => {
-          setQrDiscount(p.qrDiscount ?? null);
-          setWalletBalance(p.walletBalance ?? 0);
-        })
-        .catch(() => undefined);
+      void refreshProfile();
       shop
         .getNotifications()
         .then(setNotifs)
         .catch(() => undefined);
       return order;
     },
-    [],
+    [refreshProfile],
+  );
+
+  // Smart EPP: the request consumes the cart (server-side) and reserves part of
+  // the purchase limit — refresh both so the store reflects it immediately.
+  const submitSepp = useCallback(
+    async (addressId: string, payment?: RazorpayHandoff) => {
+      const req = await shop.submitSeppRequest(addressId, payment);
+      applyCartState({ lines: [], subtotal: 0 });
+      setAppliedCoupon(null);
+      setCouponError(null);
+      void refreshProfile();
+      shop
+        .getNotifications()
+        .then(setNotifs)
+        .catch(() => undefined);
+      return req;
+    },
+    [refreshProfile],
   );
 
   const cartCount = useMemo(() => cart.reduce((n, l) => n + l.qty, 0), [cart]);
@@ -263,6 +317,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     smartEppEnabled,
     checkoutEnabled,
     viewOnly,
+    sepp, purchaseMode, setPurchaseMode, refreshProfile, submitSepp,
     cart, addToCart, setLineQty, removeLine, cartCount, subtotal, placeOrder, paymentMethods, walletBalance, qrDiscount,
     notifs, notifsUnread, markNotifsSeen,
     wishlist, toggleWishlist, isWished,

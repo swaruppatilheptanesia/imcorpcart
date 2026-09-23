@@ -408,6 +408,76 @@ async function main() {
     });
   }
 
+  // ── Smart EPP: leasing company + operator, attached to Acme + Orbit ─────────
+  // The operator signs in at /leasing (email OTP). Lease parameters follow the
+  // client's Financial Illustration (PTPM 89.5, 12 months, 2% buy-back, PV
+  // 5.21% / 9.1%) with a ₹999 advance so the Razorpay path is exercised.
+  const leasingOps = await prisma.user.upsert({
+    where: { email: 'ops@leasefin.com' },
+    update: { passwordHash: pw, role: Role.LEASING_COMPANY, status: 'ACTIVE' },
+    create: {
+      id: id('user-leasing', 'leasefin'),
+      email: 'ops@leasefin.com',
+      fullName: 'LeaseFin Operations',
+      role: Role.LEASING_COMPANY,
+      status: 'ACTIVE',
+      passwordHash: pw,
+    },
+  });
+  await prisma.leasingCompany.upsert({
+    where: { id: id('leasing', 'leasefin') },
+    update: { userId: leasingOps.id, status: 'ACTIVE' },
+    create: {
+      id: id('leasing', 'leasefin'),
+      name: 'LeaseFin Capital',
+      gstin: '27AABCL4321F1Z9',
+      contactEmail: 'ops@leasefin.com',
+      contactPhone: '9820012345',
+      status: 'ACTIVE',
+      userId: leasingOps.id,
+      ptpm: D(89.5),
+      defaultTenureMonths: 12,
+      repurchasePct: D(2),
+      pvDiscountLeasePct: D(5.21),
+      pvDiscountRepurchasePct: D(9.1),
+      advanceFeeType: 'FIXED',
+      advanceFeeValue: D(999),
+    },
+  });
+  for (const co of companies.filter((c) => c.sepp)) {
+    await prisma.company.update({
+      where: { id: id('company', co.key) },
+      data: { leasingCompanyId: id('leasing', 'leasefin'), adldPct: D(2), incomeTaxPct: D(30) },
+    });
+  }
+
+  // ── Office branches (company-owned addresses — Smart EPP delivery points) ──
+  const branches = [
+    { key: 'acme-mum', company: 'acme', label: 'Mumbai HQ', contact: 'Acme Corp HR', phone: '9820000001', line1: 'D306, Neelkanth Business Park', line2: 'Near Vidyavihar Station', city: 'Mumbai', state: 'Maharashtra', pincode: '400086', isDefault: true },
+    { key: 'acme-pune', company: 'acme', label: 'Pune office', contact: 'Acme Corp HR', phone: '9820000002', line1: 'Tower B, Magarpatta City', line2: 'Hadapsar', city: 'Pune', state: 'Maharashtra', pincode: '411013', isDefault: false },
+    { key: 'orbit-del', company: 'orbit', label: 'Delhi office', contact: 'Orbit HR', phone: '9810000003', line1: '4th Floor, Cyber Hub', line2: 'DLF Phase 2', city: 'Gurugram', state: 'Haryana', pincode: '122002', isDefault: true },
+  ];
+  for (const b of branches) {
+    await prisma.address.upsert({
+      where: { id: id('branch', b.key) },
+      update: {},
+      create: {
+        id: id('branch', b.key),
+        type: AddressType.OFFICE,
+        companyId: id('company', b.company),
+        label: b.label,
+        contactName: b.contact,
+        contactPhone: b.phone,
+        line1: b.line1,
+        line2: b.line2,
+        city: b.city,
+        state: b.state,
+        pincode: b.pincode,
+        isDefault: b.isDefault,
+      },
+    });
+  }
+
   // ── Addresses (one per employee) ───────────────────────────────────────────
   for (const e of employees) {
     await prisma.address.upsert({
