@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
-import { Logo } from '@/components';
-import { Avatar } from '@/components';
+import { Avatar, Brand } from '@/components';
 import { cn } from '@/lib/cn';
 import { getStoredUser } from '@/data/auth-store';
 import { initialsOf } from '@/data/map';
@@ -14,11 +13,7 @@ export function Sidebar({ route, onSignOut }: { route: string; onSignOut: () => 
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <Logo size={30} />
-        <div>
-          <div className={styles.word}>imcorpcart</div>
-          <div className={styles.role}>SUPER ADMIN</div>
-        </div>
+        <Brand sub="SUPER ADMIN" />
       </div>
 
       <nav className={styles.nav}>

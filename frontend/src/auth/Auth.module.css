@@ -135,23 +135,16 @@
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: var(--shadow-pop);
-  padding: 32px 30px;
+  padding: 32px;
 }
 
+/* Vertical rhythm of the card, in one place: the brand is an identifier and sits
+   a full step above the content; heading+subheading are one tight group; the form
+   is separated from it by the same step as the brand, so the three tiers read as
+   three blocks rather than one even column. */
 .brand {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 26px;
-}
-.glyph {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin-bottom: 24px;
 }
 .glyphInner {
   width: 13px;
@@ -159,27 +152,26 @@
   border: 2px solid #fff;
   border-radius: 4px;
 }
-.word {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
 
 .heading {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  margin: 0 0 4px;
+  line-height: 1.2;
+  margin: 0 0 6px;
 }
 .subheading {
   font-size: 13.5px;
+  line-height: 1.45;
   color: var(--text2);
   margin: 0 0 24px;
+  /* Keeps the last line from orphaning a single word ("…sign-in / code."). */
+  text-wrap: pretty;
 }
 .form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .demoLabel {
@@ -235,7 +227,11 @@
 
 /* OTP */
 .back {
-  display: inline-flex;
+  /* Block-level (not inline-flex) so it stacks above .lockTile — as inline boxes
+     the two shared a line and the tile sat on top of the "Back" label.
+     `width: fit-content` keeps the hit area to the label. */
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 6px;
   background: none;
@@ -253,7 +249,7 @@
   border-radius: 13px;
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   color: var(--accent);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 18px;
@@ -316,6 +312,7 @@
   font-size: 13px;
   font-weight: 600;
   padding: 0;
-  margin: 14px auto 0;
+  /* A secondary action: give it room so it stops crowding the primary button. */
+  margin: 22px auto 0;
   display: block;
 }

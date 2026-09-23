@@ -17,33 +17,16 @@
 }
 .brand {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-}
-.glyph {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 .glyphInner {
   width: 11px;
   height: 11px;
   border: 2px solid #fff;
   border-radius: 3px;
-}
-.word {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text);
 }
 .tagline {
   margin: 14px 0 0;

@@ -13,3 +13,4 @@ export { ToastProvider, useToast } from './Toast';
 export { StatCard, EmptyState, Sparkline, Donut } from './Widgets';
 export { Timeline } from './Timeline';
 export { Logo, logoUrl } from './Logo';
+export { Brand } from './Brand';

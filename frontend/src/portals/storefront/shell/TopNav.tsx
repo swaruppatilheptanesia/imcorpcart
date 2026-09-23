@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ShoppingCart, MoreVertical } from 'lucide-react';
-import { Logo } from '@/components';
+import { Brand } from '@/components';
 import { useStore } from '../store-context';
 import { AccountMenu } from './AccountMenu';
 import styles from './TopNav.module.css';
@@ -22,8 +22,7 @@ export function TopNav({
   return (
     <header className={styles.nav}>
       <button className={styles.brand} onClick={() => navigate('/shop/home')}>
-        <Logo size={30} />
-        <span className={styles.word}>imcorpcart</span>
+        <Brand size={30} wordSize={16} />
       </button>
 
       <div className={styles.search}>

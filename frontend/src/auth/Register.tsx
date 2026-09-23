@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, BadgePercent, Clock } from 'lucide-react';
-import { Field, Input, Button, Logo } from '@/components';
+import { Brand, Button, Field, Input } from '@/components';
 import { register, persistSession, isFreeMailEmail, GSTIN_RE, type QrCampaignInfo } from '@/data/unified-auth';
 import styles from './Auth.module.css';
 
@@ -82,8 +82,7 @@ export function Register({
       <div className={styles.wrap}>
         <div className={styles.card}>
           <div className={styles.brand}>
-            <Logo size={30} />
-            <span className={styles.word}>imcorpcart</span>
+            <Brand size={26} wordSize={15} />
           </div>
           <div className={styles.qrBanner} style={{ marginTop: 8 }}>
             <Clock size={18} />
@@ -109,8 +108,7 @@ export function Register({
           <ArrowLeft size={16} /> Back to sign in
         </button>
         <div className={styles.brand}>
-          <Logo size={30} />
-          <span className={styles.word}>imcorpcart</span>
+          <Brand size={26} wordSize={15} />
         </div>
 
         <h1 className={styles.heading}>Create your account</h1>

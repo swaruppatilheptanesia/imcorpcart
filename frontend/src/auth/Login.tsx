@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Tag, Truck, ArrowRight } from 'lucide-react';
-import { Field, Input, Button, Logo } from '@/components';
+import { Brand, Button, Field, Input } from '@/components';
 import { login, persistSession } from '@/data/unified-auth';
 import styles from './Auth.module.css';
 
@@ -49,9 +49,9 @@ export function Login({
       {/* Left marketing hero (Samsung B2B prelogin style) */}
       <aside className={styles.hero}>
         <div className={styles.heroInner}>
-          <div className={styles.brand}>
-            <Logo size={34} />
-            <span className={styles.word} style={{ color: '#fff' }}>imcorpcart</span>
+          {/* On the dark hero — the wordmark inherits colour from the wrapper. */}
+          <div className={styles.brand} style={{ color: '#fff' }}>
+            <Brand size={34} wordSize={16} />
           </div>
           <h2 className={styles.heroTitle}>Corporate Employee Purchase Program</h2>
           <p className={styles.heroSub}>
@@ -72,12 +72,11 @@ export function Login({
       <div className={styles.pane}>
       <div className={styles.card}>
         <div className={styles.brand}>
-          <Logo size={30} />
-          <span className={styles.word}>imcorpcart</span>
+          <Brand size={26} wordSize={15} />
         </div>
 
         <h1 className={styles.heading}>Sign in</h1>
-        <p className={styles.subheading}>Enter your email — we'll send you a 6-digit sign-in code.</p>
+        <p className={styles.subheading}>We'll email you a 6-digit code to sign in.</p>
 
         <div className={styles.form}>
           <Field label="Email" error={error && !email.trim() ? 'Enter your email' : undefined}>

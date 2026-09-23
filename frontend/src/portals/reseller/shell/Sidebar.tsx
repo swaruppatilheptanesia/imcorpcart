@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
-import { Avatar, Logo } from '@/components';
+import { Avatar, Brand } from '@/components';
 import { cn } from '@/lib/cn';
 import { resellerStore } from '@/data/reseller-api';
 import { initialsOf } from '@/data/map';
@@ -13,11 +13,7 @@ export function Sidebar({ route, onSignOut }: { route: string; onSignOut: () => 
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <Logo size={30} />
-        <div>
-          <div className={styles.word}>imcorpcart</div>
-          <div className={styles.role}>RESELLER</div>
-        </div>
+        <Brand sub="RESELLER" />
       </div>
 
       <nav className={styles.nav}>

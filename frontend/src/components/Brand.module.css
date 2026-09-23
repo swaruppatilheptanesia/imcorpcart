@@ -1,0 +1,39 @@
+/* The brand lockup: mark + wordmark, always on one line.
+   `gap` is deliberately 0 — the spacing lives on the wordmark's margin so it can go
+   negative. The mark's PNG is 377x400 with transparent padding, so with
+   object-fit:contain in a square box the visible circle stops ~14.4% of the box
+   short on each side. Subtracting that makes the OPTICAL gap the same --brand-gap
+   at every logo size, instead of drifting wider as the logo grows. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  color: inherit;
+  min-width: 0;
+}
+
+.text {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  margin-left: calc(var(--brand-gap) - 0.144 * var(--brand-logo));
+}
+
+.word {
+  font-size: var(--brand-word);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.sub {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  color: var(--text3);
+  white-space: nowrap;
+}

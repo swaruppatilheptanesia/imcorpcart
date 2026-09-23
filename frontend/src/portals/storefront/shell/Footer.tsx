@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Logo } from '@/components';
+import { Brand } from '@/components';
 import type { StoreCategory } from '@/data/store-types';
 import { useStore } from '../store-context';
 import styles from './Footer.module.css';
@@ -25,8 +25,7 @@ export function Footer() {
       <div className={styles.inner}>
         <div className={styles.brandCol}>
           <button className={styles.brand} onClick={() => navigate('/shop/home')}>
-            <Logo size={26} />
-            <span className={styles.word}>imcorpcart</span>
+            <Brand size={26} />
           </button>
           <p className={styles.tagline}>Corporate employee purchase program — negotiated rates on the tech your team loves.</p>
         </div>

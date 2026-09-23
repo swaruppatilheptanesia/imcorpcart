@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
-import { Avatar, Logo } from '@/components';
+import { Avatar, Brand } from '@/components';
 import { cn } from '@/lib/cn';
 import { activeNav, navDefs } from '../nav';
 import styles from '../../super-admin/shell/Sidebar.module.css';
@@ -26,11 +26,7 @@ export function Sidebar({
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <Logo size={30} />
-        <div>
-          <div className={styles.word}>imcorpcart</div>
-          <div className={styles.role}>LEASING PORTAL</div>
-        </div>
+        <Brand sub="LEASING PORTAL" />
       </div>
 
       <nav className={styles.nav}>
