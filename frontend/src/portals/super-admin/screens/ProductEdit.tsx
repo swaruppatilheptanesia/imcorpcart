@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ImagePlus, AlertTriangle, X, Trash2, Save } from 'lucide-react';
-import { Card, Field, Input, Segmented, Chip, Button, Toggle, Skeleton, EmptyState, useToast } from '@/components';
+import { Button, Card, Chip, EmptyState, Field, Input, Segmented, Select, Skeleton, Toggle, useToast } from '@/components';
 import { useAsync } from '@/lib/useAsync';
 import {
   getCategories,
@@ -219,8 +219,8 @@ function EditForm({
               </div>
               <div className={styles.pair}>
                 <Field label="Category">
-                  <select
-                    className={styles.select}
+                  <Select
+                    block
                     value={categoryId}
                     onChange={(e) => {
                       setCategoryId(e.target.value);
@@ -232,11 +232,11 @@ function EditForm({
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Sub-category" hint="e.g. flagship / audio / backpacks">
                   {subOptions.length > 0 ? (
-                    <select className={styles.select} value={subCategory} onChange={(e) => setSubCategory(e.target.value)}>
+                    <Select block value={subCategory} onChange={(e) => setSubCategory(e.target.value)}>
                       <option value="">No sub-category</option>
                       {subOptions.map((sub) => (
                         <option key={sub.id} value={sub.name}>
@@ -246,7 +246,7 @@ function EditForm({
                       {subCategory && !subOptions.some((sub) => sub.name === subCategory) && (
                         <option value={subCategory}>{subCategory}</option>
                       )}
-                    </select>
+                    </Select>
                   ) : (
                     <Input value={subCategory} onChange={(e) => setSubCategory(e.target.value)} />
                   )}
@@ -368,15 +368,15 @@ function EditForm({
                 <Input value={mop} onChange={(e) => setMop(e.target.value)} prefix="₹" inputMode="numeric" />
               </Field>
               <Field label="Cashback" hint="Rewarded to the shopper's wallet when their order is delivered.">
-                <select
-                  className={styles.select}
+                <Select
+                  block
                   value={cashbackType}
                   onChange={(e) => setCashbackType(e.target.value as 'NONE' | 'PERCENT' | 'FIXED')}
                 >
                   <option value="NONE">No cashback</option>
                   <option value="PERCENT">Percent of price</option>
                   <option value="FIXED">Fixed ₹ per unit</option>
-                </select>
+                </Select>
               </Field>
               {cashbackType !== 'NONE' && (
                 <Field label={cashbackType === 'PERCENT' ? 'Cashback percent' : 'Cashback amount (per unit)'}>

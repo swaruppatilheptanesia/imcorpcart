@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, PackagePlus, AlertTriangle, Eye } from 'lucide-react';
-import { Button, Input, Checkbox, DataTable, Row, ProductThumb, Drawer, StatusPill, EmptyState, Skeleton, useToast } from '@/components';
+import { Button, Checkbox, DataTable, Drawer, EmptyState, Input, ProductThumb, Row, Select, Skeleton, StatusPill, useToast } from '@/components';
 import {
   getCategories,
   getPartnerCatalogue,
@@ -136,11 +136,11 @@ function EntryRow({
         {inr(row.mrp)} / {inr(row.mop)} / {row.epp != null ? inr(row.epp) : '—'}
       </div>
       <div>
-        <select className={styles.selectSm} value={row.priceBasis} onChange={(e) => patch({ priceBasis: e.target.value as PartnerPriceBasis })}>
+        <Select selectSize="sm" value={row.priceBasis} onChange={(e) => patch({ priceBasis: e.target.value as PartnerPriceBasis })}>
           {BASES.map((b) => (
             <option key={b} value={b}>{b}</option>
           ))}
-        </select>
+        </Select>
       </div>
       <div>
         <Input
@@ -353,8 +353,8 @@ function PickerCard({
     <div className={styles.pickerCard}>
       <div className={styles.cardTitle}>Add products</div>
       <div className={styles.pickerControls}>
-        <select
-          className={styles.select}
+        <Select
+          block
           value={categoryId}
           onChange={(e) => {
             setCategoryId(e.target.value);
@@ -365,26 +365,25 @@ function PickerCard({
           {categories.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </select>
-        <select className={styles.select} value={subCategory} onChange={(e) => setSubCategory(e.target.value)} disabled={!subOptions.length}>
+        </Select>
+        <Select block value={subCategory} onChange={(e) => setSubCategory(e.target.value)} disabled={!subOptions.length}>
           <option value="">{subOptions.length ? 'All sub-categories' : 'No sub-categories'}</option>
           {subOptions.map((sub) => (
             <option key={sub.id} value={sub.name}>{sub.name}</option>
           ))}
-        </select>
-        <div className={s.search} style={{ flex: 1 }}>
-          <Search size={16} className={s.searchIcon} />
-          <Input className={s.searchInput} placeholder="Search products" value={qInput} onChange={(e) => setQInput(e.target.value)} />
+        </Select>
+        <div className={s.search}>
+          <Input icon={<Search size={16} />} placeholder="Search products" value={qInput} onChange={(e) => setQInput(e.target.value)} />
         </div>
       </div>
 
       <div className={styles.pickerPricing}>
         <span className={s.muted}>Price basis</span>
-        <select className={styles.selectSm} value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
+        <Select selectSize="sm" value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
           {BASES.map((b) => (
             <option key={b} value={b}>{b}</option>
           ))}
-        </select>
+        </Select>
         <span className={s.muted}>Commission</span>
         <div style={{ width: 90 }}>
           <Input value={commission} prefix="%" inputMode="numeric" onChange={(e) => setCommission(e.target.value)} />

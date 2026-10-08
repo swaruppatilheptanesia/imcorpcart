@@ -1,20 +1,6 @@
 import { useEffect, useState } from 'react';
-import { UploadCloud, Plus, AlertTriangle, Users as UsersIcon } from 'lucide-react';
-import {
-  Segmented,
-  Button,
-  DataTable,
-  Row,
-  Avatar,
-  StatusPill,
-  Field,
-  Input,
-  Modal,
-  Toggle,
-  Skeleton,
-  EmptyState,
-  useToast,
-} from '@/components';
+import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Search, UploadCloud, Users as UsersIcon } from 'lucide-react';
+import { Avatar, Button, DataTable, EmptyState, Field, Input, Modal, Row, Segmented, Select, Skeleton, StatusPill, Toggle, useToast } from '@/components';
 import {
   getUsers,
   inviteUser,
@@ -29,13 +15,23 @@ import {
   addUserLabel,
   type LeasingCompanyOption,
 } from '@/data/api';
-import type { UserState, UserTab, SemanticTone } from '@/data/types';
+import type { UserState, UserStatusFilter, UserTab, SemanticTone } from '@/data/types';
 import type { UserRowWithId } from '@/data/map';
 import { useAsync } from '@/lib/useAsync';
 import s from './screen.module.css';
 import styles from './Users.module.css';
 
-const COLS = '2fr 1.3fr 1.6fr 1fr 1.4fr';
+// The actions column holds a different control set per tab, so a single shared
+// track crushed the widest one: on Companies (Smart EPP + Assign admin + the
+// status select) the select was squeezed to 40px and five rows overflowed the
+// cell outright, which is why "Active" rendered as "Acti".
+const COLS: Record<UserTab, string> = {
+  companies: 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1.2fr) 108px 350px',
+  employees: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
+  resellers: 'minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.4fr) 108px 240px',
+  partners: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
+  leasing: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
+};
 
 const stateTone: Record<UserState, SemanticTone> = {
   Active: 'success',
@@ -65,6 +61,37 @@ const COMPANY_STATUS_LABEL: Record<CompanySettableStatus, string> = {
 };
 const stateToCompanyStatus = (st: UserState): CompanySettableStatus =>
   st === 'Active' ? 'ACTIVE' : st === 'Suspended' ? 'SUSPENDED' : 'ONBOARDING';
+
+const PAGE_SIZES = [25, 50, 100];
+
+// What the search box actually matches, per tab — the server searches these
+// columns, so say so rather than a generic "Search…".
+const SEARCH_HINT: Record<UserTab, string> = {
+  companies: 'Search company, GSTIN or domain',
+  employees: 'Search name, email or company',
+  resellers: 'Search reseller, GSTIN or email',
+  partners: 'Search partner, GSTIN or email',
+  leasing: 'Search leasing company or email',
+};
+
+// The status buckets each tab can actually be in. Only employees sit on
+// UserStatus, which is the one enum with an INVITED state; every other tab
+// renders its org's OrgStatus (Active / Pending / Suspended).
+const STATUS_OPTIONS: { value: UserStatusFilter; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'suspended', label: 'Suspended' },
+];
+
+// The tab labels are nav chips ("Fulfillment", "Leasing"), which read wrong in a
+// count — "3 fulfillment". Count with the thing being counted.
+const COUNT_NOUN: Record<UserTab, [string, string]> = {
+  companies: ['company', 'companies'],
+  employees: ['employee', 'employees'],
+  resellers: ['reseller', 'resellers'],
+  partners: ['fulfillment partner', 'fulfillment partners'],
+  leasing: ['leasing company', 'leasing companies'],
+};
 
 const TABS: { value: UserTab; label: string }[] = (
   ['companies', 'employees', 'resellers', 'partners', 'leasing'] as UserTab[]
@@ -106,6 +133,11 @@ const emptyForm = {
 export function UsersScreen() {
   const { flash } = useToast();
   const [tab, setTab] = useState<UserTab>('companies');
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter | 'all'>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [modal, setModal] = useState<'add' | 'import' | 'assign' | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [assignTarget, setAssignTarget] = useState<{ id: string; name: string } | null>(null);
@@ -115,11 +147,52 @@ export function UsersScreen() {
   const [leasingOptions, setLeasingOptions] = useState<LeasingCompanyOption[]>([]);
   const [busy, setBusy] = useState(false);
 
+  // Debounce the search box so a refetch doesn't fire on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  // A new query invalidates the page number. The other three triggers (tab,
+  // status, page size) reset it inside their own handler, which saves a fetch at
+  // the stale page number.
+  useEffect(() => setPage(1), [q]);
+
+  // The search and status filters run server-side, so they search every account
+  // rather than only the rows the current page happens to hold.
   const { data: ds, state, error, reload } = useAsync(
-    () => getUsers(tab),
-    [tab],
+    () => getUsers(tab, { q: q || undefined, status: statusFilter === 'all' ? undefined : statusFilter, page, pageSize }),
+    [tab, q, statusFilter, page, pageSize],
     (d) => d.rows.length === 0,
   );
+
+  // If the current page falls off the end — rows removed elsewhere, or a filter
+  // that shrank the result — land on the last real page instead of an empty
+  // table with no pager to get back from.
+  useEffect(() => {
+    if (ds && page > ds.meta.pageCount) setPage(ds.meta.pageCount);
+  }, [ds, page]);
+
+  const total = ds?.meta.total ?? 0;
+  const pageCount = ds?.meta.pageCount ?? 1;
+  const start = (page - 1) * pageSize;
+  const narrowed = q !== '' || statusFilter !== 'all';
+
+  const clearFilters = () => {
+    setQInput('');
+    setQ('');
+    setStatusFilter('all');
+    setPage(1);
+  };
+
+  // Each tab searches different columns, so carrying a query across a tab switch
+  // would silently hide rows. Cleared in the same render as the switch — doing it
+  // in an effect would fire one fetch under the outgoing tab's filters first.
+  const switchTab = (next: UserTab) => {
+    setTab(next);
+    setPage(1);
+    clearFilters();
+  };
 
   useEffect(() => setForm(emptyForm), [tab, modal]);
 
@@ -301,7 +374,7 @@ export function UsersScreen() {
   return (
     <div>
       <div className={s.toolbar}>
-        <Segmented options={TABS} value={tab} onChange={setTab} />
+        <Segmented options={TABS} value={tab} onChange={switchTab} />
         <div className={s.spacer} />
         <Button variant="secondary" size="sm" icon={<UploadCloud size={16} />} onClick={() => setModal('import')}>
           Import CSV
@@ -309,6 +382,49 @@ export function UsersScreen() {
         <Button size="sm" icon={<Plus size={16} strokeWidth={2.2} />} onClick={() => setModal('add')}>
           {addUserLabel[tab]}
         </Button>
+      </div>
+
+      {/* Search + status live on their own row: the five-tab Segmented control
+          and the two action buttons already fill the row above. */}
+      <div className={s.toolbar}>
+        <div className={s.search}>
+          <Input
+            icon={<Search size={16} />}
+            placeholder={SEARCH_HINT[tab]}
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+          />
+        </div>
+
+        <Select
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as UserStatusFilter | 'all');
+            setPage(1);
+          }}
+          aria-label="Filter by status"
+        >
+          <option value="all">Any status</option>
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+          {tab === 'employees' && <option value="invited">Invited</option>}
+        </Select>
+
+        {narrowed && (
+          <Button variant="secondary" onClick={clearFilters}>
+            Clear
+          </Button>
+        )}
+
+        {state !== 'loading' && state !== 'error' && (
+          <div className={s.toolbarNote}>
+            {total.toLocaleString('en-IN')} {COUNT_NOUN[tab][total === 1 ? 0 : 1]}
+            {narrowed ? ' matched' : ''}
+          </div>
+        )}
       </div>
 
       {state === 'loading' && (
@@ -329,22 +445,30 @@ export function UsersScreen() {
         />
       )}
 
-      {state === 'empty' && (
-        <EmptyState
-          icon={<UsersIcon size={24} />}
-          title="No records yet"
-          body={`No ${userTabLabels[tab].toLowerCase()} here. Add one to get started.`}
-          action={{ label: addUserLabel[tab], onClick: () => setModal('add') }}
-        />
-      )}
+      {state === 'empty' &&
+        (narrowed ? (
+          <EmptyState
+            icon={<Search size={24} />}
+            title="No matches"
+            body={`No ${COUNT_NOUN[tab][1]} match this search or status.`}
+            action={{ label: 'Clear filters', onClick: clearFilters }}
+          />
+        ) : (
+          <EmptyState
+            icon={<UsersIcon size={24} />}
+            title="No records yet"
+            body={`No ${COUNT_NOUN[tab][1]} here. Add one to get started.`}
+            action={{ label: addUserLabel[tab], onClick: () => setModal('add') }}
+          />
+        ))}
 
       {state === 'live' && ds && (
-        <DataTable cols={COLS} headers={ds.headers}>
+        <DataTable cols={COLS[tab]} headers={ds.headers}>
           {ds.rows.map((u, i) => {
             const row = u as UserRowWithId;
             const canAssign = tab === 'companies' && !row.userId;
             return (
-              <Row key={`${u.name}-${i}`} cols={COLS}>
+              <Row key={`${u.name}-${i}`} cols={COLS[tab]}>
                 <div className={s.cellMain}>
                   <Avatar initials={u.initials} size={36} bg={u.avBg} />
                   <div className={s.cellName}>{u.name}</div>
@@ -400,8 +524,8 @@ export function UsersScreen() {
                           Assign admin
                         </Button>
                       )}
-                      <select
-                        className={styles.statusSelect}
+                      <Select
+                        selectSize="sm"
                         value={stateToCompanyStatus(u.state)}
                         onChange={(e) => setCompanyStatus(row, e.target.value as CompanySettableStatus)}
                         aria-label="Company approval status"
@@ -409,14 +533,14 @@ export function UsersScreen() {
                         <option value="ACTIVE">Active</option>
                         <option value="ONBOARDING">Pending</option>
                         <option value="SUSPENDED">Suspended</option>
-                      </select>
+                      </Select>
                     </>
                   )}
                   {/* Employees / resellers / partners: per-user account status. */}
                   {tab !== 'companies' &&
                     (row.userId ? (
-                      <select
-                        className={styles.statusSelect}
+                      <Select
+                        selectSize="sm"
                         value={stateToStatus(u.state)}
                         onChange={(e) => setStatus(row, e.target.value as SettableStatus)}
                         aria-label="Account status"
@@ -427,7 +551,7 @@ export function UsersScreen() {
                         <option value="ACTIVE">Active</option>
                         <option value="PENDING">Pending</option>
                         <option value="SUSPENDED">Suspended</option>
-                      </select>
+                      </Select>
                     ) : (
                       <span className={s.muted}>—</span>
                     ))}
@@ -436,6 +560,52 @@ export function UsersScreen() {
             );
           })}
         </DataTable>
+      )}
+
+      {state === 'live' && ds && (
+        <div className={s.pager}>
+          <div className={s.pagerInfo}>
+            Showing {(start + 1).toLocaleString('en-IN')}–
+            {Math.min(start + ds.rows.length, total).toLocaleString('en-IN')} of{' '}
+            {total.toLocaleString('en-IN')}
+          </div>
+          <div className={s.pagerControls}>
+            <Select
+              selectSize="sm"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              aria-label="Rows per page"
+            >
+              {PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n} per page
+                </option>
+              ))}
+            </Select>
+            <button
+              className={s.pageBtn}
+              onClick={() => setPage((n) => Math.max(1, n - 1))}
+              disabled={page <= 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className={s.pageNum}>
+              Page {page} of {pageCount}
+            </span>
+            <button
+              className={s.pageBtn}
+              onClick={() => setPage((n) => Math.min(pageCount, n + 1))}
+              disabled={page >= pageCount}
+              aria-label="Next page"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Add user / company modal */}
@@ -623,8 +793,8 @@ export function UsersScreen() {
           />
         </div>
         <Field label="Leasing company" hint="Supplies PTPM, tenure, PV discount and the advance fee; approves at stage 2">
-          <select
-            className={styles.statusSelect}
+          <Select
+            selectSize="sm"
             style={{ width: '100%' }}
             value={editCompany?.leasingCompanyId ?? ''}
             onChange={(e) => setEditCompany((c) => (c ? { ...c, leasingCompanyId: e.target.value } : c))}
@@ -636,7 +806,7 @@ export function UsersScreen() {
                 {l.status !== 'ACTIVE' ? ` (${l.status.toLowerCase()})` : ''} · {l.tenureMonths} mo
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <div className={s.formRow2}>
           <Field label="ADLD & theft insurance %" hint="Annual, % of asset cost · blank = none">

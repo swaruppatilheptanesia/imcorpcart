@@ -3,9 +3,16 @@ import { z } from 'zod';
 export const USER_TABS = ['companies', 'employees', 'resellers', 'partners', 'leasing'] as const;
 export type UserTab = (typeof USER_TABS)[number];
 
+// `status` is the *display* bucket the admin picks in the Users screen, not a
+// raw enum: companies/resellers/partners/leasing carry OrgStatus while employees
+// carry UserStatus, and the UI shows one shared pill vocabulary over both.
+export const USER_STATUS_FILTERS = ['active', 'pending', 'suspended', 'invited'] as const;
+export type UserStatusFilter = (typeof USER_STATUS_FILTERS)[number];
+
 export const userListQuery = z.object({
   type: z.enum(USER_TABS).default('companies'),
   q: z.string().trim().optional(),
+  status: z.enum(USER_STATUS_FILTERS).optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });

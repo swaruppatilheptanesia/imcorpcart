@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plug, Plus, Copy, Check, AlertTriangle, KeyRound } from 'lucide-react';
-import { Button, DataTable, Row, StatusPill, Field, Input, Modal, EmptyState, Skeleton, useToast } from '@/components';
+import { Button, DataTable, EmptyState, Field, Input, Modal, Row, Select, Skeleton, StatusPill, useToast } from '@/components';
 import type React from 'react';
 import { getPartners, createPartner, updatePartner, type PartnerCredentials, type PartnerPriceBasis, type PartnerStatus } from '@/data/api';
 import { ApiError } from '@/data/http';
@@ -96,8 +96,8 @@ export function Partners() {
                 <span className={s.muted}>{p.webhookUrl ? 'Configured' : 'None'}</span>
               </div>
               <div className={styles.rowActions}>
-                <select
-                  className={styles.selectSm}
+                <Select
+                  selectSize="sm"
                   value={p.status}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => changeStatus(e, p.id)}
@@ -106,7 +106,7 @@ export function Partners() {
                   <option value="ONBOARDING">Onboarding</option>
                   <option value="ACTIVE">Active</option>
                   <option value="SUSPENDED">Suspended</option>
-                </select>
+                </Select>
               </div>
             </Row>
           ))}
@@ -188,11 +188,11 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
       </Field>
       <div className={s.formRow2}>
         <Field label="Default price basis">
-          <select className={styles.select} value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
+          <Select block value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
             <option value="MRP">MRP</option>
             <option value="MOP">MOP</option>
             <option value="EPP">EPP (cheapest offer)</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Default commission %">
           <Input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="numeric" placeholder="0" />

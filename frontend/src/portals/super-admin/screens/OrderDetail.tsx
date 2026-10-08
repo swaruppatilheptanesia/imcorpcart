@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Download, AlertTriangle, Truck, Gift, RefreshCw, Mail } from 'lucide-react';
-import { Card, StatusPill, Timeline, ProductThumb, Skeleton, EmptyState, Button, Field, Input, useToast } from '@/components';
+import { Button, Card, EmptyState, Field, Input, ProductThumb, Select, Skeleton, StatusPill, Timeline, useToast } from '@/components';
 import { getOrder, orderStatusTone, timelineSteps, statusToStep, updateOrderTransit, retryVoucherFulfilment, resendVoucherEmail } from '@/data/api';
 import { ApiError } from '@/data/http';
 import type { SemanticTone, Order } from '@/data/types';
@@ -244,20 +244,20 @@ function TransitControl({ orderId, cancelled, onDone }: { orderId: string; cance
         You handle fulfilment for this order — set the shipment status (drives the customer's tracking timeline).
       </p>
       <Field label="Status">
-        <select style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select block value={status} onChange={(e) => setStatus(e.target.value)}>
           {SHIPMENT_STATUSES.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-        </select>
+        </Select>
       </Field>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <Field label="Courier">
-          <select style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }} value={courier} onChange={(e) => setCourier(e.target.value)}>
+          <Select block value={courier} onChange={(e) => setCourier(e.target.value)}>
             <option value="">—</option>
             {COURIERS.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="AWB / tracking no.">
           <Input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="Optional" />

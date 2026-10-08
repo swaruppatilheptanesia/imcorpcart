@@ -1,4 +1,4 @@
-import { Prisma, Role } from '@prisma/client';
+import { OrgStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { hashPassword } from '../utils/password';
@@ -10,6 +10,7 @@ import type {
   UpdateUserInput,
   ImportUsersInput,
   UserListQuery,
+  UserStatusFilter,
   UserTab,
   CreateCompanyInput,
   UpdateCompanyInput,
@@ -25,15 +26,45 @@ const DEFAULT_ADMIN_PASSWORD = 'imcorp@2026';
 
 // ─── Unified list across the four org "tabs" ─────────────────────────────────
 
+// The screen filters on one pill vocabulary (Active / Pending / Suspended /
+// Invited) but the tabs sit on two different enums, so each bucket expands to
+// the statuses that render as that pill (see `stateOf` in the frontend map).
+const ORG_STATUSES: Record<UserStatusFilter, OrgStatus[]> = {
+  active: [OrgStatus.ACTIVE],
+  pending: [OrgStatus.ONBOARDING],
+  suspended: [OrgStatus.SUSPENDED],
+  invited: [], // orgs are never "invited" — only their backing user account is
+};
+const USER_STATUSES: Record<UserStatusFilter, UserStatus[]> = {
+  active: [UserStatus.ACTIVE],
+  pending: [UserStatus.PENDING],
+  suspended: [UserStatus.SUSPENDED, UserStatus.DISABLED],
+  invited: [UserStatus.INVITED],
+};
+
+const orgStatusWhere = (f?: UserStatusFilter) => (f ? { status: { in: ORG_STATUSES[f] } } : {});
+const userStatusWhere = (f?: UserStatusFilter) => (f ? { status: { in: USER_STATUSES[f] } } : {});
+
 export async function listUsers(query: UserListQuery) {
   const p = parsePagination(query);
   const q = query.q?.trim();
+  const st = query.status;
 
   switch (query.type) {
     case 'companies': {
       const where: Prisma.CompanyWhereInput = {
         ...notDeleted,
-        ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
+        ...orgStatusWhere(st),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { gstin: { contains: q, mode: 'insensitive' } },
+                { emailDomain: { contains: q, mode: 'insensitive' } },
+                { adminUser: { email: { contains: q, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
       };
       const [rows, total] = await prisma.$transaction([
         prisma.company.findMany({
@@ -71,11 +102,15 @@ export async function listUsers(query: UserListQuery) {
     case 'employees': {
       const where: Prisma.EmployeeWhereInput = {
         ...notDeleted,
+        ...(st ? { user: { is: userStatusWhere(st) } } : {}),
         ...(q
           ? {
               OR: [
                 { employeeCode: { contains: q, mode: 'insensitive' } },
+                { department: { contains: q, mode: 'insensitive' } },
                 { user: { fullName: { contains: q, mode: 'insensitive' } } },
+                { user: { email: { contains: q, mode: 'insensitive' } } },
+                { company: { name: { contains: q, mode: 'insensitive' } } },
               ],
             }
           : {}),
@@ -111,7 +146,18 @@ export async function listUsers(query: UserListQuery) {
     case 'resellers':
     case 'partners': {
       const isReseller = query.type === 'resellers';
-      const where = q ? { name: { contains: q, mode: 'insensitive' as const } } : {};
+      const where = {
+        ...orgStatusWhere(st),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' as const } },
+                { gstin: { contains: q, mode: 'insensitive' as const } },
+                { contactEmail: { contains: q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      };
       if (isReseller) {
         const [rows, total] = await prisma.$transaction([
           prisma.reseller.findMany({
@@ -169,7 +215,19 @@ export async function listUsers(query: UserListQuery) {
     }
 
     case 'leasing': {
-      const where: Prisma.LeasingCompanyWhereInput = q ? { name: { contains: q, mode: 'insensitive' } } : {};
+      const where: Prisma.LeasingCompanyWhereInput = {
+        ...orgStatusWhere(st),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { gstin: { contains: q, mode: 'insensitive' } },
+                { contactEmail: { contains: q, mode: 'insensitive' } },
+                { user: { email: { contains: q, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      };
       const [rows, total] = await prisma.$transaction([
         prisma.leasingCompany.findMany({
           where,

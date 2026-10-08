@@ -1,17 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, AlertTriangle, Search, Plus, UploadCloud, Download, Pencil, Trash2 } from 'lucide-react';
-import {
-  Input,
-  Button,
-  DataTable,
-  Row,
-  Toggle,
-  Field,
-  Modal,
-  EmptyState,
-  Skeleton,
-  useToast,
-} from '@/components';
+import { Button, DataTable, EmptyState, Field, Input, Modal, Row, Select, Skeleton, Toggle, useToast } from '@/components';
 import {
   getPincodes,
   createPincode,
@@ -177,37 +166,35 @@ export function Pincodes() {
 
       <div className={s.toolbar}>
         <div className={s.search}>
-          <Search size={16} className={s.searchIcon} />
-          <Input
-            className={s.searchInput}
+          <Input icon={<Search size={16} />}
             placeholder="Search pincode"
             value={qInput}
             inputMode="numeric"
             onChange={(e) => setQInput(e.target.value)}
           />
         </div>
-        <select className={styles.select} value={courier} onChange={(e) => setCourier(e.target.value as '' | CourierCode)} aria-label="Filter by courier">
+        <Select value={courier} onChange={(e) => setCourier(e.target.value as '' | CourierCode)} aria-label="Filter by courier">
           <option value="">All couriers</option>
           {COURIERS.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
-        </select>
-        <select className={styles.select} value={mode} onChange={(e) => setMode(e.target.value as '' | DeliveryMode)} aria-label="Filter by mode">
+        </Select>
+        <Select value={mode} onChange={(e) => setMode(e.target.value as '' | DeliveryMode)} aria-label="Filter by mode">
           <option value="">All modes</option>
           {MODES.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
-        </select>
-        <select className={styles.select} value={deliverable} onChange={(e) => setDeliverable(e.target.value as '' | 'true' | 'false')} aria-label="Filter by deliverable">
+        </Select>
+        <Select value={deliverable} onChange={(e) => setDeliverable(e.target.value as '' | 'true' | 'false')} aria-label="Filter by deliverable">
           <option value="">Any deliverable</option>
           <option value="true">Deliverable</option>
           <option value="false">Not deliverable</option>
-        </select>
-        <select className={styles.select} value={status} onChange={(e) => setStatus(e.target.value as '' | 'true' | 'false')} aria-label="Filter by status">
+        </Select>
+        <Select value={status} onChange={(e) => setStatus(e.target.value as '' | 'true' | 'false')} aria-label="Filter by status">
           <option value="">Any status</option>
           <option value="true">Active</option>
           <option value="false">Inactive</option>
-        </select>
+        </Select>
         <div className={s.spacer} />
         <Button variant="secondary" onClick={onExport} disabled={exporting}>
           <Download size={15} /> {exporting ? 'Exporting…' : 'Export'}
@@ -455,18 +442,18 @@ function PincodeModal({ target, onClose, onSaved }: { target: EditTarget; onClos
           <Input value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="400001" inputMode="numeric" disabled={editing} />
         </Field>
         <Field label="Courier">
-          <select className={styles.select} value={courier} onChange={(e) => setCourier(e.target.value as CourierCode)} disabled={editing}>
+          <Select block value={courier} onChange={(e) => setCourier(e.target.value as CourierCode)} disabled={editing}>
             {COURIERS.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Mode">
-          <select className={styles.select} value={mode} onChange={(e) => setMode(e.target.value as DeliveryMode)} disabled={editing}>
+          <Select block value={mode} onChange={(e) => setMode(e.target.value as DeliveryMode)} disabled={editing}>
             {MODES.map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
-          </select>
+          </Select>
         </Field>
       </div>
       <Field label="TAT (delivery days)">

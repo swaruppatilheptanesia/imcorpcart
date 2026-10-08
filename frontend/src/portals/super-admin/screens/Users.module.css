@@ -41,7 +41,7 @@
   color: var(--text3);
 }
 .dropTitle {
-  font-size: 14px;
+  font-size: var(--fs-card);
   font-weight: 600;
   color: var(--text);
 }
@@ -51,18 +51,3 @@
 }
 
 /* Per-row account status control (Active / Pending / Suspended). */
-.statusSelect {
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 0 8px;
-  outline: none;
-  cursor: pointer;
-}
-.statusSelect:focus {
-  border-color: var(--accent);
-}

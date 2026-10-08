@@ -1,5 +1,6 @@
 export { Button } from './Button';
 export { Field, Input } from './Field';
+export { Select } from './Select';
 export { Segmented } from './Segmented';
 export type { SegOption } from './Segmented';
 export { Chip } from './Chip';

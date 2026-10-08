@@ -9,7 +9,7 @@
   font-weight: 600;
   color: var(--text3);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 .rangeLabel {
   margin-left: auto;
@@ -35,7 +35,7 @@
 }
 
 .cardTitle {
-  font-size: 13px;
+  font-size: var(--fs-card);
   font-weight: 700;
   letter-spacing: -0.01em;
   margin-bottom: 14px;
@@ -120,7 +120,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  font-size: 11px;
+  font-size: var(--fs-table-head);
   color: var(--text3);
 }
 .rankVal {
@@ -149,7 +149,7 @@
   flex-direction: column;
 }
 .partnerType {
-  font-size: 11px;
+  font-size: var(--fs-table-head);
   color: var(--text3);
   font-weight: 400;
 }
@@ -218,7 +218,7 @@
   white-space: nowrap;
 }
 .wishMeta {
-  font-size: 11px;
+  font-size: var(--fs-table-head);
   color: var(--text3);
   margin-top: 3px;
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Pencil, Plus, Trash2, Check, X } from 'lucide-react';
-import { Card, StatusPill, ProductThumb, Button, Input, Skeleton, EmptyState, useToast } from '@/components';
+import { Button, Card, EmptyState, Input, ProductThumb, Select, Skeleton, StatusPill, useToast } from '@/components';
 import {
   getProduct,
   getOffers,
@@ -226,7 +226,7 @@ function AddSellerRow({
 
   return (
     <div className={styles.attachRow}>
-      <select className={styles.offerSelect} value={resellerId} onChange={(e) => setResellerId(e.target.value)}>
+      <Select block value={resellerId} onChange={(e) => setResellerId(e.target.value)}>
         {!usedHouse && <option value="">First-party (house)</option>}
         {resellers
           .filter((r) => !usedIds.has(r.id))
@@ -235,7 +235,7 @@ function AddSellerRow({
               {r.name}
             </option>
           ))}
-      </select>
+      </Select>
       <button className={styles.okBtn} onClick={submit} disabled={busy} aria-label="Attach seller">
         <Check size={16} />
       </button>

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { UploadCloud, Info, FileSpreadsheet, Download, AlertTriangle } from 'lucide-react';
-import { Segmented, Card, Field, Input, Button, useToast } from '@/components';
+import { Button, Card, Field, Input, Segmented, Select, useToast } from '@/components';
 import { mappingRows, bulkImport, bulkPriceUpdate, bulkCashbackUpdate, type BulkImportResult } from '@/data/api';
 import s from './screen.module.css';
 import styles from './Bulk.module.css';
@@ -227,23 +227,23 @@ export function Bulk() {
           <div className={styles.priceForm}>
             <div className={s.grid2}>
               <Field label="Apply to">
-                <select className={styles.select} value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
+                <Select block value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
                   <option value="all">All products</option>
                   <option value="phones">Phones</option>
                   <option value="accessories">Accessories</option>
                   <option value="bags">Bags</option>
-                </select>
+                </Select>
               </Field>
               <Field label="Adjustment">
-                <select
-                  className={styles.select}
+                <Select
+                  block
                   value={adjustment}
                   onChange={(e) => setAdjustment(e.target.value as typeof adjustment)}
                 >
                   <option value="increasePct">Increase by %</option>
                   <option value="decreasePct">Decrease by %</option>
                   <option value="setAmount">Set to ₹</option>
-                </select>
+                </Select>
               </Field>
             </div>
             <Field label="Value">
@@ -276,19 +276,19 @@ export function Bulk() {
           <div className={styles.priceForm}>
             <div className={s.grid2}>
               <Field label="Apply to">
-                <select className={styles.select} value={cbScope} onChange={(e) => setCbScope(e.target.value as typeof cbScope)}>
+                <Select block value={cbScope} onChange={(e) => setCbScope(e.target.value as typeof cbScope)}>
                   <option value="all">All products</option>
                   <option value="phones">Phones</option>
                   <option value="accessories">Accessories</option>
                   <option value="bags">Bags</option>
-                </select>
+                </Select>
               </Field>
               <Field label="Cashback">
-                <select className={styles.select} value={cbType} onChange={(e) => setCbType(e.target.value as typeof cbType)}>
+                <Select block value={cbType} onChange={(e) => setCbType(e.target.value as typeof cbType)}>
                   <option value="NONE">No cashback</option>
                   <option value="PERCENT">Percent of price</option>
                   <option value="FIXED">Fixed ₹ per unit</option>
-                </select>
+                </Select>
               </Field>
             </div>
             {cbType !== 'NONE' && (

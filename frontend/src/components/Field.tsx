@@ -23,6 +23,9 @@ export function Field({ label, error, hint, children }: FieldProps) {
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   prefix?: string;
+  /** Leading icon (e.g. a search glyph). Pads the field and centres the icon inside it,
+   *  so callers stop hand-rolling an absolutely-positioned sibling per screen. */
+  icon?: ReactNode;
   invalid?: boolean;
   accent?: boolean;
   inputSize?: 'sm' | 'md';

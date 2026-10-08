@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook, Eye, ShoppingBag } from 'lucide-react';
-import { Card, Button, Field, Input, Segmented, StatusPill, DataTable, Row, ProductThumb, Drawer, EmptyState, Skeleton, useToast } from '@/components';
+import { Button, Card, DataTable, Drawer, EmptyState, Field, Input, ProductThumb, Row, Segmented, Select, Skeleton, StatusPill, useToast } from '@/components';
 import { PartnerCatalogue } from './PartnerCatalogue';
 import {
   getPartner,
@@ -344,11 +344,11 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
       <p className={styles.cardHint}>Defaults applied when adding products in the Catalogue tab (each product can be overridden there).</p>
       <div className={s.formRow2}>
         <Field label="Default price basis">
-          <select className={styles.select} value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
+          <Select block value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>
             <option value="MRP">MRP</option>
             <option value="MOP">MOP</option>
             <option value="EPP">EPP (cheapest offer)</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Default commission %">
           <Input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="numeric" placeholder="0" />

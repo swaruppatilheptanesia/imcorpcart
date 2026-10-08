@@ -55,9 +55,7 @@ export function Categories() {
     <div>
       <div className={s.toolbar}>
         <div className={s.search}>
-          <Search size={16} className={s.searchIcon} />
-          <Input
-            className={s.searchInput}
+          <Input icon={<Search size={16} />}
             placeholder="Search categories"
             value={q}
             onChange={(e) => setQ(e.target.value)}

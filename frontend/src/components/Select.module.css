@@ -1,0 +1,61 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  /* Suppress the OS triangle so every select in the app shares one chevron. */
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s;
+}
+.select:focus {
+  border-color: var(--accent);
+}
+.select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* Dark mode: the native popup list is drawn by the OS, so give it themed colours. */
+.select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.md {
+  height: var(--control-h);
+  border-radius: var(--control-r);
+  font-size: var(--control-fs);
+  padding: 0 34px 0 13px;
+}
+.sm {
+  height: var(--control-h-sm);
+  border-radius: var(--control-r-sm);
+  font-size: var(--control-fs-sm);
+  padding: 0 28px 0 10px;
+}
+
+/* Sits over the padding reserved above. `currentColor` is what makes it theme. */
+.chevron {
+  position: absolute;
+  right: 10px;
+  color: var(--text3);
+  pointer-events: none;
+}
+.sm ~ .chevron {
+  right: 9px;
+}

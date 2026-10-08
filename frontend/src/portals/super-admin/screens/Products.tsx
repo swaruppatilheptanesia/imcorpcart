@@ -1,18 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Eye, Pencil, Plus, PackageSearch, AlertTriangle } from 'lucide-react';
-import {
-  Segmented,
-  Input,
-  Button,
-  DataTable,
-  Row,
-  StatusPill,
-  ProductThumb,
-  VendorTag,
-  EmptyState,
-  Skeleton,
-} from '@/components';
+import { Button, DataTable, EmptyState, Input, ProductThumb, Row, Segmented, Select, Skeleton, StatusPill, VendorTag } from '@/components';
 import { getProducts, catLabels, vendorColors } from '@/data/api';
 import type { Product, ProductStatus, SemanticTone, Vendor } from '@/data/types';
 import { useAsync } from '@/lib/useAsync';
@@ -84,9 +73,7 @@ export function Products() {
     <div>
       <div className={s.toolbar}>
         <div className={s.search}>
-          <Search size={16} className={s.searchIcon} />
-          <Input
-            className={s.searchInput}
+          <Input icon={<Search size={16} />}
             placeholder="Search name or SKU"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -102,8 +89,7 @@ export function Products() {
           value={cat}
           onChange={setCat}
         />
-        <select
-          className={styles.vendorSelect}
+        <Select
           value={vendor}
           onChange={(e) => setVendor(e.target.value as 'all' | Vendor)}
           aria-label="Filter by vendor"
@@ -113,7 +99,7 @@ export function Products() {
               {v === 'all' ? 'All vendors' : v}
             </option>
           ))}
-        </select>
+        </Select>
         <div className={s.spacer} />
         <Segmented
           options={[

@@ -11,13 +11,24 @@
   backdrop-filter: saturate(180%) blur(16px);
   border-bottom: 1px solid var(--border);
 }
+/* All four Topbars render <div className={styles.titles}> but this class was never
+   defined anywhere — it resolved to undefined and the stack only worked by accident of
+   the flex parent. */
+.titles {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
 .title {
-  font-size: 19px;
+  font-size: var(--fs-page); /* was 19px — a size used nowhere else in the app */
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 .sub {
-  font-size: 12.5px;
+  font-size: var(--fs-label);
+  font-weight: 500;
   color: var(--text3);
   margin-top: 1px;
 }

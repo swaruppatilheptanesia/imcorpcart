@@ -42,6 +42,27 @@
   /* Type */
   --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* Controls — the handoff gives ranges (inputs 40–46 tall, radius 9–11), which is how
+     five different select heights ended up in one portal. One value per role here. */
+  --control-h: 42px; /* toolbar search + filter selects — matches Input's existing .md,
+                        so the shared input used by 138 call sites does not move */
+  --control-h-sm: 34px; /* in-row controls, e.g. a per-row status select */
+  --control-r: 10px; /* already Input's radius and that of most selects */
+  --control-r-sm: 8px;
+  --control-fs: 14px; /* already Input .md */
+  --control-fs-sm: 13px;
+
+  /* Type scale — handoff README > Typography. Fractional sizes are deliberate; 14.5 /
+     13.5 / 12.5 are the handoff's own values. Weight + letter-spacing for each role are
+     applied by the shared classes in screens/screen.module.css, not repeated per screen. */
+  --fs-page: 20px; /* page title       700 / -0.02em */
+  --fs-section: 17px; /* section heading  700 / -0.02em */
+  --fs-card: 14.5px; /* card title       600 / -0.01em / lh 1.3 */
+  --fs-body: 13.5px; /* body             400 / lh 1.5 */
+  --fs-label: 12.5px; /* secondary label  600 / --text2 */
+  --fs-meta: 11.5px; /* meta / caption   500 / --text3 */
+  --fs-table-head: 11px; /* 700 / uppercase / 0.04em / --text3 */
 }
 
 /* Dark palette — used when the OS prefers dark and no explicit theme is set. */

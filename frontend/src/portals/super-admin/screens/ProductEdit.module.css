@@ -31,32 +31,19 @@
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
-.select,
 .textarea {
   width: 100%;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--control-fs);
   color: var(--text);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--control-r);
   padding: 10px 12px;
-}
-.select {
-  height: 42px;
-  padding: 0 36px 0 13px;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2398989d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-}
-.textarea {
   resize: vertical;
   min-height: 96px;
   line-height: 1.5;
 }
-.select:focus,
 .textarea:focus {
   outline: none;
   border-color: var(--accent);
@@ -113,7 +100,7 @@
   cursor: pointer;
 }
 .imgUploading {
-  font-size: 11px;
+  font-size: var(--fs-table-head);
   color: var(--text3);
   background: var(--surface2);
 }

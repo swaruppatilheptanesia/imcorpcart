@@ -25,9 +25,9 @@
   min-width: 0;
 }
 .name {
-  font-size: 20px;
+  font-size: var(--fs-page);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .sub {
   font-size: 13px;
@@ -135,9 +135,9 @@
   padding: 4px 12px;
   border: none;
   background: none;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: var(--fs-table-head);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text3);
 }
@@ -181,16 +181,6 @@
   align-items: center;
   gap: 6px;
   padding: 8px 0 14px;
-}
-.offerSelect {
-  height: 40px;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0 10px;
-  min-width: 0;
 }
 .okBtn,
 .cancelBtn {

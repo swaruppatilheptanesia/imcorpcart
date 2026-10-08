@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, QrCode, AlertTriangle, Users, ShoppingBag, Copy, Download } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Button, Card, StatusPill, Field, Input, Modal, Skeleton, EmptyState, useToast } from '@/components';
+import { Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton, StatusPill, useToast } from '@/components';
 import { useAsync } from '@/lib/useAsync';
 import {
   getCampaigns,
@@ -237,11 +237,11 @@ function CampaignModal({
           />
         </Field>
         <Field label="Discount lasts">
-          <select className={styles.select} value={mode} onChange={(e) => setMode(e.target.value as CampaignDiscountMode)}>
+          <Select block value={mode} onChange={(e) => setMode(e.target.value as CampaignDiscountMode)}>
             <option value="FIRST_ORDER">First order only</option>
             <option value="WHILE_ACTIVE">While campaign is active</option>
             <option value="FOREVER">Forever</option>
-          </select>
+          </Select>
         </Field>
       </div>
       <div className={styles.grid2}>
@@ -254,20 +254,20 @@ function CampaignModal({
       </div>
       <div className={styles.grid2}>
         <Field label="Category scope">
-          <select className={styles.select} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <Select block value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">All categories</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name} only</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Status">
-          <select className={styles.select} value={status} onChange={(e) => setStatus(e.target.value as CampaignStatus)}>
+          <Select block value={status} onChange={(e) => setStatus(e.target.value as CampaignStatus)}>
             <option value="DRAFT">Draft</option>
             <option value="ACTIVE">Active</option>
             <option value="PAUSED">Paused</option>
             <option value="ENDED">Ended</option>
-          </select>
+          </Select>
         </Field>
       </div>
     </Modal>

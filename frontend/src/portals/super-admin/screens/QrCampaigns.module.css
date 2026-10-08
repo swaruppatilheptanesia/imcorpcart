@@ -22,7 +22,7 @@
   flex-wrap: wrap;
 }
 .name {
-  font-size: 15px;
+  font-size: var(--fs-card);
   font-weight: 700;
 }
 .pct {
@@ -62,20 +62,18 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.select,
 .dt {
   width: 100%;
-  height: 42px;
+  height: var(--control-h);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--control-r);
   background: var(--surface2);
   color: var(--text);
   padding: 0 12px;
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--control-fs);
   outline: none;
 }
-.select:focus,
 .dt:focus {
   border-color: var(--accent);
 }

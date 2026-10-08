@@ -5,7 +5,16 @@
 
 import { apiFetch, apiUpload, type PageMeta } from './http';
 import { setToken, setUser, clearAuth, type AuthUser } from './auth-store';
-import type { Coupon, DateRange, Order, OrderStatus, Product, UserDataset, UserTab } from './types';
+import type {
+  Coupon,
+  DateRange,
+  Order,
+  OrderStatus,
+  Product,
+  UserDataset,
+  UserStatusFilter,
+  UserTab,
+} from './types';
 import {
   toProduct,
   toCoupon,
@@ -435,11 +444,30 @@ export function cancelOrder(idOrNo: string, note?: string): Promise<unknown> {
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
-export async function getUsers(tab: UserTab, opts: { q?: string; page?: number } = {}): Promise<UserDataset> {
+export interface UserListOpts {
+  q?: string;
+  status?: UserStatusFilter;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface UserListResult extends UserDataset {
+  meta: PageMeta;
+}
+
+export async function getUsers(tab: UserTab, opts: UserListOpts = {}): Promise<UserListResult> {
   const res = await apiFetch<Envelope<Record<string, unknown>[]>>('/users', {
-    query: { type: USER_TAB_TO_TYPE[tab], q: opts.q, page: opts.page },
+    query: {
+      type: USER_TAB_TO_TYPE[tab],
+      q: opts.q,
+      status: opts.status,
+      page: opts.page,
+      pageSize: opts.pageSize,
+    },
   });
-  return toUserDataset(tab, res.data);
+  // The list is paginated server-side (20/page by default), so the screen needs
+  // `meta` to page through it — without it only the first page was ever visible.
+  return { ...toUserDataset(tab, res.data), meta: res.meta };
 }
 
 export interface InviteUserInput {

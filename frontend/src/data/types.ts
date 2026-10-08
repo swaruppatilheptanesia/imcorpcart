@@ -134,6 +134,9 @@ export interface RecentOrder {
 /* ── Users ── */
 export type UserTab = 'companies' | 'employees' | 'resellers' | 'partners' | 'leasing';
 export type UserState = 'Active' | 'Suspended' | 'Invited' | 'Pending';
+// The status buckets the Users screen filters on — one vocabulary over both
+// OrgStatus (companies/resellers/partners/leasing) and UserStatus (employees).
+export type UserStatusFilter = 'active' | 'pending' | 'suspended' | 'invited';
 
 export interface UserRow {
   name: string;

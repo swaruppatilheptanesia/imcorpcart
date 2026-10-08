@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, AlertTriangle, Search, Eye } from 'lucide-react';
-import { Chip, Input, DataTable, Row, StatusPill, EmptyState, Skeleton } from '@/components';
+import { Chip, DataTable, EmptyState, Input, Row, Select, Skeleton, StatusPill } from '@/components';
 import { getOrders, orderStatusTone } from '@/data/api';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
@@ -53,16 +53,13 @@ export function Orders() {
     <div>
       <div className={s.toolbar}>
         <div className={s.search}>
-          <Search size={16} className={s.searchIcon} />
-          <Input
-            className={s.searchInput}
+          <Input icon={<Search size={16} />}
             placeholder="Search order no, product, or company"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <select
-          className={styles.vendorSelect}
+        <Select
           value={vendor}
           onChange={(e) => setVendor(e.target.value)}
           aria-label="Filter by vendor"
@@ -73,7 +70,7 @@ export function Orders() {
               {v}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <div className={styles.filters}>
