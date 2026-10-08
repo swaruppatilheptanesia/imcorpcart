@@ -49,3 +49,111 @@
   align-items: center;
   justify-content: space-between;
 }
+
+/* ── Collapsible section head (Brand) ──────────────────────────────────────
+   Expands inline, not as a popover: the sidebar is an overflow:auto box and
+   would clip an absolutely-positioned panel. Inline also works unchanged
+   inside the mobile sheet's own scroll region. */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+/* The overline carries a bottom margin for the static sections; inside the
+   clickable head the chevron must sit on the same line. */
+.sectionHead .overline {
+  flex: 1;
+  margin-bottom: 0;
+}
+.chev {
+  color: var(--text3);
+  transition: transform 0.15s ease;
+  flex: none;
+}
+.chevOpen {
+  transform: rotate(180deg);
+}
+/* Count of selected brands, so a collapsed section still shows it is filtering. */
+.badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Brand search ── */
+.searchWrap {
+  position: relative;
+  margin: 12px 0 6px;
+}
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.searchInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 28px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+.searchInput:focus {
+  border-color: var(--accent);
+}
+.searchInput::placeholder {
+  color: var(--text3);
+}
+
+/* Bounds the brand list so a 500-entry catalog can't stretch the rail. */
+.scrollList {
+  max-height: 260px;
+  overflow-y: auto;
+  /* Room for the scrollbar so it doesn't sit on top of the counts. */
+  padding-right: 4px;
+}
+.noMatch {
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text3);
+}
+
+/* ── "Show all categories" expander ── */
+.moreLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.moreLink .chev {
+  color: inherit;
+}

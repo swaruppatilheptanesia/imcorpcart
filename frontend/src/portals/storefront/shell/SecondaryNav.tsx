@@ -12,7 +12,7 @@ const ALL_KEY = '__all__';
 
 export function SecondaryNav() {
   const navigate = useNavigate();
-  const { setFilters } = useStore();
+  const { setFilters, setSearch } = useStore();
   const featured = featuredDepartments(); // curated inline departments
   const tree = categoryTree(); // full department list for the mega-menu
   // Which category's subcategory dropdown (or the mega-menu) is open (hover-driven).
@@ -20,6 +20,9 @@ export function SecondaryNav() {
 
   const pick = (category: StoreCategory, sub: string | null = null) => {
     setFilters({ category, sub, brands: [] });
+    // Picking a department is a fresh start. Carrying the search term over sent
+    // the shopper to a Home page still filtered by it — usually empty.
+    setSearch('');
     setOpenKey(null);
     navigate('/shop/home');
   };

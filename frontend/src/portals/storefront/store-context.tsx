@@ -297,6 +297,10 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
   const setFilters = useCallback((patch: Partial<FilterState>) => {
     setFiltersState((prev) => ({ ...prev, ...patch }));
   }, []);
+  // Filters only — deliberately not the search term. This also backs the
+  // "Clear all" button in the filter sidebar/panel, which sits next to a badge
+  // counting filters alone, so wiping the visible search box from there would
+  // be a surprise. The search screen's empty state clears both explicitly.
   const clearFilters = useCallback(
     () => setFiltersState({ ...DEFAULT_FILTERS, priceMax: priceCeil }),
     [priceCeil],

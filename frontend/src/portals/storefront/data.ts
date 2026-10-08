@@ -5,6 +5,7 @@
 import * as shop from '@/data/shop-api';
 import type { StoreProduct, StoreCoupon, FilterState, SortKey, StoreCategory, Review } from '@/data/store-types';
 import { PRICE_CEIL } from '@/data/store-types';
+import { matchesSearch, resetSearchIndex, scoreFor, tokenize } from './search';
 
 // The detail page needs the approved review list alongside the product.
 export type ProductDetail = StoreProduct & { reviewList: Review[] };
@@ -38,6 +39,7 @@ export function loadCatalog(authed?: boolean): Promise<void> {
       .then(([products, coupons]) => {
         CATALOG = products;
         COUPONS = coupons;
+        resetSearchIndex(); // the index is keyed on the product objects just replaced
       })
       .catch((e) => {
         loadPromise = null; // allow retry
@@ -80,12 +82,18 @@ export function matchesFilters(p: StoreProduct, f: FilterState, search: string):
   if (f.minRating && p.rating < f.minRating) return false;
   if (f.inStock && p.stock === 0) return false;
   if (p.price < f.priceMin || p.price > f.priceMax) return false;
-  if (search) {
-    // Vendor intentionally excluded — employees don't search by reseller.
-    const t = `${p.name} ${p.brand}`.toLowerCase();
-    if (!t.includes(search.toLowerCase())) return false;
-  }
+  // Vendor intentionally excluded — employees don't search by reseller.
+  if (search && !matchesSearch(p, search, () => searchableCategoryText(p))) return false;
   return true;
+}
+
+// The department and subcategory a product sits under, as the shopper sees them
+// in the nav — so "gift cards" finds the vouchers department and "emerging
+// brands" finds that shelf. Filtering uses the raw keys; these are the labels.
+function searchableCategoryText(p: StoreProduct): string {
+  const group = p.group ? `${p.group} ${catLabel(p.group)}` : '';
+  const sub = p.cat ? `${p.cat} ${subLabel(p.cat)}` : '';
+  return `${group} ${sub}`;
 }
 
 export function sortProducts(list: StoreProduct[], sort: SortKey): StoreProduct[] {
@@ -112,7 +120,22 @@ export interface CatalogQuery {
 
 export async function getCatalog(q: CatalogQuery): Promise<StoreProduct[]> {
   await loadCatalog();
-  return sortProducts(CATALOG.filter((p) => matchesFilters(p, q.filters, q.search)), q.sort);
+  const hits = CATALOG.filter((p) => matchesFilters(p, q.filters, q.search));
+  // Matching is deliberately broad, so "fold" also returns a foldable laptop
+  // stand. Rank by how well each product answers the query — but only for the
+  // default sort; an explicit price/rating/newest choice still wins.
+  if (q.search.trim() && q.sort === 'featured') return byRelevance(hits, q.search);
+  return sortProducts(hits, q.sort);
+}
+
+// Decorate-sort-undecorate: scoring inside a comparator would re-score each
+// product O(log n) times per keystroke.
+function byRelevance(list: StoreProduct[], search: string): StoreProduct[] {
+  const q = tokenize(search);
+  return list
+    .map((p, i) => ({ p, i, score: scoreFor(p, q, () => searchableCategoryText(p)) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i) // ties keep catalog order
+    .map((x) => x.p);
 }
 
 export async function getProductById(id: string): Promise<ProductDetail | undefined> {
@@ -148,6 +171,10 @@ const CAT_LABEL_OVERRIDE: Record<string, string> = {
 };
 export const catLabel = (slug: string) => CAT_LABEL_OVERRIDE[slug] ?? titleCase(slug);
 
+// Display-only label for a raw subcategory key (the raw key stays the filter
+// value): EMERGING_BRANDS → "Emerging Brands".
+export const subLabel = (key: string) => titleCase(key.replace(/_/g, ' ').toLowerCase());
+
 // Preferred order: the established departments first, then any new category
 // alphabetically — so the nav stays stable as categories are added.
 const CAT_ORDER = ['phones', 'accessories', 'bags', 'vouchers'];
@@ -177,6 +204,16 @@ export function departments(): { key: StoreCategory; label: string; count: numbe
     { key: 'all', label: 'All products', count: CATALOG.length },
     ...topGroups().map((g) => ({ key: g, label: catLabel(g), count: CATALOG.filter((p) => p.group === g).length })),
   ];
+}
+
+// The sidebar's Category facet, ranked by product count. The catalog carries ~37
+// top-level groups (33 of them vendor-import accessory types), which rendered as
+// one 37-row list; the facet shows the busiest few and hides the tail behind a
+// "show all". `departments()` keeps its CAT_ORDER ordering — topGroups() and
+// categoryTree() depend on it for the nav bar.
+export function rankedDepartments(): { key: StoreCategory; label: string; count: number }[] {
+  const [all, ...groups] = departments();
+  return [all, ...groups.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))];
 }
 
 // ─── Facet counts ────────────────────────────────────────────────────────────
@@ -221,8 +258,7 @@ function subsFor(cat: StoreCategory): SubFacet[] {
     map.set(key, (map.get(key) ?? 0) + 1);
   }
   return [...map.entries()]
-    // Display-only label cleanup (raw key is kept for filtering): EMERGING_BRANDS → "Emerging Brands".
-    .map(([key, count]) => ({ key, label: titleCase(key.replace(/_/g, ' ').toLowerCase()), count }))
+    .map(([key, count]) => ({ key, label: subLabel(key), count }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 

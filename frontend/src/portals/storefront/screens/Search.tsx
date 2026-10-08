@@ -65,8 +65,17 @@ export function Search() {
             <EmptyState
               icon={<PackageSearch size={24} />}
               title="No products match"
-              body="Try a different search term or clear the active filters."
-              action={{ label: 'Clear filters', onClick: clearFilters }}
+              body="Try a different search term, or clear your search and filters."
+              action={{
+                // Must clear the query too. This is the only way out of the
+                // empty state, and the query is usually what is excluding
+                // everything — resetting the filters alone left it stuck.
+                label: 'Clear search & filters',
+                onClick: () => {
+                  setSearch('');
+                  clearFilters();
+                },
+              }}
             />
           )}
           {state === 'live' && <ProductGrid items={items} />}

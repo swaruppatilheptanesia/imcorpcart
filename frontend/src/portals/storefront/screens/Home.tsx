@@ -28,7 +28,7 @@ export function Home() {
   const items = seppMode ? all.filter((p) => p.sepp?.withinLimit) : all;
 
   // Grouped sections only when browsing "all" with no narrowing facet.
-  const grouped = filters.category === 'all' && activeFilterCount === 0 && !search;
+  const grouped = filters.category === 'all' && activeFilterCount === 0 && !search.trim();
   const groups = grouped ? groupByCategory(items) : [];
 
   return (
