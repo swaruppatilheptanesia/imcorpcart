@@ -32,7 +32,7 @@ export function PurchaseModeToggle() {
           </div>
         </div>
       </div>
-      <Segmented options={OPTIONS} value={purchaseMode} onChange={setPurchaseMode} tone="accent" />
+      <Segmented options={OPTIONS} value={purchaseMode} onChange={setPurchaseMode} tone="fill" />
     </div>
   );
 }

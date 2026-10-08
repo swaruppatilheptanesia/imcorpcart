@@ -3,7 +3,7 @@ import { EmptyState } from '@/components';
 import { cn } from '@/lib/cn';
 import { inr } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
-import { categoryChips, sortOptions } from '@/data/fixtures/storefront';
+import { sortOptions } from '@/data/fixtures/storefront';
 import type { StoreProduct } from '@/data/store-types';
 import { useStore } from '../store-context';
 import { useShopShell } from '../shop-context';
@@ -16,7 +16,7 @@ import s from './store-screen.module.css';
 
 export function Home() {
   const { openFilter } = useShopShell();
-  const { filters, setFilters, sortBy, setSortBy, grid, setGrid, activeFilterCount, search, purchaseMode, sepp } = useStore();
+  const { filters, sortBy, setSortBy, grid, setGrid, activeFilterCount, search, purchaseMode, sepp } = useStore();
 
   const { data, state } = useAsync(
     () => getCatalog({ filters, search, sort: sortBy }),
@@ -35,18 +35,6 @@ export function Home() {
     <div>
       <PromoCarousel />
       <PurchaseModeToggle />
-
-      <div className={s.chips}>
-        {categoryChips.map((c) => (
-          <button
-            key={c.key}
-            className={cn(s.chip, filters.category === c.key && s.chipActive)}
-            onClick={() => setFilters({ category: c.key, brands: [] })}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
 
       <div className={s.catalogLayout}>
         <FilterSidebar />

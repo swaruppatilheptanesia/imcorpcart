@@ -103,13 +103,6 @@ export const trackingSteps = [
 ];
 
 // ─── Filter facet reference lists ────────────────────────────────────────────
-export const categoryChips: { key: import('../store-types').StoreCategory; label: string }[] = [
-  { key: 'all', label: 'All products' },
-  { key: 'phones', label: 'Phones' },
-  { key: 'accessories', label: 'Phone accessories' },
-  { key: 'bags', label: 'Bags' },
-];
-
 export const sortOptions: { key: import('../store-types').SortKey; label: string }[] = [
   { key: 'featured', label: 'Featured' },
   { key: 'priceAsc', label: 'Price: low to high' },

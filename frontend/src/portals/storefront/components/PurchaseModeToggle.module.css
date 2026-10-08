@@ -43,3 +43,23 @@
     align-items: stretch;
   }
 }
+
+/* The switch sits on an accent-tinted card, and the shared Segmented track is
+   --surface2 (#fafbfc) with a --surface (#fff) selected pill — a 1–2% difference
+   against this card, so the control read as static text rather than something you
+   press. Lift it here only (via the ARIA roles, which are stable; the CSS-module
+   class names are hashed) rather than restyling Segmented for every other portal. */
+.wrap [role='tablist'] {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* The unselected option was --text3 — the faintest text in the row, despite
+   "Smart EPP" being the mode we want people to notice. */
+.wrap [role='tab'][aria-selected='false'] {
+  color: var(--text2);
+}
+.wrap [role='tab'][aria-selected='false']:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
