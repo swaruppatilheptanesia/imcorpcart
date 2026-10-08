@@ -74,6 +74,8 @@ export interface StoreProduct extends Product {
   // Gift-card (Hubble voucher) product: the buyer picks an amount at checkout and
   // the code is delivered by email + in-app after purchase. Null for normal products.
   voucher?: VoucherSpec | null;
+  // % off the card's face value the employee pays (0 = pays face value).
+  voucherDiscountPct?: number;
   // Smart-EPP lease figures (only for a signed-in employee of a SEPP-enabled
   // company; null when the product can't be leased). Shown in Smart EPP mode.
   sepp?: import('./sepp-types').SeppProductBlock | null;

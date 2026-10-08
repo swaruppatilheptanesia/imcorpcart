@@ -16,6 +16,7 @@ router.get('/', asyncHandler(ctrl.list));
 router.get('/:id', validate({ params: idParam }), asyncHandler(ctrl.get));
 router.patch('/:id', validate({ params: idParam, body: updateSourceBody }), asyncHandler(ctrl.update));
 router.post('/:id/sync', validate({ params: idParam }), asyncHandler(ctrl.sync));
+router.post('/:id/reprice', validate({ params: idParam }), asyncHandler(ctrl.reprice));
 router.get('/:id/runs/:runId', validate({ params: runParams }), asyncHandler(ctrl.run));
 router.get('/:id/runs', validate({ params: idParam, query: runsQuery }), asyncHandler(ctrl.runs));
 router.get('/:id/products', validate({ params: idParam, query: runsQuery }), asyncHandler(ctrl.products));

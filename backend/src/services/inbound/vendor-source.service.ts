@@ -104,6 +104,16 @@ export async function listRuns(sourceId: string, query: RunsQuery) {
 
 const round = (n: number) => Math.round(n);
 
+// Our selling price for an imported product. Derived from the vendor's own
+// selling price (mop) when present, else the list mrp, so employees never pay
+// above what the vendor itself charges. Shared by the importer's CREATE branch
+// and `repriceSource` — if these two ever disagree, the "EPP = MRP − x%" the
+// admin screen promises stops being true for half the catalogue.
+export function eppFor(mrp: number, mop: number | null | undefined, discountPct: number): number {
+  const basis = mop ?? mrp;
+  return round(basis * (1 - discountPct / 100));
+}
+
 // Map a vendor category name through the optional config.categoryMap.
 function mappedCategory(vendorCat: string, config: Prisma.JsonValue | null): string {
   const map = config && typeof config === 'object' && !Array.isArray(config) ? (config as Record<string, unknown>).categoryMap : null;
@@ -156,13 +166,9 @@ async function upsertVendorProduct(
     optionVariant: row.optionVariant ?? null,
   };
 
-  // EPP is derived from the vendor's selling price (mop) when present, else the list mrp —
-  // so employees never pay above what the vendor itself charges.
-  const eppBasis = row.mop ?? row.mrp;
-
   if (!existing) {
     const catId = await upsertCategoryBySlug(mappedCategory(row.category, source.config), catCache);
-    const eppPrice = D(round(eppBasis * (1 - discountPct / 100)));
+    const eppPrice = D(eppFor(row.mrp, row.mop, discountPct));
     await prisma.product.create({
       data: {
         sku,
@@ -213,7 +219,7 @@ async function upsertVendorProduct(
         },
       });
     } else {
-      const eppPrice = D(round(eppBasis * (1 - discountPct / 100)));
+      const eppPrice = D(eppFor(row.mrp, row.mop, discountPct));
       await tx.productOffer.create({
         data: { productId: existing.id, resellerId: null, eppPrice, quantity: row.stock ?? 0, status: ProductStatus.ACTIVE, isActive: true },
       });
@@ -429,6 +435,62 @@ async function runImportJob(runId: string, source: VendorSourceFull, actorId?: s
   });
 }
 
+// ─── Reprice existing products ───────────────────────────────────────────────
+
+// Re-apply the source's discount to every product already imported from it.
+//
+// The importer prices a house offer only when it CREATES the product; a re-sync
+// deliberately preserves eppPrice so admin edits survive. That means changing
+// the discount never moved an existing price — the catalogue stayed at whatever
+// discount was configured on the day each product first appeared. This is the
+// explicit action that closes that gap; it is deliberately not automatic,
+// because repricing a whole catalogue should be something someone chose to do.
+//
+// It OVERWRITES hand-edited house prices — nothing records which prices were
+// set by a person, so the UI warns before calling this.
+export async function repriceSource(id: string, actorId?: string) {
+  const source = await prisma.vendorSource.findFirst({
+    where: { id, ...notDeleted },
+    select: { id: true, discountPct: true },
+  });
+  if (!source) throw AppError.notFound('Vendor source not found');
+  const discountPct = Number(source.discountPct);
+
+  // Only the house offer is ours to price — a reseller's own listing on the same
+  // product belongs to that reseller.
+  const offers = await prisma.productOffer.findMany({
+    where: { resellerId: null, product: { is: { sourceId: id, ...notDeleted } } },
+    select: { id: true, eppPrice: true, product: { select: { mrp: true, mop: true } } },
+  });
+
+  let repriced = 0;
+  // Chunked so a 500+ product catalogue doesn't open one enormous transaction.
+  for (let i = 0; i < offers.length; i += 100) {
+    const chunk = offers.slice(i, i + 100);
+    await prisma.$transaction(
+      chunk
+        .map((o) => {
+          const next = eppFor(Number(o.product.mrp), o.product.mop == null ? null : Number(o.product.mop), discountPct);
+          if (next === Number(o.eppPrice)) return null; // already correct — skip the write
+          repriced += 1;
+          return prisma.productOffer.update({ where: { id: o.id }, data: { eppPrice: D(next) } });
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null),
+    );
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: actorId ?? null,
+      action: 'catalog.vendor_reprice',
+      entityType: 'VendorSource',
+      entityId: id,
+      after: { discountPct, repriced, considered: offers.length },
+    },
+  });
+  return { repriced, considered: offers.length, discountPct };
+}
+
 // Hubble client wallet balance (ops aid on the vendor-source page — the client
 // tops it up offline). Only meaningful for the Hubble source; others return
 // unsupported. Never throws — a Hubble/network error surfaces as balance null.
@@ -470,6 +532,10 @@ export async function listSourceProducts(sourceId: string, query: RunsQuery) {
         status: true,
         hidden: true,
         externalRef: true,
+        // The discount basis, so the admin screen can show what our price was
+        // derived FROM — the feed's selling price when it sends one, else MRP.
+        mrp: true,
+        mop: true,
         offers: { where: { resellerId: null }, select: { eppPrice: true, quantity: true } },
       },
       orderBy: { updatedAt: 'desc' },

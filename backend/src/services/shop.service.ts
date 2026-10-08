@@ -41,8 +41,10 @@ const PRODUCT_STATUS_OUT: Record<ProductStatus, string> = {
 
 export const shopProductInclude = {
   category: { select: { slug: true, name: true } },
-  // Provenance — used to detect a gift-card (Hubble voucher) line at checkout.
-  source: { select: { adapter: true, active: true } },
+  // Provenance — used to detect a gift-card (Hubble voucher) line at checkout,
+  // and to price it: a voucher's price is the denomination the buyer picks, so
+  // the source's discount has to be applied on read rather than stored.
+  source: { select: { adapter: true, active: true, discountPct: true } },
   offers: {
     where: notDeleted,
     include: {
@@ -80,6 +82,20 @@ export function isVoucherProduct(p: ShopProductRow): boolean {
 }
 export function voucherSpecOf(p: ShopProductRow): VoucherSpec | null {
   return ((p.specs ?? {}) as Presentation).voucher ?? null;
+}
+
+// What the employee pays for a gift card of this face value.
+//
+// A voucher has no usable stored price — the buyer picks the amount at runtime,
+// so the house offer's eppPrice is only a "from" figure. The vendor source's
+// discount is therefore applied here, on read. The employee pays below face
+// value (₹490 for a ₹500 card) and the card is still ISSUED at ₹500: the face
+// value goes to Hubble untouched via VoucherFulfilment.denomination. Never
+// apply this discount to the issued amount, or we short-fund the card.
+export function voucherChargeFor(p: ShopProductRow, denomination: number): number {
+  const pct = p.source?.discountPct == null ? 0 : Number(p.source.discountPct);
+  if (!(pct > 0)) return denomination;
+  return Math.round(denomination * (1 - pct / 100));
 }
 
 // Validate a chosen gift-card amount against the brand's Hubble acceptance rules —
@@ -235,6 +251,11 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     // checkout picker + a flag so the storefront renders the amount selector and
     // the "code delivered after purchase" note. Null for normal products.
     voucher: isVoucherProduct(p) ? pres.voucher ?? { denominations: [], min: null, max: null, type: null } : null,
+    // % off the face value the employee pays for this gift card. The storefront
+    // needs it to show the real charge next to the denomination they picked —
+    // a voucher's price is chosen at runtime, so it can't come from the offer.
+    voucherDiscountPct:
+      isVoucherProduct(p) && p.source?.discountPct != null ? Number(p.source.discountPct) : 0,
     // Smart-EPP lease figures (null when SEPP isn't offered to this shopper or the
     // product can't be leased). The storefront switches to these in SEPP mode.
     sepp: opts.sepp && !opts.public ? seppBlockFor(p, winner, opts.sepp) : null,
@@ -474,7 +495,10 @@ function serializeCart(
       brand: p.brand,
       vendor: p.vendor,
       group: p.group, // category slug — for category-scoped discount preview
-      price: voucher && denomination ? denomination : p.price,
+      // What they'll be charged — face value less the source's discount.
+      price: voucher && denomination ? voucherChargeFor(it.product, denomination) : p.price,
+      // The card's face value, so the cart can show "₹490 · ₹500 value".
+      faceValue: denomination,
       mrp: p.mrp,
       image: p.image,
       images: p.images,
@@ -740,7 +764,7 @@ async function priceCart(userId: string, couponCode?: string, method?: PaymentMe
       it,
       p,
       resellerId: offer.resellerId ?? null,
-      unitPrice: voucher ? (denomination as number) : toNumber(offer.eppPrice),
+      unitPrice: voucher ? voucherChargeFor(it.product, denomination as number) : toNumber(offer.eppPrice),
       isVoucher: voucher,
       denomination,
     };

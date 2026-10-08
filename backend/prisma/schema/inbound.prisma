@@ -31,7 +31,10 @@ model VendorSource {
   // is the seller and the admin handles fulfilment. The vendor is only a tag on the
   // product (Product.sourceId/externalRef); there is no reseller entity.
 
-  // Pricing: our eppPrice = round(MRP × (1 − discountPct/100)).
+  // Pricing: our eppPrice = round(vendorPrice × (1 − discountPct/100)), where
+  // vendorPrice is the feed's selling price (mop) when it sends one, else mrp.
+  // Discounting the SELLING price (not the list price) is what keeps the
+  // employee price below the public price — mop is also the public price.
   discountPct Decimal @default(0) @map("discount_pct") @db.Decimal(5, 2)
 
   lastSyncedAt DateTime? @map("last_synced_at")

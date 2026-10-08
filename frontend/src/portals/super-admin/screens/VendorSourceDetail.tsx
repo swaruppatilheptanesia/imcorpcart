@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, RefreshCw, Download, Eye, EyeOff, Pencil } from 'lucide-react';
-import { Card, Button, Field, Input, Toggle, StatusPill, DataTable, Row, EmptyState, Skeleton, useToast } from '@/components';
+import { Card, Button, Field, Input, Modal, Toggle, StatusPill, DataTable, Row, EmptyState, Skeleton, useToast } from '@/components';
 import {
   getVendorSource,
   getVendorSourceRuns,
@@ -9,6 +9,7 @@ import {
   getVendorSourceRun,
   updateVendorSource,
   syncVendorSource,
+  repriceVendorSource,
   setProductHidden,
   getVendorWalletBalance,
   type VendorImportRun,
@@ -23,7 +24,7 @@ import s from './screen.module.css';
 import styles from './Partners.module.css';
 
 const RUN_COLS = '1.1fr 0.7fr 0.7fr 0.7fr 0.8fr 0.7fr 1.1fr';
-const PROD_COLS = '1.6fr 0.9fr 0.7fr 0.8fr 150px';
+const PROD_COLS = 'minmax(0, 1.6fr) 0.9fr 0.9fr 0.6fr 0.8fr 150px';
 const PROD_PAGE_SIZE = 20;
 const runTone: Record<string, SemanticTone> = {
   SUCCESS: 'success',
@@ -175,7 +176,7 @@ export function VendorSourceDetail() {
         <div>
           <div className={styles.detailName}>{source.name}</div>
           <div className={s.muted}>
-            {source.adapter} · first-party · {source._count?.products ?? 0} products · EPP = MRP − {source.discountPct}%
+            {source.adapter} · first-party · {source._count?.products ?? 0} products · EPP = vendor price − {source.discountPct}%
           </div>
         </div>
         <div className={styles.detailHeadActions}>
@@ -191,8 +192,9 @@ export function VendorSourceDetail() {
         <Card pad="lg">
           <div className={styles.cardTitle}>Sync</div>
           <p className={styles.cardHint}>
-            Pull the vendor's catalog. Products go <strong>live immediately</strong> as first-party at EPP = MRP −{' '}
-            {source.discountPct}%. Suspending the vendor (toggle above) hides all its products from the storefront.
+            Pull the vendor's catalog. Products go <strong>live immediately</strong> as first-party at EPP = vendor
+            price − {source.discountPct}%. Suspending the vendor (toggle above) hides all its products from the
+            storefront.
           </p>
           <Button onClick={runSync} disabled={syncing || !source.active}>
             <RefreshCw size={15} style={syncing ? { animation: 'saSpin 1s linear infinite' } : undefined} />{' '}
@@ -224,7 +226,7 @@ export function VendorSourceDetail() {
         ) : (
           <DataTable
             cols={PROD_COLS}
-            headers={['Product', 'Our price', 'Stock', 'On storefront', '']}
+            headers={['Product', 'Vendor price', 'Our price', 'Stock', 'On storefront', '']}
             footer={
               prodPageCount > 1 ? (
                 <>
@@ -252,6 +254,15 @@ export function VendorSourceDetail() {
                 <div className={styles.nameCell}>
                   <div className={styles.name}>{p.name}</div>
                   <span className={s.mono} style={{ fontSize: 11.5 }}>{p.externalRef}</span>
+                </div>
+                {/* The discount basis, shown next to the result so "EPP = vendor
+                    price − x%" is checkable at a glance. The list price appears
+                    only when the feed sends a different selling price. */}
+                <div className={s.muted}>
+                  {inr(p.mop ?? p.mrp)}
+                  {p.mop != null && p.mop !== p.mrp && (
+                    <span style={{ marginLeft: 6, textDecoration: 'line-through', opacity: 0.6 }}>{inr(p.mrp)}</span>
+                  )}
                 </div>
                 <div className={s.price}>{p.offers[0] ? inr(p.offers[0].eppPrice) : '—'}</div>
                 <div className={s.muted}>{p.offers[0]?.quantity ?? 0}</div>
@@ -370,12 +381,24 @@ function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSo
   const { flash } = useToast();
   const [discount, setDiscount] = useState(String(source.discountPct));
   const [busy, setBusy] = useState(false);
+  const [confirmReprice, setConfirmReprice] = useState(false);
+
+  const productCount = source._count?.products ?? 0;
+  // Blank or non-numeric would post 0 and silently wipe the discount.
+  const parsed = Number(discount);
+  const valid = discount.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100;
 
   const save = async () => {
+    if (!valid) {
+      flash('Enter a discount between 0 and 100');
+      return;
+    }
     setBusy(true);
     try {
-      await updateVendorSource(source.id, { discountPct: Number(discount) || 0 });
-      flash('Pricing updated (applies to the next sync; existing prices are preserved)');
+      await updateVendorSource(source.id, { discountPct: parsed });
+      // The importer prices a product only when it first creates it, so this
+      // saves the rule for future imports and changes nothing already imported.
+      flash('Saved — applies to newly imported products. Use "Apply to existing" to reprice the current catalogue.');
       onSaved();
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not save');
@@ -384,16 +407,68 @@ function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSo
     }
   };
 
+  const reprice = async () => {
+    setBusy(true);
+    try {
+      const r = await repriceVendorSource(source.id);
+      flash(
+        r.repriced === 0
+          ? `Already priced at vendor price − ${r.discountPct}% — nothing to change`
+          : `Repriced ${r.repriced} of ${r.considered} products to vendor price − ${r.discountPct}%`,
+      );
+      setConfirmReprice(false);
+      onSaved();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not reprice');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card pad="lg">
       <div className={styles.cardTitle}>Pricing</div>
-      <Field label="Our discount off MRP (%)">
+      <Field label="Our discount off the vendor's price (%)">
         <Input value={discount} onChange={(e) => setDiscount(e.target.value)} inputMode="numeric" />
       </Field>
       <div className={s.muted} style={{ fontSize: 12.5, margin: '2px 0 8px' }}>
-        We sell this vendor's products at EPP = MRP − this %. The vendor connection is set up by the team.
+        We sell this vendor's products at the vendor's price minus this %. Where the feed sends both a list price
+        (MRP) and a selling price, the <strong>selling price</strong> is the basis — that price is also what the
+        public pays, so the employee always pays less. The vendor connection is set up by the team.
       </div>
-      <Button variant="secondary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save pricing'}</Button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Button variant="secondary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save pricing'}</Button>
+        {productCount > 0 && (
+          <Button variant="secondary" onClick={() => setConfirmReprice(true)} disabled={busy}>
+            Apply to existing products
+          </Button>
+        )}
+      </div>
+
+      <Modal
+        open={confirmReprice}
+        onClose={() => setConfirmReprice(false)}
+        title="Reprice existing products"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmReprice(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={reprice} disabled={busy}>
+              {busy ? 'Repricing…' : `Reprice ${productCount}`}
+            </Button>
+          </>
+        }
+      >
+        <p className={s.muted} style={{ marginTop: 0, lineHeight: 1.55 }}>
+          Sets all {productCount} products from <strong>{source.name}</strong> to{' '}
+          <strong>vendor price − {source.discountPct}%</strong>.
+        </p>
+        <p className={s.muted} style={{ lineHeight: 1.55 }}>
+          Any price edited by hand on the Products screen will be replaced. Save the discount first if
+          you've just changed it.
+        </p>
+      </Modal>
     </Card>
   );
 }

@@ -24,6 +24,11 @@ export async function sync(req: Request, res: Response) {
   res.status(202).json(await service.startImport(getParam(req, 'id'), req.user?.id));
 }
 
+export async function reprice(req: Request, res: Response) {
+  // Re-applies the source's discount to every product already imported from it.
+  res.json(await service.repriceSource(getParam(req, 'id'), req.user?.id));
+}
+
 export async function runs(req: Request, res: Response) {
   res.json(await service.listRuns(getParam(req, 'id'), getQuery<RunsQuery>(req)));
 }

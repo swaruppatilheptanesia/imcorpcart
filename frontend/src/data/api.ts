@@ -1148,6 +1148,11 @@ export interface VendorSourceProduct {
   status: string;
   hidden: boolean;
   externalRef: string | null;
+  /** List price from the feed. */
+  mrp: number;
+  /** The feed's selling price, when it sends one. This — not mrp — is the
+   *  discount basis, and it is also the public storefront price. */
+  mop: number | null;
   offers: { eppPrice: number; quantity: number }[];
 }
 
@@ -1167,6 +1172,16 @@ export function updateVendorSource(id: string, body: VendorSourceUpdate): Promis
 /** Kicks off a background sync; returns the RUNNING run to poll (202). */
 export function syncVendorSource(id: string): Promise<VendorImportRun> {
   return apiFetch(`/vendor-sources/${id}/sync`, { method: 'POST' });
+}
+
+/**
+ * Re-apply the source's discount to every product already imported from it.
+ * The importer only prices a product when it first creates it, so changing the
+ * discount leaves the existing catalogue untouched until this is called.
+ * Overwrites hand-edited house prices.
+ */
+export function repriceVendorSource(id: string): Promise<{ repriced: number; considered: number; discountPct: number }> {
+  return apiFetch(`/vendor-sources/${id}/reprice`, { method: 'POST' });
 }
 
 /** Poll one import run for live progress. */

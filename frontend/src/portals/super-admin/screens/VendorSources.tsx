@@ -60,7 +60,7 @@ export function VendorSources() {
                 <StatusPill label={v.active ? v.status : 'Suspended'} tone={v.active ? statusTone[v.status] : 'neutral'} />
               </div>
               <div className={s.muted}>{v.adapter}</div>
-              <div className={s.muted}>EPP = MRP − {v.discountPct}%</div>
+              <div className={s.muted}>EPP = vendor price − {v.discountPct}%</div>
               <div className={s.muted}>{v._count?.products ?? 0}</div>
               <div className={s.muted}>{v.lastSyncedAt ? fmtDate(v.lastSyncedAt) : 'Never'}</div>
               <div />

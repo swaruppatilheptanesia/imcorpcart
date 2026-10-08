@@ -103,7 +103,12 @@ function Detail({ p }: { p: ProductDetail }) {
   const voucherAmount = isVoucher ? (isFlexible ? (withinRange ? customNum : null) : amount) : null;
   // Cart key: normal products use the colour name; vouchers use the amount token.
   const lineShade = isVoucher ? (voucherAmount != null ? String(voucherAmount) : '') : shade?.name ?? '';
-  const displayPrice = isVoucher && voucherAmount ? voucherAmount : p.price;
+  // A discounted gift card is charged below its face value — the card is still
+  // issued at the full amount. Mirrors voucherChargeFor() on the server.
+  const voucherPct = p.voucherDiscountPct ?? 0;
+  const voucherCharge =
+    voucherAmount != null && voucherPct > 0 ? Math.round(voucherAmount * (1 - voucherPct / 100)) : voucherAmount;
+  const displayPrice = isVoucher && voucherCharge ? voucherCharge : p.price;
   const canBuy = seppMode
     ? Boolean(seppView?.withinLimit) && shadeStock > 0
     : isVoucher
@@ -462,8 +467,19 @@ function Detail({ p }: { p: ProductDetail }) {
               <div className={styles.priceBlock}>
                 <span className={styles.price}>{inr(displayPrice)}</span>
                 {!isVoucher && p.mrp > displayPrice && <span className={styles.mrp}>{inr(p.mrp)}</span>}
+                {/* A discounted card costs less than it's worth — show both, or
+                    the lower figure just looks like the wrong denomination. */}
+                {isVoucher && voucherAmount != null && voucherCharge !== voucherAmount && (
+                  <span className={styles.mrp}>{inr(voucherAmount)}</span>
+                )}
                 <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MOP'}</span>
               </div>
+              {isVoucher && voucherAmount != null && voucherCharge !== voucherAmount && (
+                <div className={styles.savings}>
+                  {inr(voucherAmount)} card for {inr(voucherCharge as number)} · save{' '}
+                  {inr(voucherAmount - (voucherCharge as number))}
+                </div>
+              )}
               {!isVoucher && authed && savings > 0 && <div className={styles.savings}>{inr(savings)} EPP savings</div>}
               {p.cashback > 0 && (
                 <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
