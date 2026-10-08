@@ -133,7 +133,10 @@ function Detail({ p }: { p: ProductDetail }) {
     family.find((m) => m.optionVariant === variant);
   const goToSibling = (color: string | null, variant: string | null) => {
     const m = pickSibling(color, variant);
-    if (m && m.id !== p.id) navigate(`/shop/product/${m.id}`);
+    // Swapping colour/storage is a change *within* this product, even though it
+    // routes to a sibling SKU — keepScroll stops ScrollToTop yanking the reader
+    // back to the top of the page mid-selection.
+    if (m && m.id !== p.id) navigate(`/shop/product/${m.id}`, { state: { keepScroll: true } });
   };
 
   // Share this product — native share sheet, else copy the deep-link.

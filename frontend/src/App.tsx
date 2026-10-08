@@ -5,17 +5,21 @@ import ResellerApp from './portals/reseller/ResellerApp';
 import StorefrontApp from './portals/storefront/StorefrontApp';
 import LeasingApp from './portals/leasing/LeasingApp';
 import { AuthGate } from './auth/AuthGate';
+import { ScrollToTop } from './lib/ScrollToTop';
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/super-admin/*" element={<SuperAdminApp />} />
-      <Route path="/company/*" element={<CompanyApp />} />
-      <Route path="/reseller/*" element={<ResellerApp />} />
-      <Route path="/shop/*" element={<StorefrontApp />} />
-      <Route path="/leasing/*" element={<LeasingApp />} />
-      <Route path="/" element={<AuthGate />} />
-      <Route path="*" element={<AuthGate />} />
-    </Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
+        <Route path="/super-admin/*" element={<SuperAdminApp />} />
+        <Route path="/company/*" element={<CompanyApp />} />
+        <Route path="/reseller/*" element={<ResellerApp />} />
+        <Route path="/shop/*" element={<StorefrontApp />} />
+        <Route path="/leasing/*" element={<LeasingApp />} />
+        <Route path="/" element={<AuthGate />} />
+        <Route path="*" element={<AuthGate />} />
+      </Routes>
+    </>
   );
 }
