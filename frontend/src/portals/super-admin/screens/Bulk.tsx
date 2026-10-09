@@ -8,10 +8,24 @@ import styles from './Bulk.module.css';
 const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/imcorpcart_products_template.xlsx`;
 
 // Columns whose values should be coerced to numbers before POSTing.
-const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'gst_percent', 'epp_price', 'smart_epp_price', 'stock_quantity']);
+const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'epp_price', 'smart_epp_price', 'stock_quantity']);
+
+// Percentage columns are deliberately kept OUT of NUMERIC. The client writes
+// "18%", and Number('18%') is NaN, which JSON-serialises to null and is then
+// coerced to 0 on the server — a silently wrong GST rate rather than an error.
+// Strip the sign here and let the server validate what's left.
+const PERCENT = new Set(['gst_percent', 'protection_plan_pct']);
 
 // Minimal CSV parser (handles quoted fields + commas). Returns row objects keyed
 // by the header row, with numeric columns coerced.
+//
+// Every header becomes a key, INCLUDING one whose cell is empty — that is what
+// lets the importer tell "column present and blank, so clear the field" from
+// "column absent, so leave it alone". Dropping empty cells (the original
+// behaviour) made the two indistinguishable, so neither intent was expressible.
+//
+// Known limitation: lines are split before quotes are honoured, so a newline
+// inside a quoted cell breaks the row. Multi-value cells are pipe-separated.
 function parseCsv(text: string): Record<string, unknown>[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
   if (lines.length < 2) return [];
@@ -39,8 +53,18 @@ function parseCsv(text: string): Record<string, unknown>[] {
     const cells = split(line);
     const row: Record<string, unknown> = {};
     headers.forEach((h, i) => {
+      if (!h) return; // trailing comma in the header row
       const v = cells[i] ?? '';
-      if (v === '') return;
+      // Posted as '' so the server reads it as "clear this field".
+      if (v === '') {
+        row[h] = '';
+        return;
+      }
+      if (PERCENT.has(h)) {
+        const n = Number(v.replace(/[%\s,]/g, ''));
+        row[h] = Number.isFinite(n) ? n : v; // non-numeric → let the server name the field
+        return;
+      }
       row[h] = NUMERIC.has(h) ? Number(v) : v;
     });
     return row;

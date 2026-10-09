@@ -163,6 +163,8 @@ export interface ResellerOrderRow {
   itemCount: number;
   shipmentStatus: string | null;
   awb: string | null;
+  /** The first line's product's preferred courier — pre-selects the transit form. */
+  courierCode: string | null;
 }
 
 export async function getResellerOrders(bucket?: string): Promise<ResellerOrderRow[]> {
@@ -180,6 +182,7 @@ export async function getResellerOrders(bucket?: string): Promise<ResellerOrderR
     itemCount: o.items?.length ?? 0,
     shipmentStatus: o.shipment?.status ?? null,
     awb: o.shipment?.awbNumber ?? null,
+    courierCode: o.items?.find((it) => it.product?.courierCode)?.product.courierCode ?? null,
   }));
 }
 

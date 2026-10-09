@@ -57,6 +57,33 @@ model Product {
   termsText    String?  @map("terms_text") // Terms & Conditions
   warrantyText String?  @map("warranty_text") // Warranty T&C
 
+  // Statutory origin label shown on the product page (India, China, Vietnam …).
+  countryOfOrigin String? @map("country_of_origin")
+
+  // Authored point-wise copy. `aboutItem` empty = the product page falls back to
+  // the list it synthesises from freebie/variants/shades/stock. `inTheBox`
+  // supersedes the legacy free-text `specs.rows` entry keyed "In the box", which
+  // is still read as a fallback for products authored before this existed.
+  aboutItem String[] @default([]) @map("about_item")
+  inTheBox  String[] @default([]) @map("in_the_box")
+
+  // 3–4 SKUs shown as "Frequently bought together". Stored as SKU TEXT, not a FK:
+  // the bulk sheet forward-references SKUs the per-row importer has not created
+  // yet, so a relation would fail purely on sheet order. Resolved on read;
+  // unknown SKUs are skipped.
+  frequentlyBoughtSkus String? @map("frequently_bought_skus")
+
+  // ADLD & theft protection plan offered on this product, priced as a % of the
+  // EPP price (Amazon-style). DISPLAY-ONLY today: the amount is shown on the
+  // product page, but there is no purchase flow, cart line or order line.
+  // Unrelated to `Company.adldPct`, which is Smart-EPP *lease* insurance.
+  protectionPlanAvailable Boolean  @default(false) @map("protection_plan_available")
+  protectionPlanPct       Decimal? @map("protection_plan_pct") @db.Decimal(5, 2)
+
+  // Preferred courier, pre-selected when staff dispatch an order containing this
+  // product. A hint, never enforced — a courier may not serve the pincode.
+  courierCode CourierCode? @map("courier_code")
+
   // Legacy single-seller FK. DEPRECATED by the marketplace ProductOffer model
   // (a product can have many resellers). Kept nullable for back-compat; new
   // products leave it null and derive sellers from `offers`.

@@ -24,7 +24,7 @@ export async function getProducts(): Promise<StoreProduct[]> {
   return r.data;
 }
 
-export function getProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
+export function getProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; boughtTogether: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
   return client.apiFetch(`/shop/products/${id}`);
 }
 
@@ -45,7 +45,7 @@ export async function getPublicProducts(): Promise<StoreProduct[]> {
   return r.data;
 }
 
-export function getPublicProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
+export function getPublicProduct(id: string): Promise<{ product: StoreProduct; related: StoreProduct[]; boughtTogether: StoreProduct[]; family: FamilyMember[]; reviews: Review[] }> {
   return client.apiFetch(`/catalog/products/${id}`, { auth: false });
 }
 

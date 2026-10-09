@@ -164,6 +164,13 @@ export interface RawProductDetail {
   cashbackValue: number | null;
   hsnCode: string | null;
   gstPercent: number | null;
+  countryOfOrigin: string | null;
+  aboutItem: string[];
+  inTheBox: string[];
+  protectionPlanAvailable: boolean;
+  protectionPlanPct: number | null;
+  frequentlyBoughtSkus: string | null;
+  courierCode: string | null;
   termsText: string | null;
   warrantyText: string | null;
   familyKey: string | null;
@@ -199,8 +206,15 @@ export interface ProductInput {
   mop?: number;
   cashbackType?: 'NONE' | 'PERCENT' | 'FIXED';
   cashbackValue?: number;
-  hsnCode?: string;
-  gstPercent?: number;
+  hsnCode?: string | null;
+  gstPercent?: number | null;
+  countryOfOrigin?: string | null;
+  aboutItem?: string[];
+  inTheBox?: string[];
+  protectionPlanAvailable?: boolean;
+  protectionPlanPct?: number | null;
+  frequentlyBoughtSkus?: string | null;
+  courierCode?: string | null;
   termsText?: string;
   warrantyText?: string;
   familyKey?: string | null;
@@ -231,6 +245,13 @@ function toProductBody(input: ProductInput) {
     cashbackValue: input.cashbackValue,
     hsnCode: input.hsnCode,
     gstPercent: input.gstPercent,
+    countryOfOrigin: input.countryOfOrigin,
+    aboutItem: input.aboutItem,
+    inTheBox: input.inTheBox,
+    protectionPlanAvailable: input.protectionPlanAvailable,
+    protectionPlanPct: input.protectionPlanPct,
+    frequentlyBoughtSkus: input.frequentlyBoughtSkus,
+    courierCode: input.courierCode,
     termsText: input.termsText,
     warrantyText: input.warrantyText,
     familyKey: input.familyKey,

@@ -38,7 +38,8 @@ export function TransitDrawer({ open, order, onClose, onSaved }: Props) {
     if (!open) return;
     setStatus((order?.shipmentStatus as TransitUpdateInput['status']) ?? 'DISPATCHED');
     setAwb(order?.awb ?? '');
-    setCourier(undefined);
+    // Pre-select the courier assigned to the product, still fully overridable.
+    setCourier((order?.courierCode as TransitUpdateInput['courierCode']) ?? undefined);
     setNote('');
   }, [open, order]);
 

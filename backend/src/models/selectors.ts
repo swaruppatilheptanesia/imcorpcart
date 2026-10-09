@@ -78,7 +78,14 @@ export const orderListSelect = {
     select: {
       quantity: true,
       product: {
-        select: { name: true, reseller: { select: { name: true } }, sourceId: true, source: { select: { name: true } } },
+        select: {
+          name: true,
+          // courierCode: pre-selects the courier in the reseller's transit drawer.
+          courierCode: true,
+          reseller: { select: { name: true } },
+          sourceId: true,
+          source: { select: { name: true } },
+        },
       },
     },
   },
@@ -111,7 +118,18 @@ export const orderFullInclude = {
       shade: true,
       substitution: true,
       voucherFulfilment: { select: { status: true, denomination: true, deliveredAt: true } },
-      product: { select: { id: true, name: true, sku: true, sourceId: true, source: { select: { name: true } } } },
+      // courierCode: the product's preferred courier, used to pre-select the
+      // courier when staff dispatch this order.
+      product: {
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          sourceId: true,
+          courierCode: true,
+          source: { select: { name: true } },
+        },
+      },
     },
   },
   statusHistory: {

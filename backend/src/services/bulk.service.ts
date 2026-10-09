@@ -6,6 +6,7 @@ import { notDeleted } from '../models/selectors';
 import { slugishFamily } from './product-write';
 import {
   D,
+  DN,
   parseImageUrls,
   parseSpecRows,
   upsertCategoryBySlug,
@@ -56,8 +57,10 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
       const outcome = await upsertImportedProduct({
         sku: row.sku,
         scalars: scal,
-        specRows: parseSpecRows(row.spec_rows),
-        images: parseImageUrls(row.image_urls),
+        // `null` (not []) when the column was present but blank, so the update
+        // path can tell "clear these" from "the sheet didn't mention them".
+        specRows: row.spec_rows === undefined ? undefined : parseSpecRows(row.spec_rows),
+        images: row.image_urls === undefined ? undefined : parseImageUrls(row.image_urls),
         offer: { resellerId: null, ...houseOfferData(row, scal.status) },
       });
       if (outcome === 'created') result.created += 1;
@@ -80,40 +83,63 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
 }
 
 // Shared master-scalar mapping so create + update stay in sync.
+// Row → Product scalars.
+//
+// Values are passed through UNTOUCHED on purpose. The row schema has already
+// mapped an empty cell to `null` (clear) and left an absent column `undefined`
+// (preserve), and Prisma honours exactly that distinction: it skips `undefined`
+// and writes `null`. The old `?? null` coercions here collapsed the two, which is
+// why a price-only update sheet used to wipe unrelated fields.
 function productScalars(row: BulkImportRow, categoryId: string) {
-  const status = (row.status as ProductStatus) ?? ProductStatus.DRAFT;
   return {
     name: row.name,
     brand: row.brand,
     description: row.description,
     categoryId,
     subCategory: row.sub_category,
-    status,
-    smartEpp: row.smart_epp ?? false,
+    status: row.status ?? undefined,
+    smartEpp: row.smart_epp,
     mrp: D(row.mrp),
-    mop: row.mop_price !== undefined ? D(row.mop_price) : null,
-    cashbackType: row.cashback_type ?? 'NONE',
-    cashbackValue: row.cashback_value !== undefined ? D(row.cashback_value) : null,
-    hsnCode: row.hsn_code ?? null,
-    gstPercent: row.gst_percent !== undefined ? D(row.gst_percent) : null,
-    termsText: row.terms_text ?? null,
-    warrantyText: row.warranty_text ?? null,
+    mop: DN(row.mop_price),
+    cashbackType: row.cashback_type,
+    cashbackValue: DN(row.cashback_value),
+    hsnCode: row.hsn_code,
+    gstPercent: DN(row.gst_percent),
+    termsText: row.terms_text,
+    warrantyText: row.warranty_text,
+    countryOfOrigin: row.country_of_origin,
+    aboutItem: row.about_item,
+    inTheBox: row.in_the_box,
+    frequentlyBoughtSkus: normaliseSkuList(row.frequently_bought_skus),
+    protectionPlanAvailable: row.protection_plan,
+    protectionPlanPct: DN(row.protection_plan_pct),
+    courierCode: row.courier_partner,
     colorOptions: row.color_options,
     variantOptions: row.variant_options,
-    familyKey: row.family_key ? slugishFamily(row.family_key) : null,
-    optionColor: row.option_color ?? null,
-    optionVariant: row.option_variant ?? null,
-    freebieText: row.freebie_text ?? null,
+    familyKey: row.family_key ? slugishFamily(row.family_key) : row.family_key,
+    optionColor: row.option_color,
+    optionVariant: row.option_variant,
+    freebieText: row.freebie_text,
   };
 }
 
-function houseOfferData(row: BulkImportRow, status: ProductStatus) {
+// "RM-C100X-G64, AC-CASE-01 | AC-GLASS-02" → "RM-C100X-G64,AC-CASE-01,AC-GLASS-02".
+// Stored canonically so the read side can split on a single separator.
+function normaliseSkuList(raw: string | null | undefined): string | null | undefined {
+  if (raw === undefined || raw === null) return raw;
+  const skus = raw.split(/[,|]/).map((x) => x.trim()).filter(Boolean);
+  return skus.length ? skus.join(',') : null;
+}
+
+// The house offer mirrors the product's status, so the sheet can activate a
+// product and its listing in one cell. An ABSENT status column leaves both
+// alone (and on create Prisma applies the schema defaults).
+function houseOfferData(row: BulkImportRow, status: ProductStatus | undefined) {
   return {
     eppPrice: D(row.epp_price),
-    smartEppPrice: row.smart_epp_price !== undefined ? D(row.smart_epp_price) : null,
-    quantity: row.stock_quantity ?? 0,
-    status,
-    isActive: status === ProductStatus.ACTIVE,
+    smartEppPrice: DN(row.smart_epp_price),
+    quantity: row.stock_quantity,
+    ...(status ? { status, isActive: status === ProductStatus.ACTIVE } : {}),
   };
 }
 

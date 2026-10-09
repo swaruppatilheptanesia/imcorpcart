@@ -72,6 +72,7 @@ export interface OrderItem {
   qty: number;
   price: number;
   vendorTag?: string | null; // inbound import vendor (source name), null for house/first-party
+  courierCode?: string | null; // the product's preferred courier (prefills dispatch)
   denomination?: number | null; // gift-card face value (voucher lines only)
   fulfilmentStatus?: string | null; // PENDING | PROCESSING | DELIVERED | FAILED (voucher lines only)
   deliveredAt?: string | null; // when the voucher code was issued + emailed

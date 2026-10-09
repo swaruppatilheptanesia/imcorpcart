@@ -85,31 +85,45 @@ export const reportDefs: ReportDef[] = [
   { id: 'company', title: 'Company intelligence', desc: 'Spend, headcount, and adoption per company.', range: 'Year to date' },
 ];
 
-/** Bulk import column mapping — mirrors the downloadable product template. */
-export const mappingRows = [
-  { csv: 'sku', field: 'products.sku' },
-  { csv: 'name', field: 'products.name' },
-  { csv: 'category', field: 'products.categoryId' },
+/** Bulk import column mapping, shown to the client on the Bulk operations screen.
+ *  MIRRORS the COLUMNS array in scripts/generate-product-template.mjs, which is
+ *  the source of truth — keep the same order and update both on every column
+ *  change. (This list had drifted to 23 of 27 columns before being regenerated.) */
+export const mappingRows: { csv: string; field: string; required?: boolean }[] = [
+  { csv: 'sku', field: 'products.sku (unique)', required: true },
+  { csv: 'name', field: 'products.name', required: true },
+  { csv: 'brand', field: 'products.brand' },
+  { csv: 'description', field: 'products.description' },
+  { csv: 'category', field: 'products.categoryId (matched/created by name)', required: true },
   { csv: 'sub_category', field: 'products.sub_category' },
   { csv: 'color_options', field: 'products.color_options' },
   { csv: 'variant_options', field: 'products.variant_options' },
-  { csv: 'family_key', field: 'products.family_key (variant family)' },
+  { csv: 'family_key', field: 'products.family_key (variant-family group)' },
   { csv: 'option_color', field: "products.option_color (this SKU's colour)" },
-  { csv: 'option_variant', field: "products.option_variant (storage/size)" },
-  { csv: 'freebie_text', field: 'products.freebie_text' },
-  { csv: 'smart_epp', field: 'products.smart_epp (Y/N)' },
-  { csv: 'mrp', field: 'products.mrp' },
-  { csv: 'mop_price', field: 'products.mop' },
-  { csv: 'cashback_type', field: 'products.cashback_type (NONE/PERCENT/FIXED)' },
-  { csv: 'cashback_value', field: 'products.cashback_value (% or ₹/unit)' },
+  { csv: 'option_variant', field: "products.option_variant (this SKU's storage/size)" },
+  { csv: 'spec_rows', field: 'products.specs → rows[] (spec table on the product page)' },
+  { csv: 'about_item', field: 'products.about_item → the About-this-item bullets' },
+  { csv: 'in_the_box', field: 'products.in_the_box → the box-contents list' },
+  { csv: 'freebie_text', field: 'products.freebie_text (free-gift note)' },
+  { csv: 'status', field: 'products.status (default DRAFT)' },
+  { csv: 'smart_epp', field: 'products.smart_epp · comes under Smart EPP (SAPP)' },
+  { csv: 'mrp', field: 'products.mrp · list price (₹)', required: true },
+  { csv: 'mop_price', field: 'products.mop · public/pre-login price (₹, defaults to mrp)' },
+  { csv: 'cashback_type', field: 'products.cashback_type' },
+  { csv: 'cashback_value', field: 'products.cashback_value' },
   { csv: 'hsn_code', field: 'products.hsn_code' },
-  { csv: 'gst_percent', field: 'products.gst_percent (%)' },
-  { csv: 'terms_text', field: 'products.terms_text (T&C)' },
+  { csv: 'gst_percent', field: 'products.gst_percent' },
+  { csv: 'terms_text', field: 'products.terms_text' },
   { csv: 'warranty_text', field: 'products.warranty_text' },
-  { csv: 'epp_price', field: 'house offer eppPrice' },
-  { csv: 'smart_epp_price', field: 'house offer smartEppPrice' },
-  { csv: 'stock_quantity', field: 'house offer quantity' },
-  { csv: 'image_urls', field: 'product_images.url' },
+  { csv: 'country_of_origin', field: 'products.country_of_origin' },
+  { csv: 'protection_plan', field: 'products.protection_plan_available (ADLD & theft)' },
+  { csv: 'protection_plan_pct', field: 'products.protection_plan_pct' },
+  { csv: 'frequently_bought_skus', field: 'products.frequently_bought_skus → Frequently bought together' },
+  { csv: 'courier_partner', field: 'products.courier_code (dispatch default)' },
+  { csv: 'epp_price', field: 'house offer eppPrice · EPP price (₹)', required: true },
+  { csv: 'smart_epp_price', field: 'house offer smartEppPrice · Smart-EPP price (₹)' },
+  { csv: 'stock_quantity', field: 'house offer quantity (stock)', required: true },
+  { csv: 'image_urls', field: 'product_images.url + position (first = primary)' },
 ];
 
 /** Login demo accounts — the seeded Super Admin (see backend/prisma/seed.ts). */

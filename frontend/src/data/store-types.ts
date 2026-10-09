@@ -55,6 +55,14 @@ export interface StoreProduct extends Product {
   gstPercent?: number | null;
   termsText?: string;
   warrantyText?: string;
+  countryOfOrigin?: string | null;
+  /** Authored "About this item" bullets. Empty → the product page synthesises them. */
+  aboutItem?: string[];
+  /** Authored "What's in the box" bullets (falls back to the legacy spec row). */
+  inTheBox?: string[];
+  /** ADLD & theft plan. Display-only: `amount` is already computed off the shown
+   *  price server-side, so the UI never re-derives money. */
+  protectionPlan?: { pct: number; amount: number } | null;
   rating: number; // 0..5
   reviews: number;
   desc: string;

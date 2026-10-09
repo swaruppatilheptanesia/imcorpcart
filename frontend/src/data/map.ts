@@ -296,6 +296,7 @@ interface ApiOrderItem {
     name: string;
     optionColor?: string | null;
     sourceId?: string | null;
+    courierCode?: string | null;
     source?: { name: string } | null;
   };
 }
@@ -325,6 +326,8 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
       qty: it.quantity,
       price: it.unitPrice,
       vendorTag: it.product.source?.name ?? null,
+      // The product's preferred courier, used to pre-select it at dispatch.
+      courierCode: it.product.courierCode ?? null,
       // Flatten the nested voucher fulfilment so the OrderDetail components stay stable.
       denomination: it.voucherFulfilment?.denomination ?? null,
       fulfilmentStatus: it.voucherFulfilment?.status ?? null,

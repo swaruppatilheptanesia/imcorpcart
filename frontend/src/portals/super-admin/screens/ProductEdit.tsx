@@ -29,6 +29,9 @@ function darken(hex: string, factor = 0.6): string {
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 }
 
+// Mirrors the CourierCode enum. The same list the transit drawers offer.
+const COURIERS = ['BLUEDART', 'DELHIVERY', 'DTDC', 'EKART', 'INDIA_POST'] as const;
+
 export function ProductEdit() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -111,6 +114,16 @@ function EditForm({
   const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
   const [gstPercent, setGstPercent] = useState(product?.gstPercent != null ? String(product.gstPercent) : '');
   const [warrantyText, setWarrantyText] = useState(product?.warrantyText ?? '');
+  const [countryOfOrigin, setCountryOfOrigin] = useState(product?.countryOfOrigin ?? '');
+  // Point-wise copy. Edited as repeating single-line rows, mirroring spec rows.
+  const [aboutItem, setAboutItem] = useState<string[]>(product?.aboutItem ?? []);
+  const [inTheBox, setInTheBox] = useState<string[]>(product?.inTheBox ?? []);
+  const [protectionPlan, setProtectionPlan] = useState(product?.protectionPlanAvailable ?? false);
+  const [protectionPct, setProtectionPct] = useState(
+    product?.protectionPlanPct != null ? String(product.protectionPlanPct) : '',
+  );
+  const [fbtSkus, setFbtSkus] = useState(product?.frequentlyBoughtSkus ?? '');
+  const [courierCode, setCourierCode] = useState(product?.courierCode ?? '');
   const [termsText, setTermsText] = useState(product?.termsText ?? '');
   const [familyKey, setFamilyKey] = useState(product?.familyKey ?? '');
   const [optionColor, setOptionColor] = useState(product?.optionColor ?? '');
@@ -135,6 +148,15 @@ function EditForm({
   const setSpec = (i: number, patch: Partial<ProductSpecRow>) =>
     setSpecRows((xs) => xs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const removeSpec = (i: number) => setSpecRows((xs) => xs.filter((_, j) => j !== i));
+
+  // One editor shape for both bullet lists — same add/set/remove idiom as specs.
+  const bulletOps = (set: typeof setAboutItem) => ({
+    add: () => set((xs) => [...xs, '']),
+    change: (i: number, v: string) => set((xs) => xs.map((b, j) => (j === i ? v : b))),
+    remove: (i: number) => set((xs) => xs.filter((_, j) => j !== i)),
+  });
+  const aboutOps = bulletOps(setAboutItem);
+  const boxOps = bulletOps(setInTheBox);
 
   const onFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
@@ -176,6 +198,21 @@ function EditForm({
       gstPercent: gstPercent ? Number(gstPercent) : undefined,
       warrantyText: warrantyText.trim() || undefined,
       termsText: termsText.trim() || undefined,
+      countryOfOrigin: countryOfOrigin.trim() || null,
+      // Blank rows dropped — an empty bullet would render as an empty <li>.
+      aboutItem: aboutItem.map((b) => b.trim()).filter(Boolean),
+      inTheBox: inTheBox.map((b) => b.trim()).filter(Boolean),
+      protectionPlanAvailable: protectionPlan,
+      // A rate without a plan to attach it to is meaningless, so clear it.
+      protectionPlanPct: protectionPlan && protectionPct ? Number(protectionPct) : null,
+      frequentlyBoughtSkus:
+        fbtSkus
+          .split(/[,|]/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(',') || null,
+      courierCode: courierCode || null,
       familyKey: familyKey.trim() || null,
       optionColor: optionColor.trim() || null,
       optionVariant: optionVariant.trim() || null,
@@ -426,6 +463,13 @@ function EditForm({
                   <Input value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} prefix="%" inputMode="numeric" placeholder="18" />
                 </Field>
               </div>
+              <Field label="Country of origin" hint="Shown in Specifications on the product page">
+                <Input
+                  value={countryOfOrigin}
+                  onChange={(e) => setCountryOfOrigin(e.target.value)}
+                  placeholder="India"
+                />
+              </Field>
               <Field label="Warranty" hint="Shown as the Warranty section on the product page">
                 <textarea
                   className={styles.textarea}
@@ -446,6 +490,102 @@ function EditForm({
               </Field>
             </div>
           </Card>
+          <Card pad="lg">
+            <div className={s.sectionTitle}>About this item</div>
+            <p className={s.muted} style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+              Point-wise bullets shown on the product page. Leave empty and the page falls back to
+              bullets generated from the freebie, variants, colours and stock.
+            </p>
+            <div className={styles.rowList}>
+              {aboutItem.map((b, i) => (
+                <div key={i} className={styles.specRow}>
+                  <Input
+                    placeholder="e.g. 5000mAh battery, up to two days of use"
+                    value={b}
+                    onChange={(e) => aboutOps.change(i, e.target.value)}
+                  />
+                  <button className={styles.removeBtn} onClick={() => aboutOps.remove(i)} aria-label="Remove bullet">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={aboutOps.add}>
+              Add bullet
+            </Button>
+
+            <div className={s.sectionTitle} style={{ marginTop: 18 }}>
+              What&apos;s in the box
+            </div>
+            <div className={styles.rowList}>
+              {inTheBox.map((b, i) => (
+                <div key={i} className={styles.specRow}>
+                  <Input
+                    placeholder="e.g. 30W charger"
+                    value={b}
+                    onChange={(e) => boxOps.change(i, e.target.value)}
+                  />
+                  <button className={styles.removeBtn} onClick={() => boxOps.remove(i)} aria-label="Remove item">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={boxOps.add}>
+              Add item
+            </Button>
+          </Card>
+
+          <Card pad="lg">
+            <div className={s.sectionTitle}>Protection, cross-sell &amp; dispatch</div>
+            <div className={styles.stack}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                  ADLD &amp; theft protection plan offered
+                </span>
+                <Toggle on={protectionPlan} onClick={() => setProtectionPlan((v) => !v)} />
+              </div>
+              {protectionPlan && (
+                <Field
+                  label="Plan price (% of the selling price)"
+                  hint={
+                    protectionPct && mrp
+                      ? `≈ ₹${Math.round((Number(mrp) * Number(protectionPct)) / 100).toLocaleString('en-IN')} against the ₹${Number(mrp).toLocaleString('en-IN')} MRP — the product page computes it from the EPP price the shopper sees`
+                      : 'The rupee amount is computed from the price shown to the shopper'
+                  }
+                >
+                  <Input
+                    value={protectionPct}
+                    onChange={(e) => setProtectionPct(e.target.value)}
+                    prefix="%"
+                    inputMode="decimal"
+                    placeholder="7.5"
+                  />
+                </Field>
+              )}
+              <Field
+                label="Frequently bought together"
+                hint="Up to 4 SKUs, comma separated. A SKU that doesn't exist yet is kept and starts showing once it does."
+              >
+                <Input
+                  value={fbtSkus}
+                  onChange={(e) => setFbtSkus(e.target.value)}
+                  placeholder="GP-AN-0065, UC-PD-0020"
+                />
+              </Field>
+              <Field label="Courier partner" hint="Pre-selected when an order is dispatched; staff can still change it">
+                <Select block value={courierCode} onChange={(e) => setCourierCode(e.target.value)}>
+                  <option value="">No preference</option>
+                  {COURIERS.map((c) => (
+                    <option key={c} value={c}>
+                      {c.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </Card>
+
           <Card pad="lg">
             <div className={s.sectionTitle}>Variant family</div>
             <div className={styles.stack}>

@@ -1,6 +1,7 @@
-import { Prisma, ProductStatus, type CashbackType } from '@prisma/client';
+import { Prisma, ProductStatus, type CashbackType, type CourierCode } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { slugify } from '../utils/slug';
+import { buildSpecs, type Presentation } from './product-write';
 
 // Shared catalog-write helpers used by BOTH the CSV bulk importer
 // (services/bulk.service.ts) and the inbound vendor importer
@@ -10,6 +11,12 @@ import { slugify } from '../utils/slug';
 // offer (bulk), a reseller id = a vendor's offer (inbound).
 
 export const D = (n: number) => new Prisma.Decimal(n);
+
+/** Decimal for a nullable sheet cell, preserving the three-way distinction the
+ *  importer relies on: `undefined` = column absent (Prisma skips the field),
+ *  `null` = cell present but empty (Prisma clears it), a number = set it. */
+export const DN = (n: number | null | undefined): Prisma.Decimal | null | undefined =>
+  n === undefined || n === null ? n : D(n);
 
 /** "a | b, c" → ["a","b","c"] (pipe/comma separated, trimmed, non-empty). */
 export function parseImageUrls(raw?: string | null): string[] {
@@ -54,11 +61,20 @@ export interface ImportedScalars {
   description?: string | null;
   categoryId: string;
   subCategory?: string | null;
-  status: ProductStatus;
+  // Optional: an absent `status` column leaves the product's status alone (and on
+  // create Prisma applies the DRAFT default).
+  status?: ProductStatus;
   smartEpp?: boolean;
   mrp: Prisma.Decimal | null;
   mop?: Prisma.Decimal | null;
   cashbackType?: CashbackType;
+  countryOfOrigin?: string | null;
+  aboutItem?: string[];
+  inTheBox?: string[];
+  frequentlyBoughtSkus?: string | null;
+  protectionPlanAvailable?: boolean;
+  protectionPlanPct?: Prisma.Decimal | null;
+  courierCode?: CourierCode | null;
   cashbackValue?: Prisma.Decimal | null;
   hsnCode?: string | null;
   gstPercent?: Prisma.Decimal | null;
@@ -79,13 +95,16 @@ export interface ImportedOffer {
   eppPrice: Prisma.Decimal;
   smartEppPrice?: Prisma.Decimal | null;
   quantity: number;
-  status: ProductStatus;
-  isActive: boolean;
+  status?: ProductStatus;
+  isActive?: boolean;
 }
 
 export interface ImportedProductInput {
   sku: string;
   scalars: ImportedScalars;
+  // Three-state, like every other sheet column: `undefined` = the column was not
+  // in the sheet (leave alone), `[]` = the column was present but blank (clear),
+  // a list = replace.
   specRows?: { k: string; v: string }[];
   images?: string[];
   offer: ImportedOffer;
@@ -95,17 +114,42 @@ export interface ImportedProductInput {
 // only when provided (so a partial re-sync doesn't wipe them). Returns whether a
 // new product was created or an existing one updated.
 export async function upsertImportedProduct(input: ImportedProductInput): Promise<'created' | 'updated'> {
-  const { sku, scalars, specRows = [], images = [], offer } = input;
-  const existing = await prisma.product.findUnique({ where: { sku }, select: { id: true } });
+  const { sku, scalars, specRows, images, offer } = input;
+  // `status` and the current `specs` are both needed: the house offer mirrors the
+  // product's status, and spec rows must be merged into the existing blob rather
+  // than replacing it.
+  const existing = await prisma.product.findUnique({
+    where: { sku },
+    select: { id: true, status: true, specs: true },
+  });
+
+  // The offer's status/isActive follow the product's. An absent status column
+  // keeps whatever the product already has (DRAFT for a brand-new one).
+  const status = scalars.status ?? existing?.status ?? ProductStatus.DRAFT;
+  const resolvedOffer = { ...offer, status, isActive: status === ProductStatus.ACTIVE };
+
+  // Spec rows live inside `specs` alongside the admin-authored gradients and
+  // per-colour shades/stock, so writing a bare `{ rows }` would destroy those.
+  // buildSpecs folds the rows into the current blob instead.
+  const specsPatch = (current?: Prisma.JsonValue | null) =>
+    specRows === undefined
+      ? {}
+      : {
+          specs: buildSpecs(
+            { specRows },
+            (current ?? undefined) as Partial<Presentation> | undefined,
+          ) as unknown as Prisma.InputJsonValue,
+        };
 
   if (!existing) {
     await prisma.product.create({
       data: {
         sku,
         ...scalars,
-        ...(specRows.length ? { specs: { rows: specRows } } : {}),
-        offers: { create: [offer] },
-        ...(images.length ? { images: { create: images.map((url, i) => ({ url, position: i })) } } : {}),
+        status,
+        ...specsPatch(null),
+        offers: { create: [resolvedOffer] },
+        ...(images?.length ? { images: { create: images.map((url, i) => ({ url, position: i })) } } : {}),
       },
     });
     return 'created';
@@ -116,18 +160,23 @@ export async function upsertImportedProduct(input: ImportedProductInput): Promis
       where: { id: existing.id },
       data: {
         ...scalars,
-        ...(specRows.length ? { specs: { rows: specRows } } : {}),
-        ...(images.length
-          ? { images: { deleteMany: {}, create: images.map((url, i) => ({ url, position: i })) } }
-          : {}),
+        status,
+        ...specsPatch(existing.specs),
+        // A present-but-blank image_urls column clears the gallery; an absent
+        // column leaves it alone.
+        ...(images === undefined
+          ? {}
+          : { images: { deleteMany: {}, create: images.map((url, i) => ({ url, position: i })) } }),
       },
     });
     // One offer per (product, seller). resellerId null → the house offer.
-    const seller = await tx.productOffer.findFirst({ where: { productId: existing.id, resellerId: offer.resellerId } });
+    const seller = await tx.productOffer.findFirst({
+      where: { productId: existing.id, resellerId: resolvedOffer.resellerId },
+    });
     if (seller) {
-      await tx.productOffer.update({ where: { id: seller.id }, data: offer });
+      await tx.productOffer.update({ where: { id: seller.id }, data: resolvedOffer });
     } else {
-      await tx.productOffer.create({ data: { productId: existing.id, ...offer } });
+      await tx.productOffer.create({ data: { productId: existing.id, ...resolvedOffer } });
     }
   });
   return 'updated';

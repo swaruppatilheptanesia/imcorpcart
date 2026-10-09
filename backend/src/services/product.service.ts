@@ -5,6 +5,9 @@ import { parsePagination, pageMeta } from '../utils/pagination';
 import { productListSelect, productFullInclude, offerSelect, notDeleted } from '../models/selectors';
 import { serialize } from '../models/serializers';
 import { D, buildSpecs, colorOptionsFrom, ensureOwnedGift, slugishFamily, type Presentation } from './product-write';
+// DN keeps the undefined/null distinction for nullable decimals (undefined =
+// field untouched, null = cleared). Single definition, shared with the importer.
+import { DN } from './catalog-write';
 import type {
   CreateProductInput,
   UpdateProductInput,
@@ -95,9 +98,16 @@ export async function createProduct(input: CreateProductInput) {
       cashbackType: rest.cashbackType ?? 'NONE',
       cashbackValue: rest.cashbackValue !== undefined ? D(rest.cashbackValue) : null,
       hsnCode: rest.hsnCode ?? null,
-      gstPercent: rest.gstPercent !== undefined ? D(rest.gstPercent) : null,
+      gstPercent: DN(rest.gstPercent) ?? null,
       termsText: rest.termsText ?? null,
       warrantyText: rest.warrantyText ?? null,
+      countryOfOrigin: rest.countryOfOrigin ?? null,
+      aboutItem: rest.aboutItem ?? [],
+      inTheBox: rest.inTheBox ?? [],
+      protectionPlanAvailable: rest.protectionPlanAvailable ?? false,
+      protectionPlanPct: DN(rest.protectionPlanPct) ?? null,
+      frequentlyBoughtSkus: rest.frequentlyBoughtSkus ?? null,
+      courierCode: rest.courierCode ?? null,
       familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null,
       optionColor: rest.optionColor ?? null,
       optionVariant: rest.optionVariant ?? null,
@@ -140,9 +150,20 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
         ...(rest.cashbackType !== undefined ? { cashbackType: rest.cashbackType } : {}),
         ...(rest.cashbackValue !== undefined ? { cashbackValue: D(rest.cashbackValue) } : {}),
         ...(rest.hsnCode !== undefined ? { hsnCode: rest.hsnCode } : {}),
-        ...(rest.gstPercent !== undefined ? { gstPercent: D(rest.gstPercent) } : {}),
+        ...(rest.gstPercent !== undefined ? { gstPercent: DN(rest.gstPercent) } : {}),
         ...(rest.termsText !== undefined ? { termsText: rest.termsText } : {}),
         ...(rest.warrantyText !== undefined ? { warrantyText: rest.warrantyText } : {}),
+        ...(rest.countryOfOrigin !== undefined ? { countryOfOrigin: rest.countryOfOrigin } : {}),
+        ...(rest.aboutItem !== undefined ? { aboutItem: rest.aboutItem } : {}),
+        ...(rest.inTheBox !== undefined ? { inTheBox: rest.inTheBox } : {}),
+        ...(rest.protectionPlanAvailable !== undefined
+          ? { protectionPlanAvailable: rest.protectionPlanAvailable }
+          : {}),
+        ...(rest.protectionPlanPct !== undefined ? { protectionPlanPct: DN(rest.protectionPlanPct) } : {}),
+        ...(rest.frequentlyBoughtSkus !== undefined
+          ? { frequentlyBoughtSkus: rest.frequentlyBoughtSkus }
+          : {}),
+        ...(rest.courierCode !== undefined ? { courierCode: rest.courierCode } : {}),
         ...(rest.familyKey !== undefined ? { familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null } : {}),
         ...(rest.optionColor !== undefined ? { optionColor: rest.optionColor } : {}),
         ...(rest.optionVariant !== undefined ? { optionVariant: rest.optionVariant } : {}),

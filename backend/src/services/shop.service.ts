@@ -127,6 +127,16 @@ function assertValidVoucherAmount(spec: VoucherSpec | null, amount: number, prod
   }
 }
 
+// Legacy: "What's in the box" used to be authored as a free-text `specs.rows`
+// entry. Read it as a fallback so products written before `Product.inTheBox`
+// existed still render a box section. Self-retiring — drop this once those rows
+// are gone.
+const IN_THE_BOX_KEY = /^(what'?s\s+)?in\s+the\s+box\??$/i;
+export function legacyBoxContents(rows?: { k: string; v: string }[]): string[] {
+  const row = rows?.find((r) => IN_THE_BOX_KEY.test(r.k));
+  return row ? row.v.split(/[|,]/).map((x) => x.trim()).filter(Boolean) : [];
+}
+
 // Offers eligible for the buy box: active, in stock, and priced. Only these can
 // be SOLD — the buy box decides what a cart line is charged and who fulfils it.
 function eligibleOffers(offers: ShopOfferRow[]): ShopOfferRow[] {
@@ -247,6 +257,21 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     gstPercent: p.gstPercent != null ? toNumber(p.gstPercent) : null,
     termsText: p.termsText ?? '',
     warrantyText: p.warrantyText ?? '',
+    countryOfOrigin: p.countryOfOrigin ?? null,
+    // Authored point-wise copy. `aboutItem` empty → the product page falls back to
+    // the bullets it synthesises; `inTheBox` empty → the legacy spec row.
+    aboutItem: p.aboutItem,
+    inTheBox: p.inTheBox.length ? p.inTheBox : legacyBoxContents(pres.rows),
+    // ADLD & theft plan, priced off the SAME figure shown as `price` above so the
+    // amount can never disagree with the price beside it. Display-only: nothing
+    // adds it to a cart. Unrelated to Company.adldPct (Smart-EPP lease insurance).
+    protectionPlan:
+      p.protectionPlanAvailable && p.protectionPlanPct != null
+        ? {
+            pct: toNumber(p.protectionPlanPct),
+            amount: Math.round((opts.public ? mop : epp) * (toNumber(p.protectionPlanPct) / 100)),
+          }
+        : null,
     stock: winner?.quantity ?? 0,
     // Real aggregate from approved reviews (recomputed on moderation). `reviews`
     // (count) is the source of truth for whether a rating exists — the UI hides
@@ -357,6 +382,35 @@ function toFamilyMember(sp: StoreProductLite) {
   };
 }
 
+// "Frequently bought together": author-entered SKUs resolved on READ. Stored as
+// text rather than a relation because the bulk sheet forward-references SKUs the
+// per-row importer has not created yet (row 3 naming row 40). The trade-off is no
+// referential integrity, so anything unknown, draft, hidden or unbuyable simply
+// doesn't resolve — and starts resolving by itself once it does exist.
+async function boughtTogetherOf(
+  p: ShopProductRow,
+  opts: { public?: boolean; sepp?: SeppContext | null },
+) {
+  const skus = (p.frequentlyBoughtSkus ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!skus.length) return [];
+  const rows = await prisma.product.findMany({
+    where: {
+      sku: { in: skus },
+      id: { not: p.id },
+      status: ProductStatus.ACTIVE,
+      ...notDeleted,
+      ...STOREFRONT_SHOWABLE,
+      ...HAS_LISTABLE_OFFER,
+    },
+    include: shopProductInclude,
+  });
+  // The author's order is the merchandising decision, so keep it.
+  const rank = new Map(skus.map((sku, i) => [sku, i]));
+  return rows
+    .sort((a, b) => (rank.get(a.sku) ?? 99) - (rank.get(b.sku) ?? 99))
+    .map((r) => toStoreProduct(r, opts));
+}
+
 export async function listProducts(userId?: string) {
   const [rows, sepp] = await Promise.all([
     prisma.product.findMany({
@@ -395,7 +449,14 @@ export async function getProduct(id: string, userId?: string) {
     take: 4,
   });
 
-  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r, { sepp })), family, reviews });
+  const boughtTogether = await boughtTogetherOf(p, { sepp });
+  return serialize({
+    product,
+    related: relatedRows.map((r) => toStoreProduct(r, { sepp })),
+    boughtTogether,
+    family,
+    reviews,
+  });
 }
 
 // ─── Public catalog (no auth) — MOP-priced, EPP never exposed ────────────────
@@ -432,7 +493,14 @@ export async function getPublicProduct(id: string) {
     take: 4,
   });
 
-  return serialize({ product, related: relatedRows.map((r) => toStoreProduct(r, { public: true })), family, reviews });
+  const boughtTogether = await boughtTogetherOf(p, { public: true });
+  return serialize({
+    product,
+    related: relatedRows.map((r) => toStoreProduct(r, { public: true })),
+    boughtTogether,
+    family,
+    reviews,
+  });
 }
 
 // ─── Coupons ─────────────────────────────────────────────────────────────────

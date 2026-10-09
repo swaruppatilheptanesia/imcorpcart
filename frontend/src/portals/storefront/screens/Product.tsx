@@ -232,7 +232,20 @@ function Detail({ p }: { p: ProductDetail }) {
     else flash('Added to cart');
   };
 
-  const about = [
+  // Authored bullets win outright rather than merging: an admin who wrote an
+  // "About this item" list doesn't want "Fulfilled & shipped by imcorpcart"
+  // stapled onto the end of it. The synthesised list stays as the fallback for
+  // every product with nothing authored.
+  // "In the box" was historically authored as a spec row. It now has its own
+  // point-wise section, so filter it out of the generic table — the same
+  // exclusion ProductCard and Cart already apply to their spec chips.
+  const specRows = p.specs.filter((sp) => !/^(what'?s\s+)?in\s+the\s+box\??$/i.test(sp.k));
+
+  // Authored bullets win outright rather than merging: an admin who wrote an
+  // "About this item" list doesn't want "Fulfilled & shipped by imcorpcart"
+  // stapled onto the end of it. The synthesised list stays as the fallback for
+  // every product with nothing authored.
+  const about = p.aboutItem?.length ? p.aboutItem : [
     p.freebie.enabled ? `Free gift included — ${p.freebie.description}` : null,
     p.variants.length ? `Available in ${p.variants.join(', ')}` : null,
     hasShades ? `${p.shades.length} colour option${p.shades.length > 1 ? 's' : ''}` : null,
@@ -387,15 +400,21 @@ function Detail({ p }: { p: ProductDetail }) {
 
           {seppView && sepp && <SeppCalcCard sepp={seppView} profile={sepp} />}
 
-          {(p.specs.length > 0 || p.hsnCode || p.gstPercent != null) && (
+          {(specRows.length > 0 || p.hsnCode || p.gstPercent != null || p.countryOfOrigin) && (
             <div className={styles.specs}>
               <div className={styles.blockTitle}>Specifications</div>
-              {p.specs.map((sp) => (
+              {specRows.map((sp) => (
                 <div key={sp.k} className={styles.specRow}>
                   <span className={styles.specK}>{sp.k}</span>
                   <span className={styles.specV}>{sp.v}</span>
                 </div>
               ))}
+              {p.countryOfOrigin && (
+                <div className={styles.specRow}>
+                  <span className={styles.specK}>Country of origin</span>
+                  <span className={styles.specV}>{p.countryOfOrigin}</span>
+                </div>
+              )}
               {p.hsnCode && (
                 <div className={styles.specRow}>
                   <span className={styles.specK}>HSN Code</span>
@@ -415,10 +434,36 @@ function Detail({ p }: { p: ProductDetail }) {
             <div className={styles.about}>
               <div className={styles.blockTitle}>About this item</div>
               <ul className={styles.bullets}>
-                {about.map((b) => (
-                  <li key={b}>{b}</li>
+                {/* Index keys: authored bullets can legitimately repeat a string,
+                    and a duplicate React key silently drops one. */}
+                {about.map((b, i) => (
+                  <li key={i}>{b}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {!!p.inTheBox?.length && (
+            <div className={styles.about}>
+              <div className={styles.blockTitle}>What's in the box</div>
+              <ul className={styles.bullets}>
+                {p.inTheBox.map((b, i) => (
+                  <li key={i}>{b}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {p.protectionPlan && (
+            <div className={styles.policy}>
+              <div className={styles.blockTitle}>Protection plan (ADLD &amp; theft)</div>
+              {/* Display-only: there is no purchase flow, so the copy must not read
+                  as an add-to-cart option. */}
+              <p className={styles.policyText}>
+                Accidental damage, liquid damage &amp; theft cover is available for this item at{' '}
+                {inr(p.protectionPlan.amount)} ({p.protectionPlan.pct}% of the price). Our team will
+                arrange it with you before delivery.
+              </p>
             </div>
           )}
 
@@ -666,6 +711,18 @@ function Detail({ p }: { p: ProductDetail }) {
           </button>
         </aside>
       </div>
+
+      {/* Curated by the admin (bulk sheet or product form), so it sits above the
+          algorithmic shelf below — Amazon ships both, and they read as different
+          things: "people buy these with it" vs "more in this category". */}
+      {p.boughtTogether.length > 0 && (
+        <div className={styles.related}>
+          <div className={s.sectionTitle} style={{ marginBottom: 16 }}>
+            Frequently bought together
+          </div>
+          <ProductGrid items={p.boughtTogether} />
+        </div>
+      )}
 
       <ReviewsSection p={p} authed={authed} />
 

@@ -29,7 +29,9 @@ export function createApp(): Application {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: '5mb' })); // 5mb headroom for bulk-import payloads
+  // Headroom for bulk-import payloads: 5000 rows x 34 columns, now including
+  // multi-bullet 'about_item'/'in_the_box' cells, lands past 5mb on a full sheet.
+  app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(requestContext);
 

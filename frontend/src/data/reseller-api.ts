@@ -34,7 +34,7 @@ export interface ResellerOrderApi {
   company: { name: string } | null;
   employee: { employeeCode: string; user: { fullName: string } } | null;
   shipment: { status: string; awbNumber: string | null; dispatchedAt: string | null } | null;
-  items: { quantity: number; product: { name: string } }[];
+  items: { quantity: number; product: { name: string; courierCode?: string | null } }[];
 }
 
 export interface ResellerOrderFullApi extends ResellerOrderApi {

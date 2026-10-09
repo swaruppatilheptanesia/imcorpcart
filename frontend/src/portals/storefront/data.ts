@@ -8,7 +8,12 @@ import { PRICE_CEIL } from '@/data/store-types';
 import { matchesSearch, resetSearchIndex, scoreFor, tokenize } from './search';
 
 // The detail page needs the approved review list alongside the product.
-export type ProductDetail = StoreProduct & { reviewList: Review[] };
+export type ProductDetail = StoreProduct & {
+  reviewList: Review[];
+  /** Curated "Frequently bought together" SKUs, resolved server-side. Separate
+   *  from `getRelated` below, which is the algorithmic category shelf. */
+  boughtTogether: StoreProduct[];
+};
 
 let CATALOG: StoreProduct[] = [];
 let COUPONS: StoreCoupon[] = [];
@@ -153,10 +158,10 @@ export async function getProductById(id: string): Promise<ProductDetail | undefi
   // + its variant-family members + approved reviews, in the current auth mode.
   try {
     const res = loadedMode === 'authed' ? await shop.getProduct(id) : await shop.getPublicProduct(id);
-    return { ...res.product, family: res.family, reviewList: res.reviews };
+    return { ...res.product, family: res.family, reviewList: res.reviews, boughtTogether: res.boughtTogether ?? [] };
   } catch {
     const p = findProduct(id); // fall back to the cached collapsed catalog
-    return p ? { ...p, reviewList: [] } : undefined;
+    return p ? { ...p, reviewList: [], boughtTogether: [] } : undefined;
   }
 }
 

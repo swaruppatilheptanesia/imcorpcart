@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductStatus, CashbackType } from '@prisma/client';
+import { ProductStatus, CashbackType, CourierCode } from '@prisma/client';
 import { money } from './common.schema';
 
 // Frontend "group" filter maps to a top-level category slug (phones/accessories/bags).
@@ -57,10 +57,29 @@ export const createProductBody = z.object({
   cashbackType: z.nativeEnum(CashbackType).optional(), // NONE | PERCENT | FIXED
   cashbackValue: money.optional(), // percent (PERCENT) or ₹/unit (FIXED)
   // Tax + policy attributes (master-level, admin-set).
-  hsnCode: z.string().trim().max(20).optional(),
-  gstPercent: z.number().min(0).max(100).optional(),
+  // HSN/SAC is 4, 6 or 8 digits under GST (the required length depends on
+  // turnover). Same rule as the bulk sheet, so the form can't accept what an
+  // import would reject.
+  hsnCode: z
+    .string()
+    .trim()
+    .regex(/^(\d{4}|\d{6}|\d{8})$/, 'HSN must be 4, 6 or 8 digits')
+    .nullable()
+    .optional(),
+  gstPercent: z.number().min(0).max(100).nullable().optional(),
   termsText: z.string().max(4000).optional(),
   warrantyText: z.string().max(2000).optional(),
+  countryOfOrigin: z.string().trim().max(60).nullable().optional(),
+  // Authored point-wise copy shown on the product page.
+  aboutItem: z.array(z.string().trim().min(1).max(300)).max(10).optional(),
+  inTheBox: z.array(z.string().trim().min(1).max(300)).max(10).optional(),
+  // ADLD & theft plan, as a % of the EPP price. Display-only on the storefront.
+  protectionPlanAvailable: z.boolean().optional(),
+  protectionPlanPct: z.number().min(0).max(100).nullable().optional(),
+  // Up to 4 SKUs for "Frequently bought together", resolved on read.
+  frequentlyBoughtSkus: z.string().trim().max(400).nullable().optional(),
+  // Preferred courier, pre-selected at dispatch (never enforced).
+  courierCode: z.nativeEnum(CourierCode).nullable().optional(),
   // Amazon-style variant family (separate sibling SKUs share a familyKey).
   familyKey: z.string().trim().max(80).nullable().optional(),
   optionColor: z.string().trim().max(60).nullable().optional(),

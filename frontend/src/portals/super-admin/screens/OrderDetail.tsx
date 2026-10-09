@@ -246,7 +246,14 @@ export function OrderDetail() {
 
               <Card>
                 <div className={s.sectionTitle}>Update fulfilment</div>
-                <TransitControl orderId={id ?? ''} cancelled={cancelled} onDone={reload} />
+                <TransitControl
+                  orderId={id ?? ''}
+                  cancelled={cancelled}
+                  // Pre-select the courier assigned to the first line's product.
+                  // A hint only — the operator ships with whatever they pick.
+                  defaultCourier={order.items.find((it) => it.courierCode)?.courierCode ?? undefined}
+                  onDone={reload}
+                />
               </Card>
             </>
           )}
@@ -277,11 +284,22 @@ const SHIPMENT_STATUSES = [
 ];
 const COURIERS = ['BLUEDART', 'DELHIVERY', 'DTDC', 'EKART', 'INDIA_POST'];
 
-function TransitControl({ orderId, cancelled, onDone }: { orderId: string; cancelled: boolean; onDone: () => void }) {
+function TransitControl({
+  orderId,
+  cancelled,
+  defaultCourier,
+  onDone,
+}: {
+  orderId: string;
+  cancelled: boolean;
+  /** The product's assigned courier, pre-selected but freely overridable. */
+  defaultCourier?: string;
+  onDone: () => void;
+}) {
   const { flash } = useToast();
   const [status, setStatus] = useState('DISPATCHED');
   const [awb, setAwb] = useState('');
-  const [courier, setCourier] = useState('');
+  const [courier, setCourier] = useState(defaultCourier ?? '');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
