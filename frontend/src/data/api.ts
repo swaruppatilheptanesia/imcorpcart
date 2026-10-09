@@ -983,6 +983,16 @@ export interface CreateLeasingCompanyInput {
   operatorName: string;
   operatorEmail: string;
 }
+// The Smart-EPP advance is imcorpcart's to set, not the leasing partner's: the
+// partner's own PATCH /leasing/params no longer accepts it.
+export interface UpdateLeasingCompanyInput {
+  advanceFeeType?: 'FIXED' | 'PERCENT';
+  advanceFeeValue?: number;
+}
+export function updateLeasingCompany(id: string, data: UpdateLeasingCompanyInput): Promise<unknown> {
+  return apiFetch(`/users/leasing-companies/${id}`, { method: 'PATCH', body: data });
+}
+
 export function createLeasingCompany(
   input: CreateLeasingCompanyInput,
 ): Promise<{ id: string; name: string; operatorName: string; operatorEmail: string; status: string }> {

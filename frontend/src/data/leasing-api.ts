@@ -64,8 +64,9 @@ export type LeaseParamsInput = Partial<
     | 'repurchasePct'
     | 'pvDiscountLeasePct'
     | 'pvDiscountRepurchasePct'
-    | 'advanceFeeType'
-    | 'advanceFeeValue'
+    // NOT advanceFeeType / advanceFeeValue: the request advance is set by
+    // imcorpcart (admin), and PATCH /leasing/params no longer accepts them.
+    // They stay on `LeaseParams` for the read-only display and the dashboard.
   >
 >;
 

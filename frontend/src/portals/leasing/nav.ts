@@ -26,5 +26,5 @@ export const titles: Record<string, RouteMeta> = {
   dashboard: { title: 'Dashboard', sub: 'Your Smart EPP lease book at a glance' },
   requests: { title: 'Lease requests', sub: 'HR-approved Smart EPP requests awaiting your financing decision' },
   companies: { title: 'Companies', sub: 'Corporates whose employees lease through you' },
-  settings: { title: 'Lease parameters', sub: 'PTPM, tenure, buy-back, PV discounts and the advance every quote is built from' },
+  settings: { title: 'Lease parameters', sub: 'PTPM, tenure, buy-back and PV discounts. The advance at request is set by imcorpcart.' },
 };

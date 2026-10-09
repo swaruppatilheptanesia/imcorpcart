@@ -43,3 +43,7 @@ export async function listLeasingCompanies(_req: Request, res: Response) {
 export async function createLeasingCompany(req: Request, res: Response) {
   res.status(201).json(await service.createLeasingCompany(req.body));
 }
+
+export async function updateLeasingCompany(req: Request, res: Response) {
+  res.json(await service.updateLeasingCompany(getParam(req, 'id'), req.body));
+}

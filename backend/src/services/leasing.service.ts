@@ -144,14 +144,11 @@ export async function updateParams(userId: string, input: LeasingParamsInput) {
   if (input.repurchasePct !== undefined) data.repurchasePct = D(input.repurchasePct);
   if (input.pvDiscountLeasePct !== undefined) data.pvDiscountLeasePct = D(input.pvDiscountLeasePct);
   if (input.pvDiscountRepurchasePct !== undefined) data.pvDiscountRepurchasePct = D(input.pvDiscountRepurchasePct);
-  if (input.advanceFeeType !== undefined) data.advanceFeeType = input.advanceFeeType;
-  if (input.advanceFeeValue !== undefined) data.advanceFeeValue = D(input.advanceFeeValue);
-  if (input.advanceFeeType === 'PERCENT' || (input.advanceFeeType === undefined && input.advanceFeeValue !== undefined)) {
-    const current = await loadLeasingCompany(leasingCompanyId);
-    const type = input.advanceFeeType ?? current.advanceFeeType;
-    const value = input.advanceFeeValue ?? toNumber(current.advanceFeeValue);
-    if (type === 'PERCENT' && value > 100) throw AppError.badRequest('A percentage advance cannot exceed 100%');
-  }
+  // advanceFeeType / advanceFeeValue are NOT writable here — the request advance
+  // is set by the Super Admin (`PATCH /users/leasing-companies/:id`), which also
+  // carries the "a percentage advance cannot exceed 100%" guard that used to
+  // live at this spot. The body schema no longer accepts them, so a stale client
+  // that still sends them gets a 200 with the stored value untouched.
   const lc = await prisma.leasingCompany.update({ where: { id: leasingCompanyId }, data });
   const view = toParamsView(lc);
   return serialize({ ...view, sample: sampleQuote(view) });
@@ -170,8 +167,10 @@ export async function previewParams(userId: string, input: LeasingPreviewInput) 
     repurchasePct: input.repurchasePct ?? view.repurchasePct,
     pvDiscountLeasePct: input.pvDiscountLeasePct ?? view.pvDiscountLeasePct,
     pvDiscountRepurchasePct: input.pvDiscountRepurchasePct ?? view.pvDiscountRepurchasePct,
-    advanceFeeType: input.advanceFeeType ?? view.advanceFeeType,
-    advanceFeeValue: input.advanceFeeValue ?? view.advanceFeeValue,
+    // Always the stored, admin-set advance: the partner cannot change it, so
+    // previewing a different one would illustrate a quote that can't happen.
+    advanceFeeType: view.advanceFeeType,
+    advanceFeeValue: view.advanceFeeValue,
     gstPct: input.gstPct ?? DEFAULT_SEPP_PARAMS.gstPct,
     incomeTaxPct: input.incomeTaxPct ?? DEFAULT_SEPP_PARAMS.incomeTaxPct,
     adldPct: input.adldPct ?? DEFAULT_SEPP_PARAMS.adldPct,

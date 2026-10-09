@@ -4,7 +4,7 @@ import { AppError } from '../utils/AppError';
 import { hashPassword } from '../utils/password';
 import { parsePagination, pageMeta } from '../utils/pagination';
 import { notDeleted } from '../models/selectors';
-import { serialize } from '../models/serializers';
+import { serialize, toNumber } from '../models/serializers';
 import type {
   InviteUserInput,
   UpdateUserInput,
@@ -17,6 +17,7 @@ import type {
   AssignAdminInput,
   UpdateResellerInput,
   CreateLeasingCompanyInput,
+  UpdateLeasingCompanyInput,
 } from '../validators/user.schema';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -385,6 +386,49 @@ export async function listLeasingCompanies() {
     select: { id: true, name: true, status: true, defaultTenureMonths: true, _count: { select: { companies: true } } },
   });
   return { data: rows.map((l) => ({ id: l.id, name: l.name, status: l.status, tenureMonths: l.defaultTenureMonths, companyCount: l._count.companies })) };
+}
+
+// Super Admin sets the Smart-EPP request advance. The leasing partner owns every
+// other lease parameter (PTPM, tenure, buy-back, PV discounts) through its own
+// portal, but the advance an employee is charged up front is imcorpcart's call.
+export async function updateLeasingCompany(id: string, input: UpdateLeasingCompanyInput) {
+  const lc = await prisma.leasingCompany.findFirst({ where: { id } });
+  if (!lc) throw AppError.notFound('Leasing company not found');
+
+  // Resolve against the stored row so a type-only or value-only patch is still
+  // checked as a pair. (Moved here from leasing.service.updateParams, which used
+  // to be the only place this was enforced.)
+  const type = input.advanceFeeType ?? lc.advanceFeeType;
+  const value = input.advanceFeeValue ?? toNumber(lc.advanceFeeValue);
+  if (type === 'PERCENT' && value > 100) {
+    throw AppError.badRequest('A percentage advance cannot exceed 100%');
+  }
+
+  const updated = await prisma.leasingCompany.update({
+    where: { id },
+    data: {
+      advanceFeeType: input.advanceFeeType,
+      advanceFeeValue: input.advanceFeeValue === undefined ? undefined : D(input.advanceFeeValue),
+    },
+  });
+
+  // This changes what every employee of every attached company pays up front,
+  // so leave a trail. Best-effort: losing the log must not fail the save.
+  try {
+    await prisma.auditLog.create({
+      data: {
+        action: 'leasing.advance_updated',
+        entityType: 'LeasingCompany',
+        entityId: id,
+        before: { advanceFeeType: lc.advanceFeeType, advanceFeeValue: toNumber(lc.advanceFeeValue) },
+        after: { advanceFeeType: updated.advanceFeeType, advanceFeeValue: toNumber(updated.advanceFeeValue) },
+      },
+    });
+  } catch (logErr) {
+    console.error('[users] failed to write leasing-advance audit', logErr);
+  }
+
+  return serialize(updated);
 }
 
 // ─── Company + admin provisioning ────────────────────────────────────────────

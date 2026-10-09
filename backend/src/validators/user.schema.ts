@@ -115,6 +115,16 @@ export const createLeasingCompanyBody = z.object({
   operatorEmail: z.string().email(),
 });
 
+// Super Admin sets the Smart-EPP advance the employee pays when submitting a
+// lease request. This is the ONE lease parameter imcorpcart owns — PTPM, tenure,
+// buy-back and the PV discounts stay with the leasing partner, which tunes them
+// via PATCH /leasing/params. Kept narrow on purpose so this route can never
+// become a back door into the partner's own financing terms.
+export const updateLeasingCompanyBody = z.object({
+  advanceFeeType: z.enum(['FIXED', 'PERCENT']).optional(),
+  advanceFeeValue: z.number().min(0).optional(),
+});
+
 // Assign an admin to a company that has none (e.g. a self-registration-created
 // org). Either promote an existing user (userId) or invite a new admin.
 export const assignAdminBody = z
@@ -154,4 +164,5 @@ export type UserListQuery = z.infer<typeof userListQuery>;
 export type CreateCompanyInput = z.infer<typeof createCompanyBody>;
 export type UpdateCompanyInput = z.infer<typeof updateCompanyBody>;
 export type CreateLeasingCompanyInput = z.infer<typeof createLeasingCompanyBody>;
+export type UpdateLeasingCompanyInput = z.infer<typeof updateLeasingCompanyBody>;
 export type AssignAdminInput = z.infer<typeof assignAdminBody>;

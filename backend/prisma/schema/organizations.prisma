@@ -93,8 +93,11 @@ model LeasingCompany {
   userId String? @unique
   user   User?   @relation(fields: [userId], references: [id])
 
-  // Lease parameters the leasing company sets in its portal. They feed the
-  // Smart-EPP calculator (services/sepp-calc.ts) for every attached company.
+  // Lease parameters feeding services/sepp-calc.ts for every attached company.
+  // PTPM / tenure / buy-back / PV discounts are set by the leasing company in its
+  // own portal. The advance the employee pays at request time is the exception:
+  // it is Super-Admin-owned (PATCH /users/leasing-companies/:id) and read-only in
+  // the Leasing portal, whose PATCH /leasing/params no longer accepts it.
   ptpm                    Decimal        @default(89.5) @db.Decimal(8, 4) // rental per ₹1000 of asset per month (incl. GST)
   defaultTenureMonths     Int            @default(12) @map("default_tenure_months")
   repurchasePct           Decimal        @default(2) @map("repurchase_pct") @db.Decimal(5, 2) // end-of-lease buyback, % of asset cost

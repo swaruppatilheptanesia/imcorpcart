@@ -2,6 +2,7 @@
  *  numeric money, ISO dates, image URLs) into the fixture-shaped types the
  *  screens already render. Keeps screens stable while data goes live. */
 
+import { inr } from '@/lib/format';
 import type {
   Coupon,
   CouponStatus,
@@ -361,7 +362,7 @@ const USER_HEADERS: Record<UserTab, string[]> = {
   employees: ['Employee', 'Company', 'Email', 'Status', ''],
   resellers: ['Reseller', 'Products', 'Commission', 'Status', ''],
   partners: ['Fulfillment partner', 'Region', 'On-time', 'Status', ''],
-  leasing: ['Leasing company', 'Operator', 'Companies', 'Status', ''],
+  leasing: ['Leasing company', 'Operator', 'Advance · companies', 'Status', ''],
 };
 
 function stateOf(status: string): UserState {
@@ -393,6 +394,9 @@ export interface UserRowWithId extends UserRow {
   leasingCompanyName?: string | null;
   adldPct?: number | null;
   incomeTaxPct?: number;
+  // Leasing partner's Smart-EPP request advance (leasing tab) — admin-set.
+  advanceFeeType?: 'FIXED' | 'PERCENT';
+  advanceFeeValue?: number;
 }
 
 export function toUserDataset(tab: UserTab, rows: Record<string, unknown>[]): UserDataset {
@@ -440,13 +444,24 @@ export function toUserDataset(tab: UserTab, rows: Record<string, unknown>[]): Us
           meta2: `${Number(r.shipmentCount ?? 0)} shipments`,
           state: stateOf(String(r.status ?? '')),
         };
-      case 'leasing':
+      case 'leasing': {
+        const n = Number(r.companyCount ?? 0);
+        const advType = r.advanceFeeType === 'PERCENT' ? 'PERCENT' : 'FIXED';
+        const advValue = Number(r.advanceFeeValue ?? 0);
+        // The advance shares a cell with the company count rather than taking a
+        // sixth column: adding a track here means moving COLS, the headers and
+        // the Row children in lockstep, which is how this grid has broken before.
+        const adv =
+          advValue <= 0 ? 'No advance' : advType === 'PERCENT' ? `${advValue}% of asset` : inr(advValue);
         return {
           ...base,
           meta1: String(r.operatorEmail ?? r.contactEmail ?? '—'),
-          meta2: `${Number(r.companyCount ?? 0)} compan${Number(r.companyCount ?? 0) === 1 ? 'y' : 'ies'}`,
+          meta2: `${adv} · ${n} compan${n === 1 ? 'y' : 'ies'}`,
           state: stateOf(String(r.status ?? '')),
+          advanceFeeType: advType as 'FIXED' | 'PERCENT',
+          advanceFeeValue: advValue,
         };
+      }
     }
   });
   return { headers: USER_HEADERS[tab], rows: mapped };

@@ -14,6 +14,7 @@ import {
   companyIdParam,
   updateResellerBody,
   createLeasingCompanyBody,
+  updateLeasingCompanyBody,
 } from '../validators/user.schema';
 
 const router = Router();
@@ -23,6 +24,12 @@ router.post('/', validate({ body: inviteUserBody }), asyncHandler(ctrl.invite));
 // Smart EPP lease partners (+ operator account for the Leasing portal).
 router.get('/leasing-companies', asyncHandler(ctrl.listLeasingCompanies));
 router.post('/leasing-companies', validate({ body: createLeasingCompanyBody }), asyncHandler(ctrl.createLeasingCompany));
+// The request advance is admin-owned (the leasing partner can only display it).
+router.patch(
+  '/leasing-companies/:id',
+  validate({ params: idParam, body: updateLeasingCompanyBody }),
+  asyncHandler(ctrl.updateLeasingCompany),
+);
 router.post('/companies', validate({ body: createCompanyBody }), asyncHandler(ctrl.createCompany));
 router.post(
   '/companies/:companyId/assign-admin',

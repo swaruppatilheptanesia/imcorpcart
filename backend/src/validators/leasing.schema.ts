@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 // Lease parameters the leasing company tunes in its portal. They feed the
 // Smart-EPP calculator for every company attached to this leasing company.
+//
+// DELIBERATELY ABSENT: `advanceFeeType` / `advanceFeeValue`. The advance the
+// employee pays at request time is imcorpcart's to set, not the partner's —
+// it is edited by the Super Admin via `PATCH /users/leasing-companies/:id`.
+// Do not re-add them here; the leasing company only displays the advance.
 export const leasingParamsBody = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   contactPhone: z.string().trim().max(20).nullish(),
@@ -10,8 +15,6 @@ export const leasingParamsBody = z.object({
   repurchasePct: z.number().min(0).max(100).optional(),
   pvDiscountLeasePct: z.number().min(0).max(100).optional(),
   pvDiscountRepurchasePct: z.number().min(0).max(100).optional(),
-  advanceFeeType: z.enum(['FIXED', 'PERCENT']).optional(),
-  advanceFeeValue: z.number().min(0).optional(),
 });
 
 // Live preview for the Settings form: unsaved params → quote for a sample asset.

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Save } from 'lucide-react';
-import { Card, Field, Input, Segmented, Button, Skeleton, EmptyState, useToast } from '@/components';
-import { getParams, updateParams, previewParams, type LeaseParams, type SampleQuote, type AdvanceFeeType } from '@/data/leasing-api';
+import { Card, Field, Input, Button, Skeleton, EmptyState, useToast } from '@/components';
+import { getParams, updateParams, previewParams, type LeaseParams, type SampleQuote } from '@/data/leasing-api';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
-import { QuoteBreakdown } from '../QuoteBreakdown';
+import { QuoteBreakdown, Kv } from '../QuoteBreakdown';
 import { useLeasing } from '../context';
 import s from '../../super-admin/screens/screen.module.css';
 import styles from './Settings.module.css';
@@ -18,8 +18,6 @@ interface Form {
   repurchasePct: string;
   pvDiscountLeasePct: string;
   pvDiscountRepurchasePct: string;
-  advanceFeeType: AdvanceFeeType;
-  advanceFeeValue: string;
 }
 
 function toForm(p: LeaseParams): Form {
@@ -31,8 +29,6 @@ function toForm(p: LeaseParams): Form {
     repurchasePct: String(p.repurchasePct),
     pvDiscountLeasePct: String(p.pvDiscountLeasePct),
     pvDiscountRepurchasePct: String(p.pvDiscountRepurchasePct),
-    advanceFeeType: p.advanceFeeType,
-    advanceFeeValue: String(p.advanceFeeValue),
   };
 }
 
@@ -47,8 +43,6 @@ function toInput(f: Form) {
     repurchasePct: num(f.repurchasePct),
     pvDiscountLeasePct: num(f.pvDiscountLeasePct),
     pvDiscountRepurchasePct: num(f.pvDiscountRepurchasePct),
-    advanceFeeType: f.advanceFeeType,
-    advanceFeeValue: num(f.advanceFeeValue),
   };
 }
 
@@ -59,7 +53,6 @@ function validate(f: Form): string | null {
     ['Buy-back %', f.repurchasePct, 0, 100],
     ['PV discount on rentals', f.pvDiscountLeasePct, 0, 100],
     ['PV discount on buy-back', f.pvDiscountRepurchasePct, 0, 100],
-    ['Advance', f.advanceFeeValue, 0, f.advanceFeeType === 'PERCENT' ? 100 : 10_000_000],
   ];
   for (const [label, v, lo, hi] of checks) {
     const n = Number(v);
@@ -127,7 +120,7 @@ export function Settings() {
     }
   };
 
-  if (state === 'loading' || !form) return <Skeleton h={420} />;
+  if (state === 'loading' || !form || !data) return <Skeleton h={420} />;
   if (state === 'error')
     return (
       <EmptyState
@@ -192,28 +185,26 @@ export function Settings() {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Advance at request</h2>
           <p className={styles.sectionNote}>
-            Collected from the employee via Razorpay when they submit a request. Refunded automatically if HR or you reject it.
+            Collected from the employee via Razorpay when they submit a request, and refunded
+            automatically if HR or you reject it. <strong>imcorpcart sets this amount</strong> —
+            contact them to change it.
           </p>
-          <div className={s.formRow2}>
-          <Field label="Charged as">
-            <Segmented<AdvanceFeeType>
-              options={[
-                { value: 'FIXED', label: 'Fixed ₹' },
-                { value: 'PERCENT', label: '% of asset' },
-              ]}
-              value={form.advanceFeeType}
-              onChange={(v) => set('advanceFeeType', v)}
+          {/* Read-only on purpose: the advance is admin-owned. A Kv row rather than
+              a disabled input, because this is a fact about the arrangement, not a
+              control that happens to be unavailable. Sourced from `data` (the saved
+              params) since this screen can no longer change it. */}
+          <div style={{ fontSize: 13 }}>
+            <Kv
+              k="Advance charged"
+              v={
+                data.advanceFeeValue <= 0
+                  ? 'No advance'
+                  : data.advanceFeeType === 'PERCENT'
+                    ? `${data.advanceFeeValue}% of asset cost`
+                    : inr(data.advanceFeeValue)
+              }
+              strong
             />
-          </Field>
-          <Field label={form.advanceFeeType === 'PERCENT' ? 'Percent of asset cost' : 'Amount (₹)'} hint="0 = no advance">
-            <Input
-              type="number"
-              step={form.advanceFeeType === 'PERCENT' ? '0.01' : '1'}
-              min={0}
-              value={form.advanceFeeValue}
-              onChange={(e) => set('advanceFeeValue', e.target.value)}
-            />
-          </Field>
           </div>
         </section>
 

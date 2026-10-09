@@ -14,6 +14,7 @@ import {
   userTabLabels,
   addUserLabel,
   type LeasingCompanyOption,
+  updateLeasingCompany,
 } from '@/data/api';
 import type { UserState, UserStatusFilter, UserTab, SemanticTone } from '@/data/types';
 import type { UserRowWithId } from '@/data/map';
@@ -30,7 +31,8 @@ const COLS: Record<UserTab, string> = {
   employees: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
   resellers: 'minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.4fr) 108px 240px',
   partners: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
-  leasing: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 140px',
+  // 240px actions (not 140) — the Advance button plus the status Select, same as resellers.
+  leasing: 'minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.6fr) 108px 240px',
 };
 
 const stateTone: Record<UserState, SemanticTone> = {
@@ -143,6 +145,12 @@ export function UsersScreen() {
   const [assignTarget, setAssignTarget] = useState<{ id: string; name: string } | null>(null);
   const [assignForm, setAssignForm] = useState({ adminName: '', adminEmail: '' });
   const [editReseller, setEditReseller] = useState<{ id: string; name: string; commission: string } | null>(null);
+  const [editAdvance, setEditAdvance] = useState<{
+    id: string;
+    name: string;
+    type: 'FIXED' | 'PERCENT';
+    value: string;
+  } | null>(null);
   const [editCompany, setEditCompany] = useState<CompanyEdit | null>(null);
   const [leasingOptions, setLeasingOptions] = useState<LeasingCompanyOption[]>([]);
   const [busy, setBusy] = useState(false);
@@ -287,6 +295,31 @@ export function UsersScreen() {
       reload();
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Could not update commission');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAdvance = async () => {
+    if (!editAdvance) return;
+    const n = Number(editAdvance.value);
+    if (editAdvance.value.trim() === '' || Number.isNaN(n) || n < 0) {
+      flash('Enter a valid advance');
+      return;
+    }
+    // Mirrors the server guard so the operator is corrected before the round trip.
+    if (editAdvance.type === 'PERCENT' && n > 100) {
+      flash('A percentage advance cannot exceed 100%');
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateLeasingCompany(editAdvance.id, { advanceFeeType: editAdvance.type, advanceFeeValue: n });
+      flash('Advance updated — new requests use it immediately');
+      setEditAdvance(null);
+      reload();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Could not update the advance');
     } finally {
       setBusy(false);
     }
@@ -490,6 +523,24 @@ export function UsersScreen() {
                       Commission
                     </Button>
                   )}
+                  {/* The Smart-EPP request advance is admin-owned — the leasing
+                      partner can only display it in its own portal. */}
+                  {tab === 'leasing' && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        setEditAdvance({
+                          id: row.id,
+                          name: u.name,
+                          type: row.advanceFeeType ?? 'FIXED',
+                          value: String(row.advanceFeeValue ?? 0),
+                        })
+                      }
+                    >
+                      Advance
+                    </Button>
+                  )}
                   {tab === 'companies' && (
                     <Button
                       variant="secondary"
@@ -645,7 +696,7 @@ export function UsersScreen() {
               <Input type="email" placeholder="ops@leasefin.com" value={form.operatorEmail} onChange={(e) => setForm((f) => ({ ...f, operatorEmail: e.target.value }))} />
             </Field>
             <p style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>
-              Lease parameters (PTPM, tenure, PV discount, advance fee) start at defaults and are tuned by the operator in the Leasing portal.
+              Lease parameters (PTPM, tenure, buy-back, PV discounts) start at defaults and are tuned by the operator in the Leasing portal. The <strong>advance at request</strong> is set here by imcorpcart — use the <strong>Advance</strong> button on the partner's row.
               Attach the leasing company to each corporate under <strong>Companies → Smart EPP</strong>.
             </p>
           </>
@@ -762,6 +813,53 @@ export function UsersScreen() {
         </Field>
       </Modal>
 
+      {/* Advance at request — admin-owned; the leasing partner sees it read-only */}
+      <Modal
+        open={Boolean(editAdvance)}
+        onClose={() => setEditAdvance(null)}
+        title={`Advance at request — ${editAdvance?.name ?? ''}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditAdvance(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={saveAdvance} disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12.5, color: 'var(--text3)', margin: '0 0 14px' }}>
+          What an employee pays via Razorpay when they submit a Smart EPP request financed by this
+          partner — refunded in full if HR or the partner declines it. Applies to every company
+          attached to this partner, on new requests only. Only imcorpcart sets this; the partner
+          sees it read-only in its own portal.
+        </p>
+        <Field label="Charged as">
+          <Segmented<'FIXED' | 'PERCENT'>
+            options={[
+              { value: 'FIXED', label: 'Fixed ₹' },
+              { value: 'PERCENT', label: '% of asset' },
+            ]}
+            value={editAdvance?.type ?? 'FIXED'}
+            onChange={(v) => setEditAdvance((a) => (a ? { ...a, type: v } : a))}
+          />
+        </Field>
+        <Field
+          label={editAdvance?.type === 'PERCENT' ? 'Percent of asset cost' : 'Amount (₹)'}
+          hint="0 = no advance is collected"
+        >
+          <Input
+            placeholder={editAdvance?.type === 'PERCENT' ? '2' : '499'}
+            inputMode="decimal"
+            value={editAdvance?.value ?? ''}
+            onChange={(e) =>
+              setEditAdvance((a) => (a ? { ...a, value: e.target.value.replace(/[^0-9.]/g, '') } : a))
+            }
+          />
+        </Field>
+      </Modal>
+
       {/* Edit company — Smart EPP enablement + lease inputs */}
       <Modal
         open={Boolean(editCompany)}
@@ -792,7 +890,7 @@ export function UsersScreen() {
             onClick={() => setEditCompany((c) => (c ? { ...c, smartEpp: !c.smartEpp } : c))}
           />
         </div>
-        <Field label="Leasing company" hint="Supplies PTPM, tenure, PV discount and the advance fee; approves at stage 2">
+        <Field label="Leasing company" hint="Supplies PTPM, tenure and PV discounts; approves at stage 2. The advance at request is set on the Leasing tab.">
           <Select
             selectSize="sm"
             style={{ width: '100%' }}
