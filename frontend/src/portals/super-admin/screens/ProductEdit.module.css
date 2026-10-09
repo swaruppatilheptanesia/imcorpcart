@@ -1,12 +1,17 @@
 .wrap {
-  max-width: 940px;
-  padding-bottom: 76px;
+  max-width: 1180px;
 }
 .grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
+}
+/* Denser rail than ProductDetail's, so it stacks earlier than that screen's 900px. */
+@media (max-width: 1040px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .main {
   display: flex;
@@ -15,8 +20,6 @@
   min-width: 0;
 }
 .rail {
-  position: sticky;
-  top: 88px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -28,7 +31,7 @@
 }
 .pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 14px;
 }
 .textarea {
@@ -137,6 +140,13 @@
   gap: 10px;
   align-items: center;
 }
+/* About this item / What's in the box: one input + remove, not two inputs. */
+.bulletRow {
+  display: grid;
+  grid-template-columns: 1fr 36px;
+  gap: 10px;
+  align-items: center;
+}
 .hex {
   width: 42px;
   height: 42px;
@@ -178,16 +188,16 @@
 }
 
 .saveBar {
-  position: fixed;
+  position: sticky;
   bottom: 0;
-  left: var(--sa-sidebar, 0);
-  right: 0;
   z-index: 20;
+  /* Bleeds to the shell's .inner padding edges (26px 32px 60px). */
+  margin: 20px -32px -60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 28px;
+  padding: 14px 32px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--border);

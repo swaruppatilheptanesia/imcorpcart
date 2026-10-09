@@ -367,6 +367,52 @@ function EditForm({
           </Card>
 
           <Card pad="lg">
+            <div className={s.sectionTitle}>About this item</div>
+            <p className={s.muted} style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+              Point-wise bullets shown on the product page. Leave empty and the page falls back to
+              bullets generated from the freebie, variants, colours and stock.
+            </p>
+            <div className={styles.rowList}>
+              {aboutItem.map((b, i) => (
+                <div key={i} className={styles.bulletRow}>
+                  <Input
+                    placeholder="e.g. 5000mAh battery, up to two days of use"
+                    value={b}
+                    onChange={(e) => aboutOps.change(i, e.target.value)}
+                  />
+                  <button className={styles.removeBtn} onClick={() => aboutOps.remove(i)} aria-label="Remove bullet">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={aboutOps.add}>
+              Add bullet
+            </Button>
+
+            <div className={s.sectionTitle} style={{ marginTop: 18 }}>
+              What&apos;s in the box
+            </div>
+            <div className={styles.rowList}>
+              {inTheBox.map((b, i) => (
+                <div key={i} className={styles.bulletRow}>
+                  <Input
+                    placeholder="e.g. 30W charger"
+                    value={b}
+                    onChange={(e) => boxOps.change(i, e.target.value)}
+                  />
+                  <button className={styles.removeBtn} onClick={() => boxOps.remove(i)} aria-label="Remove item">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={boxOps.add}>
+              Add item
+            </Button>
+          </Card>
+
+          <Card pad="lg">
             <div className={s.sectionTitle}>Specifications</div>
             <div className={styles.rowList}>
               {specRows.map((r, i) => (
@@ -382,6 +428,45 @@ function EditForm({
             <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={addSpec}>
               Add spec
             </Button>
+          </Card>
+
+          <Card pad="lg">
+            <div className={s.sectionTitle}>Tax &amp; policies</div>
+            <div className={styles.stack}>
+              <div className={styles.pair}>
+                <Field label="HSN code" hint="HSN / SAC code (for GST)">
+                  <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="8517" />
+                </Field>
+                <Field label="GST %" hint="Tax rate">
+                  <Input value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} prefix="%" inputMode="numeric" placeholder="18" />
+                </Field>
+              </div>
+              <Field label="Country of origin" hint="Shown in Specifications on the product page">
+                <Input
+                  value={countryOfOrigin}
+                  onChange={(e) => setCountryOfOrigin(e.target.value)}
+                  placeholder="India"
+                />
+              </Field>
+              <Field label="Warranty" hint="Shown as the Warranty section on the product page">
+                <textarea
+                  className={styles.textarea}
+                  rows={3}
+                  value={warrantyText}
+                  onChange={(e) => setWarrantyText(e.target.value)}
+                  placeholder="1 year manufacturer warranty…"
+                />
+              </Field>
+              <Field label="Terms &amp; Conditions" hint="Shown as the T&C section on the product page">
+                <textarea
+                  className={styles.textarea}
+                  rows={4}
+                  value={termsText}
+                  onChange={(e) => setTermsText(e.target.value)}
+                  placeholder="Return &amp; replacement terms, eligibility…"
+                />
+              </Field>
+            </div>
           </Card>
         </div>
 
@@ -452,90 +537,6 @@ function EditForm({
               </Field>
             </div>
           </Card>
-          <Card pad="lg">
-            <div className={s.sectionTitle}>Tax &amp; policies</div>
-            <div className={styles.stack}>
-              <div className={styles.pair}>
-                <Field label="HSN code" hint="HSN / SAC code (for GST)">
-                  <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="8517" />
-                </Field>
-                <Field label="GST %" hint="Tax rate">
-                  <Input value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} prefix="%" inputMode="numeric" placeholder="18" />
-                </Field>
-              </div>
-              <Field label="Country of origin" hint="Shown in Specifications on the product page">
-                <Input
-                  value={countryOfOrigin}
-                  onChange={(e) => setCountryOfOrigin(e.target.value)}
-                  placeholder="India"
-                />
-              </Field>
-              <Field label="Warranty" hint="Shown as the Warranty section on the product page">
-                <textarea
-                  className={styles.textarea}
-                  rows={3}
-                  value={warrantyText}
-                  onChange={(e) => setWarrantyText(e.target.value)}
-                  placeholder="1 year manufacturer warranty…"
-                />
-              </Field>
-              <Field label="Terms &amp; Conditions" hint="Shown as the T&C section on the product page">
-                <textarea
-                  className={styles.textarea}
-                  rows={4}
-                  value={termsText}
-                  onChange={(e) => setTermsText(e.target.value)}
-                  placeholder="Return &amp; replacement terms, eligibility…"
-                />
-              </Field>
-            </div>
-          </Card>
-          <Card pad="lg">
-            <div className={s.sectionTitle}>About this item</div>
-            <p className={s.muted} style={{ fontSize: 12.5, margin: '0 0 10px' }}>
-              Point-wise bullets shown on the product page. Leave empty and the page falls back to
-              bullets generated from the freebie, variants, colours and stock.
-            </p>
-            <div className={styles.rowList}>
-              {aboutItem.map((b, i) => (
-                <div key={i} className={styles.specRow}>
-                  <Input
-                    placeholder="e.g. 5000mAh battery, up to two days of use"
-                    value={b}
-                    onChange={(e) => aboutOps.change(i, e.target.value)}
-                  />
-                  <button className={styles.removeBtn} onClick={() => aboutOps.remove(i)} aria-label="Remove bullet">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={aboutOps.add}>
-              Add bullet
-            </Button>
-
-            <div className={s.sectionTitle} style={{ marginTop: 18 }}>
-              What&apos;s in the box
-            </div>
-            <div className={styles.rowList}>
-              {inTheBox.map((b, i) => (
-                <div key={i} className={styles.specRow}>
-                  <Input
-                    placeholder="e.g. 30W charger"
-                    value={b}
-                    onChange={(e) => boxOps.change(i, e.target.value)}
-                  />
-                  <button className={styles.removeBtn} onClick={() => boxOps.remove(i)} aria-label="Remove item">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <Button className={styles.addRowBtn} variant="secondary" size="sm" icon={<Plus size={14} />} onClick={boxOps.add}>
-              Add item
-            </Button>
-          </Card>
-
           <Card pad="lg">
             <div className={s.sectionTitle}>Protection, cross-sell &amp; dispatch</div>
             <div className={styles.stack}>
