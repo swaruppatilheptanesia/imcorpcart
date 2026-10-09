@@ -20,6 +20,10 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
   const navigate = useNavigate();
   const { toggleWishlist, isWished, authed, purchaseMode } = useStore();
   const wished = isWished(p.id);
+  // Out of stock products stay in the listing rather than disappearing, so the
+  // card has to say so: a pill over the image and a faded well, since the price
+  // row otherwise reads exactly like a buyable product.
+  const oos = p.stock <= 0;
   // Smart EPP mode: lead with the monthly EMI + the tenure's "effective purchase".
   const seppView = purchaseMode === 'SEPP' && p.sepp ? p.sepp : null;
 
@@ -39,10 +43,16 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
     <button className={cn(styles.card, list && styles.listCard)} onClick={() => navigate(`/shop/product/${p.id}`)}>
       <div className={styles.well} style={{ aspectRatio: list ? '1 / 1' : ASPECT[p.group] ?? DEFAULT_ASPECT }}>
         {p.image ? (
-          <img className={styles.img} src={p.image} alt={p.name} />
+          <img className={cn(styles.img, oos && styles.faded)} src={p.image} alt={p.name} />
         ) : (
-          <span className={styles.device} style={{ background: `linear-gradient(155deg, ${p.g1}, ${p.g2})` }} />
+          <span
+            className={cn(styles.device, oos && styles.faded)}
+            style={{ background: `linear-gradient(155deg, ${p.g1}, ${p.g2})` }}
+          />
         )}
+        {/* Only the out-of-stock state is called out — badging every available
+            card "In stock" is noise on a grid where that is the norm. */}
+        {oos && <span className={cn(styles.stockPill, styles.outStock)}>Out of stock</span>}
         <span
           role="button"
           tabIndex={0}
@@ -97,7 +107,11 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
               {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
               <span className={styles.priceTag}>{authed ? 'EPP' : 'MOP'}</span>
             </div>
-            {p.cashback > 0 && <div className={styles.cashback}>Earn {inr(p.cashback)} cashback</div>}
+            {oos ? (
+              <div className={styles.oosNote}>Currently unavailable</div>
+            ) : (
+              p.cashback > 0 && <div className={styles.cashback}>Earn {inr(p.cashback)} cashback</div>
+            )}
           </>
         )}
         {p.freebie.enabled && (

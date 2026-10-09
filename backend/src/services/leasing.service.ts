@@ -329,7 +329,7 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
     include: shopProductInclude,
   });
   const byProduct = new Map(products.map((p) => [p.id, p]));
-  type Line = { productId: string; quantity: number; unitPrice: number; name: string };
+  type Line = { productId: string; quantity: number; unitPrice: number; name: string; shade: string | null };
   const groups = new Map<string | null, Line[]>();
   for (const it of r.items) {
     const p = byProduct.get(it.productId);
@@ -338,7 +338,14 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
     if (!offer) throw AppError.badRequest(`"${it.product.name}" is out of stock — ask the employee to re-submit`);
     const key = offer.resellerId ?? null;
     const arr = groups.get(key) ?? [];
-    arr.push({ productId: it.productId, quantity: it.quantity, unitPrice: toNumber(it.unitPrice), name: it.product.name });
+    arr.push({
+      productId: it.productId,
+      quantity: it.quantity,
+      unitPrice: toNumber(it.unitPrice),
+      name: it.product.name,
+      // The colour the employee chose, carried from the request through to the order.
+      shade: it.shade ?? null,
+    });
     groups.set(key, arr);
   }
 
@@ -402,6 +409,7 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
               quantity: l.quantity,
               unitPrice: D(l.unitPrice),
               lineTotal: D(l.unitPrice * l.quantity),
+              shade: l.shade,
             })),
           },
         },

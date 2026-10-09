@@ -205,3 +205,15 @@
 .listCard .specs {
   -webkit-line-clamp: 3;
 }
+
+/* Out of stock: the product is still listed and still priced, so the image is
+   faded and the price row carries a note — the pill alone is easy to miss. */
+.faded {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+}
+.oosNote {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--error);
+}

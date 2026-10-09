@@ -196,7 +196,7 @@ export interface ResellerOrderDetail {
   courier: string;
   awb: string;
   address: string;
-  items: { name: string; qty: number; price: number }[];
+  items: { name: string; shade: string | null; qty: number; price: number }[];
 }
 
 export async function getResellerOrderDetail(id: string): Promise<ResellerOrderDetail> {
@@ -215,7 +215,14 @@ export async function getResellerOrderDetail(id: string): Promise<ResellerOrderD
     courier: o.shipment?.courier?.name ?? '—',
     awb: o.shipment?.awbNumber ?? '—',
     address: a ? [a.line1, a.line2, a.city, a.state, a.pincode].filter(Boolean).join(', ') : '—',
-    items: o.items.map((it) => ({ name: it.product.name, qty: it.quantity, price: it.unitPrice })),
+    // The colour matters most here — this is the screen the person packing the
+    // box reads. Falls back to the SKU's own optionColor for variant-family lines.
+    items: o.items.map((it) => ({
+      name: it.product.name,
+      shade: it.shade ?? it.product.optionColor ?? null,
+      qty: it.quantity,
+      price: it.unitPrice,
+    })),
   };
 }
 

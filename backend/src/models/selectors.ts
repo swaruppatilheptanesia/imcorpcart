@@ -107,6 +107,9 @@ export const orderFullInclude = {
       quantity: true,
       unitPrice: true,
       lineTotal: true,
+      // Colour on the line + the post-order colour-swap record, if any.
+      shade: true,
+      substitution: true,
       voucherFulfilment: { select: { status: true, denomination: true, deliveredAt: true } },
       product: { select: { id: true, name: true, sku: true, sourceId: true, source: { select: { name: true } } } },
     },
@@ -161,6 +164,9 @@ export const shopOrderFullInclude = {
       quantity: true,
       unitPrice: true,
       lineTotal: true,
+      // The buyer sees which colour is coming, including after a staff swap.
+      shade: true,
+      substitution: true,
       voucherFulfilment: {
         select: {
           status: true,

@@ -86,8 +86,18 @@ export function OrderDetail() {
                       <div className={styles.itemName}>{l.product.name}</div>
                       <div className={styles.itemSub}>
                         Qty {l.quantity}
+                        {l.shade ? ` · ${l.shade}` : ''}
                         {vf?.denomination ? ` · ${inr(vf.denomination)} each` : ''}
                       </div>
+                      {/* Staff swapped the colour because the one ordered couldn't
+                          be shipped. The buyer agreed off-platform, so say so here
+                          rather than letting a different colour just turn up. */}
+                      {l.substitution && (
+                        <div className={styles.itemSub} style={{ color: 'var(--warning)' }}>
+                          Colour changed from {l.substitution.orderedColour ?? l.substitution.from} to{' '}
+                          {l.substitution.to}, as confirmed with you.
+                        </div>
+                      )}
                     </div>
                     <span className={styles.itemPrice}>{inr(l.lineTotal)}</span>
                   </div>

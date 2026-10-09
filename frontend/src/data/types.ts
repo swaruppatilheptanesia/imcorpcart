@@ -47,10 +47,26 @@ export interface Coupon {
 
 export type OrderStatus = 'Processing' | 'In transit' | 'Delivered' | 'Cancelled';
 
+/** A post-order colour change made by staff (ordered colour unshippable, buyer
+ *  confirmed off-platform). `priceDelta` is recorded, never charged — the order
+ *  total stays at what was actually paid. */
+export interface OrderSubstitution {
+  orderedColour: string | null; // the FIRST colour ordered, kept across repeat swaps
+  from: string | null;
+  to: string;
+  priceDelta: number; // new colour's current price − the ordered colour's current price
+  chargedUnitPrice: number;
+  newListPrice: number;
+  reason: string;
+  at: string;
+}
+
 export interface OrderItem {
   itemId?: string; // OrderItem cuid — needed to retry a stuck voucher line
+  productId?: string;
   name: string;
-  shade: string;
+  shade: string | null; // colour on the line; null = product has no colour axis
+  substitution?: OrderSubstitution | null;
   g1: string;
   g2: string;
   qty: number;

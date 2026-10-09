@@ -96,19 +96,26 @@ function searchableCategoryText(p: StoreProduct): string {
   return `${group} ${sub}`;
 }
 
+// Out-of-stock products stay in the listing (the card labels them) but sink to
+// the bottom of every browse ordering — a shopper scanning a shelf should meet
+// what they can actually buy first. Array.sort is stable, so within each group
+// the chosen ordering (and, for the default sort, catalog order) is preserved.
+const oosLast = (a: StoreProduct, b: StoreProduct): number =>
+  (a.stock > 0 ? 0 : 1) - (b.stock > 0 ? 0 : 1);
+
 export function sortProducts(list: StoreProduct[], sort: SortKey): StoreProduct[] {
   const out = [...list];
   switch (sort) {
     case 'priceAsc':
-      return out.sort((a, b) => a.price - b.price);
+      return out.sort((a, b) => oosLast(a, b) || a.price - b.price);
     case 'priceDesc':
-      return out.sort((a, b) => b.price - a.price);
+      return out.sort((a, b) => oosLast(a, b) || b.price - a.price);
     case 'rating':
-      return out.sort((a, b) => b.rating - a.rating);
+      return out.sort((a, b) => oosLast(a, b) || b.rating - a.rating);
     case 'newest':
-      return out.sort((a, b) => b.newness - a.newness);
+      return out.sort((a, b) => oosLast(a, b) || b.newness - a.newness);
     default:
-      return out;
+      return out.sort(oosLast);
   }
 }
 
@@ -134,7 +141,9 @@ function byRelevance(list: StoreProduct[], search: string): StoreProduct[] {
   const q = tokenize(search);
   return list
     .map((p, i) => ({ p, i, score: scoreFor(p, q, () => searchableCategoryText(p)) }))
-    .sort((a, b) => b.score - a.score || a.i - b.i) // ties keep catalog order
+    // Relevance stays the primary key: a shopper who typed the exact model wants
+    // to see it, even unavailable. Stock only breaks ties between equal scores.
+    .sort((a, b) => b.score - a.score || oosLast(a.p, b.p) || a.i - b.i)
     .map((x) => x.p);
 }
 

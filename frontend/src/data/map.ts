@@ -9,6 +9,7 @@ import type {
   Order,
   OrderItem,
   OrderStatus,
+  OrderSubstitution,
   Product,
   ProductGroup,
   ProductStatus,
@@ -288,7 +289,15 @@ interface ApiOrderItem {
   // Voucher issuance now lives in its own table, nested on the item (status only
   // for admin; no raw code). Flattened onto OrderItem below so components are stable.
   voucherFulfilment?: { status?: string | null; denomination?: number | null; deliveredAt?: string | null } | null;
-  product: { id: string; name: string; sourceId?: string | null; source?: { name: string } | null };
+  shade?: string | null;
+  substitution?: OrderSubstitution | null;
+  product: {
+    id: string;
+    name: string;
+    optionColor?: string | null;
+    sourceId?: string | null;
+    source?: { name: string } | null;
+  };
 }
 interface ApiOrderFull extends ApiOrderListRow {
   id: string;
@@ -304,8 +313,13 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
     const [g1, g2] = gradientFor(it.product.id);
     return {
       itemId: it.id,
+      productId: it.product.id,
       name: it.product.name,
-      shade: '',
+      // Falls back to the SKU's own optionColor so variant-family lines read as a
+      // colour even without a stored shade — which is every line placed before
+      // OrderItem.shade existed.
+      shade: it.shade ?? it.product.optionColor ?? null,
+      substitution: it.substitution ?? null,
       g1,
       g2,
       qty: it.quantity,

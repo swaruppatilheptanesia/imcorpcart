@@ -126,7 +126,8 @@
 }
 .shadeRow {
   display: grid;
-  grid-template-columns: 42px 1fr 36px;
+  /* swatch · name · stock · remove */
+  grid-template-columns: 42px 1fr 92px 36px;
   gap: 10px;
   align-items: center;
 }

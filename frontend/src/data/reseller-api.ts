@@ -40,7 +40,12 @@ export interface ResellerOrderApi {
 export interface ResellerOrderFullApi extends ResellerOrderApi {
   subtotal: number;
   address: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null;
-  items: { quantity: number; unitPrice: number; product: { id: string; name: string; sku: string } }[];
+  items: {
+    quantity: number;
+    unitPrice: number;
+    shade: string | null;
+    product: { id: string; name: string; sku: string; optionColor?: string | null };
+  }[];
   shipment: {
     status: string;
     awbNumber: string | null;

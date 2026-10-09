@@ -306,6 +306,18 @@ function EditForm({
                     aria-label="Colour"
                   />
                   <Input placeholder="Colour name" value={sh.name} onChange={(e) => setShade(i, { name: e.target.value })} />
+                  {/* Per-colour stock. The schema and importer have always carried
+                      it, but there was no input, so every colour added here sat at
+                      zero — which reads as "out of stock" on the storefront and
+                      blocks an order's colour from being swapped to it. */}
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Stock"
+                    value={String(sh.stock ?? 0)}
+                    onChange={(e) => setShade(i, { stock: Math.max(0, Number(e.target.value) || 0) })}
+                    aria-label={`Stock for ${sh.name || 'this colour'}`}
+                  />
                   <button className={styles.removeBtn} onClick={() => removeShade(i)} aria-label="Remove colour">
                     <Trash2 size={15} />
                   </button>

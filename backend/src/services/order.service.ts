@@ -1,12 +1,13 @@
-import { Prisma, OrderStatus } from '@prisma/client';
+import { Prisma, OrderStatus, OrderSource, ProductStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { parsePagination, pageMeta } from '../utils/pagination';
-import { orderListSelect, orderFullInclude } from '../models/selectors';
-import { serialize } from '../models/serializers';
+import { orderListSelect, orderFullInclude, notDeleted } from '../models/selectors';
+import { serialize, toNumber } from '../models/serializers';
 import { applyTransit } from './reseller.service';
+import { shopProductInclude, toStoreProduct, pickBuyBox } from './shop.service';
 import { retryVoucherFulfilment, resendVoucherEmail } from './voucher-fulfilment.service';
-import type { OrderListQuery, OverrideStatusInput } from '../validators/order.schema';
+import type { OrderListQuery, OverrideStatusInput, ColourSwapInput } from '../validators/order.schema';
 import type { TransitUpdateInput } from '../validators/reseller.schema';
 
 // The coarse buckets the Orders screen filters by.
@@ -132,4 +133,279 @@ export async function cancelOrder(id: string, note: string | undefined, actorId:
   ]);
 
   return getOrder(order.id);
+}
+
+// ─── Colour substitution ─────────────────────────────────────────────────────
+// When the colour a buyer ordered turns out to be unavailable, staff confirm an
+// alternative with them off-platform and swap it here, instead of refunding and
+// asking them to order the available colour again.
+//
+// The catalog expresses colour two different ways and both are offered:
+//   • swatch     — a `Product.specs.shades[]` entry on the SAME product, so the
+//                  swap is a label change and the price cannot move.
+//   • sibling SKU — a different Product sharing `familyKey` with the same
+//                  `optionVariant` and a different `optionColor`, each carrying
+//                  its own ProductOffer and price.
+//
+// What a swap never does is move money. `unitPrice`/`lineTotal` and every Order
+// total stay exactly as charged, because the order was paid through Razorpay with
+// one captured Payment verified against the priced cart — rewriting the total
+// would desynchronise it from the money actually taken. A price gap is therefore
+// RECORDED on the line (`substitution.priceDelta`) for off-platform settlement,
+// never charged.
+
+// Colour is editable only before anything ships: once a parcel is moving, the
+// colour on the order has to match what is physically in it.
+const SWAPPABLE_STATUSES: OrderStatus[] = [OrderStatus.PLACED, OrderStatus.CONFIRMED];
+
+export interface ColourOption {
+  kind: 'shade' | 'sku';
+  /** What the operator picks from, e.g. "Black Titanium". */
+  label: string;
+  /** The shade name to store on the line. */
+  shade: string;
+  /** Set only for a sibling-SKU swap — the product the line moves to. */
+  productId: string | null;
+  stock: number;
+  listPrice: number;
+  /** listPrice − what this line was charged. Non-zero is settled off-platform. */
+  priceDelta: number;
+  current: boolean;
+}
+
+async function loadLineForSwap(orderId: string, itemId: string) {
+  const item = await prisma.orderItem.findFirst({
+    // Accept the cuid or the human orderNo, like every other order mutation.
+    where: { id: itemId, order: { OR: [{ id: orderId }, { orderNo: orderId }] } },
+    select: {
+      id: true,
+      productId: true,
+      quantity: true,
+      unitPrice: true,
+      shade: true,
+      voucherFulfilment: { select: { id: true } },
+      substitution: true,
+      order: {
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          source: true,
+          resellerId: true,
+          shipment: { select: { dispatchedAt: true } },
+        },
+      },
+      // shopProductInclude (not a narrow select) so the ordered colour's CURRENT
+      // buy-box price is available — see the price-gap note in colourOptionsFor.
+      product: { include: shopProductInclude },
+    },
+  });
+  if (!item) throw AppError.notFound('Order line not found');
+  return item;
+}
+
+type LineForSwap = Awaited<ReturnType<typeof loadLineForSwap>>;
+
+function assertSwappable(item: LineForSwap): void {
+  if (item.voucherFulfilment) {
+    throw AppError.badRequest('Gift cards have no colour to change.');
+  }
+  if (item.order.source === OrderSource.PARTNER) {
+    // A partner's own system is the line of record for these; editing here would
+    // silently desynchronise the two.
+    throw AppError.badRequest('Partner-API orders are edited through the partner, not here.');
+  }
+  if (item.order.shipment?.dispatchedAt) {
+    throw AppError.badRequest(
+      'This order has already been dispatched — the colour on it must match what shipped.',
+    );
+  }
+  if (!SWAPPABLE_STATUSES.includes(item.order.status)) {
+    throw AppError.badRequest(
+      `This order is ${item.order.status.toLowerCase()} — the colour can only be changed before dispatch.`,
+    );
+  }
+}
+
+/** Every colour this line could be swapped to, with live stock. The single source
+ *  of truth for eligibility: the picker renders it and the write re-checks it. */
+async function colourOptionsFor(item: LineForSwap): Promise<ColourOption[]> {
+  const charged = toNumber(item.unitPrice);
+  const currentLabel = item.shade ?? item.product.optionColor ?? null;
+  // The price gap must be measured CURRENT-against-CURRENT, never against the
+  // charged price: `unitPrice` is a snapshot frozen at checkout, so a catalogue
+  // price change since then would otherwise be reported as a colour price
+  // difference. (A live order carries unitPrice 15449 against a 14999 offer.)
+  const sourceNow = toNumber(pickBuyBox(item.product.offers)?.eppPrice ?? item.unitPrice);
+  const out: ColourOption[] = [];
+
+  // 1. Swatches on this very product. The colour is presentation on one SKU, so
+  //    there is no separate price and the delta is always zero.
+  const specs = (item.product.specs ?? {}) as { shades?: { name?: string; stock?: number }[] };
+  for (const sh of specs.shades ?? []) {
+    if (!sh?.name) continue;
+    out.push({
+      kind: 'shade',
+      label: sh.name,
+      shade: sh.name,
+      productId: null,
+      stock: Number(sh.stock ?? 0),
+      // Shades share one ProductOffer, so a swatch swap is price-neutral by
+      // construction — there is no second price to differ from.
+      listPrice: sourceNow,
+      priceDelta: 0,
+      current: currentLabel === sh.name,
+    });
+  }
+
+  // 2. Sibling SKUs — same family, SAME storage/variant (this is a colour swap,
+  //    not a spec upgrade), different colour.
+  if (item.product.familyKey) {
+    const siblings = await prisma.product.findMany({
+      where: {
+        familyKey: item.product.familyKey,
+        id: { not: item.product.id },
+        optionVariant: item.product.optionVariant,
+        optionColor: { not: null },
+        status: ProductStatus.ACTIVE,
+        ...notDeleted,
+      },
+      include: shopProductInclude,
+    });
+    for (const sib of siblings) {
+      const offer = pickBuyBox(sib.offers);
+      // Orders are split one per seller (placeOrder), with Order.resellerId set,
+      // so a sibling that a DIFFERENT reseller fulfils cannot join this order —
+      // it would put a line in the wrong seller's book. Leave it out entirely
+      // rather than offering something that must then be refused.
+      if (offer && (offer.resellerId ?? null) !== (item.order.resellerId ?? null)) continue;
+      const sp = toStoreProduct(sib);
+      out.push({
+        kind: 'sku',
+        label: sib.optionColor as string,
+        shade: sib.optionColor as string,
+        productId: sib.id,
+        stock: sp.stock,
+        listPrice: sp.price,
+        priceDelta: Math.round((sp.price - sourceNow) * 100) / 100,
+        current: false,
+      });
+    }
+  }
+
+  // In stock first, then alphabetical — the operator is looking for something
+  // they can actually ship.
+  return out.sort((a, b) => (b.stock > 0 ? 1 : 0) - (a.stock > 0 ? 1 : 0) || a.label.localeCompare(b.label));
+}
+
+/** Admin: the colours this order line could be changed to. */
+export async function listColourOptions(orderId: string, itemId: string) {
+  const item = await loadLineForSwap(orderId, itemId);
+  const options = await colourOptionsFor(item);
+  return serialize({
+    itemId: item.id,
+    productName: item.product.name,
+    current: item.shade ?? item.product.optionColor ?? null,
+    quantity: item.quantity,
+    charged: toNumber(item.unitPrice),
+    // Why the action is unavailable, so the UI can say so instead of showing an
+    // empty picker.
+    editable: !item.voucherFulfilment
+      && !item.order.shipment?.dispatchedAt
+      && SWAPPABLE_STATUSES.includes(item.order.status),
+    options,
+  });
+}
+
+/** Admin: change this line's colour to one the vendor can actually ship. The
+ *  buyer is confirmed off-platform; this only records and applies the decision. */
+export async function swapItemColour(
+  orderId: string,
+  itemId: string,
+  input: ColourSwapInput,
+  actorId: string,
+) {
+  const item = await loadLineForSwap(orderId, itemId);
+  assertSwappable(item);
+
+  const options = await colourOptionsFor(item);
+  // Never trust the posted colour — it must be one the server itself computed,
+  // which is also exactly what the operator was shown.
+  const target = options.find((o) =>
+    input.productId ? o.productId === input.productId : o.kind === 'shade' && o.shade === input.shade,
+  );
+  if (!target) throw AppError.badRequest('That colour is not available for this product.');
+  if (target.current) throw AppError.badRequest(`This line is already ${target.label}.`);
+  if (target.stock < item.quantity) {
+    throw AppError.badRequest(
+      target.stock <= 0
+        ? `${target.label} is out of stock too.`
+        : `Only ${target.stock} of ${target.label} in stock — this line is for ${item.quantity}. ` +
+          'The whole line has to move to one colour.',
+    );
+  }
+
+  const from = item.shade ?? item.product.optionColor ?? null;
+  // A second swap must not bury what was originally bought: carry the first
+  // record's `orderedColour` forward rather than overwriting it with the
+  // previous swap's target.
+  const prior = (item.substitution ?? null) as { orderedColour?: string | null } | null;
+  const substitution = {
+    // Presence of a prior record decides this, not its value: `?? from` would
+    // overwrite a legitimately-null original (a pre-migration line) with the
+    // previous swap's target on the second swap.
+    orderedColour: prior ? prior.orderedColour ?? null : from,
+    from,
+    to: target.label,
+    fromProductId: target.productId ? item.productId : null,
+    toProductId: target.productId,
+    chargedUnitPrice: toNumber(item.unitPrice),
+    newListPrice: target.listPrice,
+    priceDelta: target.priceDelta,
+    reason: input.reason,
+    at: new Date().toISOString(),
+    byId: actorId,
+  };
+
+  await prisma.$transaction([
+    prisma.orderItem.update({
+      where: { id: item.id },
+      data: {
+        shade: target.shade,
+        // A sibling swap repoints the line at the other SKU. unitPrice/lineTotal
+        // are deliberately NOT rewritten — see the note at the top of this section.
+        ...(target.productId ? { productId: target.productId } : {}),
+        substitution: substitution as Prisma.InputJsonValue,
+      },
+    }),
+    prisma.orderStatusHistory.create({
+      data: {
+        orderId: item.order.id,
+        // Unchanged: a colour swap is not a status change. This row exists as an
+        // operator trail; the buyer-visible record is `OrderItem.substitution`.
+        status: item.order.status,
+        changedById: actorId,
+        note: `Colour changed ${from ?? 'unspecified'} → ${target.label}: ${input.reason}`,
+      },
+    }),
+  ]);
+
+  // A manual, money-adjacent override deserves an audit row. Best-effort: losing
+  // the log must never fail the swap that already committed.
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorId,
+        action: 'order.item_colour_swapped',
+        entityType: 'OrderItem',
+        entityId: item.id,
+        before: { shade: from, productId: item.productId, orderNo: item.order.orderNo },
+        after: substitution as Prisma.InputJsonValue,
+      },
+    });
+  } catch (logErr) {
+    console.error('[orders] failed to write colour-swap audit', logErr);
+  }
+
+  return getOrder(item.order.id);
 }

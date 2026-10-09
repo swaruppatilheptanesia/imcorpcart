@@ -3,7 +3,13 @@ import * as ctrl from '../controllers/order.controller';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { idParam } from '../validators/common.schema';
-import { orderListQuery, overrideStatusBody, cancelOrderBody, voucherRetryParams } from '../validators/order.schema';
+import {
+  orderListQuery,
+  overrideStatusBody,
+  cancelOrderBody,
+  orderItemParams,
+  colourSwapBody,
+} from '../validators/order.schema';
 import { transitUpdateBody } from '../validators/reseller.schema';
 
 const router = Router();
@@ -15,13 +21,24 @@ router.patch('/:id/transit', validate({ params: idParam, body: transitUpdateBody
 router.post('/:id/cancel', validate({ params: idParam, body: cancelOrderBody }), asyncHandler(ctrl.cancel));
 router.post(
   '/:id/items/:itemId/retry-voucher',
-  validate({ params: voucherRetryParams }),
+  validate({ params: orderItemParams }),
   asyncHandler(ctrl.retryVoucher),
 );
 router.post(
   '/:id/items/:itemId/resend-voucher',
-  validate({ params: voucherRetryParams }),
+  validate({ params: orderItemParams }),
   asyncHandler(ctrl.resendVoucher),
+);
+// Colour substitution: read the shippable colours for a line, then move it.
+router.get(
+  '/:id/items/:itemId/colour-options',
+  validate({ params: orderItemParams }),
+  asyncHandler(ctrl.itemColourOptions),
+);
+router.patch(
+  '/:id/items/:itemId/colour',
+  validate({ params: orderItemParams, body: colourSwapBody }),
+  asyncHandler(ctrl.swapItemColour),
 );
 
 export default router;

@@ -1,21 +1,50 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Download, AlertTriangle, Truck, Gift, RefreshCw, Mail } from 'lucide-react';
-import { Button, Card, EmptyState, Field, Input, ProductThumb, Select, Skeleton, StatusPill, Timeline, useToast } from '@/components';
-import { getOrder, orderStatusTone, timelineSteps, statusToStep, updateOrderTransit, retryVoucherFulfilment, resendVoucherEmail } from '@/data/api';
+import { ArrowLeft, FileText, Download, AlertTriangle, Truck, Gift, RefreshCw, Mail, Palette } from 'lucide-react';
+import { Button, Card, EmptyState, Field, Input, Modal, ProductThumb, Select, Skeleton, StatusPill, Timeline, useToast } from '@/components';
+import {
+  getOrder,
+  orderStatusTone,
+  timelineSteps,
+  statusToStep,
+  updateOrderTransit,
+  retryVoucherFulfilment,
+  resendVoucherEmail,
+  getOrderItemColours,
+  changeOrderItemColour,
+} from '@/data/api';
 import { ApiError } from '@/data/http';
-import type { SemanticTone, Order } from '@/data/types';
+import type { SemanticTone, Order, OrderItem } from '@/data/types';
 import { useAsync } from '@/lib/useAsync';
 import { fmtDate } from '@/data/map';
 import { inr } from '@/lib/format';
 import s from './screen.module.css';
 import styles from './OrderDetail.module.css';
 
+// Inline per-line action chip. Button's smallest size is still too tall to sit
+// in an item's meta row, so the chips are hand-styled — shared by the voucher
+// actions and the colour swap.
+const chipBtn = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 3,
+  padding: '1px 6px',
+  borderRadius: 6,
+  fontSize: 11,
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--text)',
+} as const;
+
 export function OrderDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
 
   const { data: order, state, error, reload } = useAsync(() => getOrder(id ?? ''), [id]);
+  // The line whose colour is being changed. Mounted conditionally rather than
+  // toggled with `open`, because useAsync has no skip gate — mounting is what
+  // fetches the colour options exactly once per open.
+  const [swapLine, setSwapLine] = useState<OrderItem | null>(null);
 
   if (state === 'loading') {
     return (
@@ -83,6 +112,7 @@ export function OrderDetail() {
                     <div className={s.cellName}>{it.name}</div>
                     <div className={s.cellSub}>
                       Qty {it.qty}
+                      {it.shade ? ` · ${it.shade}` : ''}
                       {it.denomination ? ` · ${inr(it.denomination)} each` : ''}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, alignItems: 'center' }}>
@@ -109,6 +139,33 @@ export function OrderDetail() {
                           itemId={it.itemId}
                           onDone={reload}
                         />
+                      )}
+                      {/* The ordered colour can't always be shipped. Staff confirm
+                          an alternative with the buyer off-platform, then record it
+                          here instead of refunding and re-ordering. Only before
+                          dispatch, and never on a gift-card line. */}
+                      {it.itemId && !it.fulfilmentStatus && order.status === 'Processing' && (
+                        <button
+                          onClick={() => setSwapLine(it)}
+                          title="The ordered colour is unavailable — ship another"
+                          style={{ ...chipBtn, cursor: 'pointer' }}
+                        >
+                          <Palette size={11} /> Change colour
+                        </button>
+                      )}
+                      {it.substitution && (
+                        <span
+                          title={`Originally ${it.substitution.orderedColour ?? 'unspecified'} · ${it.substitution.reason}`}
+                          style={{
+                            padding: '1px 7px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            background: 'color-mix(in srgb, var(--warning) 14%, transparent)',
+                            color: 'var(--warning)',
+                          }}
+                        >
+                          Colour changed
+                        </span>
                       )}
                     </div>
                   </div>
@@ -195,6 +252,18 @@ export function OrderDetail() {
           )}
         </div>
       </div>
+
+      {swapLine && (
+        <ColourSwapModal
+          orderId={id ?? ''}
+          line={swapLine}
+          onClose={() => setSwapLine(null)}
+          onDone={() => {
+            setSwapLine(null);
+            reload();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -365,18 +434,6 @@ function VoucherStatusChip({
     }
   };
 
-  const chipBtn = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 3,
-    padding: '1px 6px',
-    borderRadius: 6,
-    fontSize: 11,
-    border: '1px solid var(--border)',
-    background: 'var(--surface)',
-    color: 'var(--text)',
-  } as const;
-
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <span
@@ -418,5 +475,152 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
       <span className={strong ? styles.lineStrong : styles.lineLabel}>{label}</span>
       <span className={strong ? styles.lineStrong : styles.lineVal}>{value}</span>
     </div>
+  );
+}
+
+/** Change a line's colour to one the vendor can actually ship.
+ *
+ *  The buyer is confirmed OUTSIDE the portal — this records that decision and
+ *  applies it, so an unavailable colour no longer forces a refund-and-reorder.
+ *  The colour list comes from the server (one endpoint covering both of the
+ *  catalogue's colour models) rather than being assembled here, so the picker
+ *  and the write agree on what is eligible.
+ */
+function ColourSwapModal({
+  orderId,
+  line,
+  onClose,
+  onDone,
+}: {
+  orderId: string;
+  line: OrderItem;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { flash } = useToast();
+  const { data, state, error } = useAsync(
+    () => getOrderItemColours(orderId, line.itemId as string),
+    [orderId, line.itemId],
+  );
+  const [pick, setPick] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Only colours that can cover the whole line — a part-swap would need the line
+  // split, which isn't supported.
+  const choices = (data?.options ?? []).filter((o) => !o.current);
+  const chosen = choices.find((o) => (o.productId ?? o.shade) === pick) ?? null;
+  const shippable = chosen && chosen.stock >= (data?.quantity ?? line.qty);
+
+  const save = async () => {
+    if (!chosen || !line.itemId) return;
+    setBusy(true);
+    try {
+      await changeOrderItemColour(orderId, line.itemId, {
+        ...(chosen.productId ? { productId: chosen.productId } : { shade: chosen.shade }),
+        reason: reason.trim(),
+      });
+      flash(`Colour changed to ${chosen.label}`);
+      onDone();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not change the colour');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Change colour"
+      width={520}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={!chosen || !shippable || reason.trim().length < 4 || busy}>
+            {busy ? 'Saving…' : 'Change colour'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <ProductThumb g1={line.g1} g2={line.g2} w={44} h={56} />
+          <div>
+            <div className={s.cellName}>{line.name}</div>
+            <div className={s.cellSub}>
+              Qty {line.qty} · ordered colour {line.shade ?? 'not recorded'}
+            </div>
+          </div>
+        </div>
+
+        {state === 'loading' && <Skeleton h={38} />}
+        {state === 'error' && <p className={s.muted} style={{ fontSize: 12.5 }}>{error}</p>}
+
+        {state === 'live' && data && !data.editable && (
+          <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
+            This line can no longer be changed — it has shipped, is a gift card, or belongs to a
+            partner order.
+          </p>
+        )}
+
+        {state === 'live' && data?.editable && choices.length === 0 && (
+          <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
+            This product has no other colour to move to. A refund and re-order is the only option
+            here.
+          </p>
+        )}
+
+        {state === 'live' && data?.editable && choices.length > 0 && (
+          <>
+            <Field label="Ship this colour instead">
+              <Select block value={pick} onChange={(e) => setPick(e.target.value)}>
+                <option value="">Select a colour…</option>
+                {choices.map((o) => (
+                  <option key={o.productId ?? o.shade} value={o.productId ?? o.shade}>
+                    {o.label}
+                    {o.stock > 0 ? ` — ${o.stock} in stock` : ' — out of stock'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            {chosen && !shippable && (
+              <p style={{ fontSize: 12.5, margin: 0, color: 'var(--error)' }}>
+                {chosen.stock <= 0
+                  ? `${chosen.label} is out of stock too.`
+                  : `Only ${chosen.stock} of ${chosen.label} in stock — this line is for ${data.quantity}. The whole line has to move to one colour.`}
+              </p>
+            )}
+
+            {/* A price gap is recorded, never charged — the buyer has already paid
+                and there is no partial refund or top-up path. */}
+            {chosen && shippable && chosen.priceDelta !== 0 && (
+              <p style={{ fontSize: 12.5, margin: 0, color: 'var(--warning)' }}>
+                {chosen.label} currently lists {inr(Math.abs(chosen.priceDelta))}{' '}
+                {chosen.priceDelta > 0 ? 'more' : 'less'} than the ordered colour. The order stays at
+                the {inr(data.charged)} already charged — settle the difference outside the portal.
+              </p>
+            )}
+
+            <Field label="How did the buyer confirm?" hint="Required — recorded on the order">
+              <Input
+                placeholder="e.g. Confirmed by phone with Priya, 9 Oct 4:10pm"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </Field>
+
+            <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
+              <strong>The buyer must already have agreed to this colour.</strong> imcorpcart will not
+              contact them about the change. The amount charged does not change, the original colour
+              stays on record, and this edit is logged against your account.
+            </p>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }

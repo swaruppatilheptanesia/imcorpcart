@@ -52,6 +52,7 @@ export const seppRequestInclude = {
       quantity: true,
       unitPrice: true,
       lineTotal: true,
+      shade: true,
       product: {
         select: {
           name: true,
@@ -388,6 +389,10 @@ export async function submitRequest(userId: string, input: SubmitSeppRequestInpu
               quantity: l.it.quantity,
               unitPrice: D(l.assetCost),
               lineTotal: D(l.assetCost * l.it.quantity),
+              // Carried so the colour survives to the OrderItem the leasing
+              // company's approval creates. Gift cards can't be leased, so there
+              // is no denomination to guard against here.
+              shade: l.it.shade ?? null,
             })),
           },
           approvals: {

@@ -127,19 +127,36 @@ function assertValidVoucherAmount(spec: VoucherSpec | null, amount: number, prod
   }
 }
 
-// Offers eligible for the buy box: active, in stock, and priced.
+// Offers eligible for the buy box: active, in stock, and priced. Only these can
+// be SOLD — the buy box decides what a cart line is charged and who fulfils it.
 function eligibleOffers(offers: ShopOfferRow[]): ShopOfferRow[] {
   return offers.filter(
     (o) => o.isActive && o.status === ProductStatus.ACTIVE && o.quantity > 0 && toNumber(o.eppPrice) > 0,
   );
 }
 
+// Offers eligible to be LISTED: the same test minus the stock requirement. An
+// out-of-stock product stays on the storefront marked "Out of stock" rather than
+// vanishing, so it still needs a price to show — and that price must come from a
+// real offer. Falling back to MRP would quote a number the shopper never pays.
+function listableOffers(offers: ShopOfferRow[]): ShopOfferRow[] {
+  return offers.filter((o) => o.isActive && o.status === ProductStatus.ACTIVE && toNumber(o.eppPrice) > 0);
+}
+
+const cheapestByEpp = (offers: ShopOfferRow[]): ShopOfferRow | null =>
+  offers.length ? [...offers].sort((a, b) => toNumber(a.eppPrice) - toNumber(b.eppPrice))[0] : null;
+
 // The winning offer: the cheapest eligible one by EPP price. (Public MOP is a
 // single admin-set product price, so the buy box is always chosen by EPP.)
+// Null = nothing is buyable, which is what makes `stock` read 0 downstream.
 export function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
-  const elig = eligibleOffers(offers);
-  if (!elig.length) return null;
-  return [...elig].sort((a, b) => toNumber(a.eppPrice) - toNumber(b.eppPrice))[0];
+  return cheapestByEpp(eligibleOffers(offers));
+}
+
+// The offer a card/detail page quotes. Normally the buy box; when nothing is in
+// stock, the cheapest listed offer — the price this product comes back at.
+function pickDisplayOffer(offers: ShopOfferRow[]): ShopOfferRow | null {
+  return pickBuyBox(offers) ?? cheapestByEpp(listableOffers(offers));
 }
 
 // Cashback (₹) a shopper earns per unit at a given paid price. PERCENT → % of
@@ -193,9 +210,13 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
   const mrp = toNumber(p.mrp);
   const elig = eligibleOffers(p.offers);
   const winner = pickBuyBox(p.offers);
+  // What the page QUOTES (price, seller, free gift) vs what it can SELL (stock).
+  // They differ only when the product is out of stock, where `winner` is null and
+  // `display` is the offer the product will be buyable at again.
+  const display = pickDisplayOffer(p.offers);
   // Public (pre-login) price = the admin-set MOP (falls back to MRP); EPP for employees.
   const mop = p.mop != null ? toNumber(p.mop) : mrp;
-  const epp = winner ? toNumber(winner.eppPrice) : mrp;
+  const epp = display ? toNumber(display.eppPrice) : mrp;
   return {
     id: p.id,
     sku: p.sku,
@@ -203,7 +224,8 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     brand: p.brand ?? '',
     // Vendor stays hidden from employees in the UI; the winning seller's name is
     // still carried for order attribution / admin views.
-    vendor: winner?.reseller?.name ?? 'imcorpcart',
+    vendor: display?.reseller?.name ?? 'imcorpcart',
+    // Sellers you can actually buy from right now — 0 when out of stock.
     sellerCount: elig.length,
     // Amazon-style variant family (separate sibling SKUs).
     familyKey: p.familyKey ?? null,
@@ -234,8 +256,8 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     desc: p.description ?? '',
     // The winning offer's free gift is the badge; first-party/bulk products fall
     // back to the master free-text freebie.
-    freebie: winner?.freeGift
-      ? { enabled: true, description: winner.freeGift.title }
+    freebie: display?.freeGift
+      ? { enabled: true, description: display.freeGift.title }
       : { enabled: Boolean(p.freebieText), description: p.freebieText ?? '' },
     variants: p.variantOptions ? p.variantOptions.split(',').map((v) => v.trim()).filter(Boolean) : [],
     shades: pres.shades ?? [],
@@ -258,7 +280,11 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
       isVoucherProduct(p) && p.source?.discountPct != null ? Number(p.source.discountPct) : 0,
     // Smart-EPP lease figures (null when SEPP isn't offered to this shopper or the
     // product can't be leased). The storefront switches to these in SEPP mode.
-    sepp: opts.sepp && !opts.public ? seppBlockFor(p, winner, opts.sepp) : null,
+    // Quoted off the display offer, like `price`, so an out-of-stock phone still
+    // shows its EMI in Smart EPP mode instead of dropping out of the listing.
+    // Actually requesting one re-resolves the buy box (sepp.service), which
+    // refuses when nothing is in stock.
+    sepp: opts.sepp && !opts.public ? seppBlockFor(p, display, opts.sepp) : null,
   };
 }
 
@@ -282,9 +308,14 @@ function winningOfferFor(p: ShopProductRow): ShopOfferRow | null {
 
 // The storefront filters/sorts/facets client-side over the full active catalog
 // (only ~22 SKUs), so we return everything active in one shot.
-// Products with at least one active, in-stock offer are the buyable catalog.
-export const HAS_LIVE_OFFER = {
-  offers: { some: { isActive: true, status: ProductStatus.ACTIVE, quantity: { gt: 0 }, deletedAt: null } },
+// Products with at least one active, priced offer are the listed catalog.
+// Deliberately NOT filtered on `quantity > 0`: an out-of-stock product stays on
+// the storefront labelled "Out of stock" instead of disappearing, which is both
+// what shoppers expect and what keeps a deep-link/wishlist entry from 404ing the
+// moment stock runs out. Buyability is enforced per-offer by `pickBuyBox` (and
+// re-checked in `addToCart`/`priceCart`), not by hiding the row.
+export const HAS_LISTABLE_OFFER = {
+  offers: { some: { isActive: true, status: ProductStatus.ACTIVE, deletedAt: null } },
 } satisfies Prisma.ProductWhereInput;
 
 // Admin visibility gate applied on every storefront query: a product is shown
@@ -304,7 +335,7 @@ async function familyMembersOf(
 ): Promise<ReturnType<typeof toFamilyMember>[]> {
   if (!p.familyKey) return [toFamilyMember(toStoreProduct(p, opts))];
   const rows = await prisma.product.findMany({
-    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
+    where: { familyKey: p.familyKey, status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LISTABLE_OFFER },
     include: shopProductInclude,
   });
   const self = rows.some((r) => r.id === p.id) ? rows : [p, ...rows];
@@ -329,7 +360,7 @@ function toFamilyMember(sp: StoreProductLite) {
 export async function listProducts(userId?: string) {
   const [rows, sepp] = await Promise.all([
     prisma.product.findMany({
-      where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
+      where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LISTABLE_OFFER },
       include: shopProductInclude,
       orderBy: { createdAt: 'desc' },
     }),
@@ -371,7 +402,7 @@ export async function getProduct(id: string, userId?: string) {
 
 export async function listPublicProducts() {
   const rows = await prisma.product.findMany({
-    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LIVE_OFFER },
+    where: { status: ProductStatus.ACTIVE, ...notDeleted, ...STOREFRONT_SHOWABLE, ...HAS_LISTABLE_OFFER },
     include: shopProductInclude,
     orderBy: { createdAt: 'desc' },
   });
@@ -555,7 +586,15 @@ export async function addToCart(userId: string, input: AddToCartInput) {
     where: { cartId: cart.id, productId: input.productId, shade },
   });
   const nextQty = (existing?.quantity ?? 0) + qty;
-  if (available > 0 && nextQty > available) {
+  // Out of stock is a visible state on the storefront now, not a hidden row, so
+  // the refusal has to be explicit: the previous `available > 0 &&` guard read
+  // zero stock as "unknown, allow it" and let an unbuyable line into the cart.
+  if (available <= 0) {
+    throw AppError.badRequest(
+      shade ? `"${sp.name}" is out of stock in ${shade}` : `"${sp.name}" is out of stock`,
+    );
+  }
+  if (nextQty > available) {
     throw AppError.badRequest(`Only ${available} in stock for this option`);
   }
 
@@ -1139,6 +1178,11 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
             quantity: l.it.quantity,
             unitPrice: D(l.unitPrice),
             lineTotal: D(l.unitPrice * l.it.quantity),
+            // The chosen colour, so the order records what was actually bought.
+            // Guarded on isVoucher: a gift-card line overloads CartItem.shade to
+            // carry the denomination, which belongs on VoucherFulfilment below,
+            // not in a colour field.
+            shade: l.isVoucher ? null : l.it.shade ?? null,
           },
         });
         if (l.isVoucher) {

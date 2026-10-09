@@ -1218,6 +1218,65 @@ export function resendVoucherEmail(orderId: string, itemId: string): Promise<{ s
   return apiFetch(`/orders/${clean}/items/${itemId}/resend-voucher`, { method: 'POST' });
 }
 
+// ─── Order colour substitution ───────────────────────────────────────────────
+// The ordered colour can't be shipped but another can: staff confirm the swap
+// with the buyer off-platform and record it here, instead of refunding and
+// asking them to order again. The amount charged never changes.
+
+/** One colour this line could move to. `kind` is which colour model it comes
+ *  from — a swatch on the same product, or a sibling SKU — and the caller just
+ *  echoes `shade`/`productId` back. */
+export interface OrderColourOption {
+  kind: 'shade' | 'sku';
+  label: string;
+  shade: string;
+  productId: string | null;
+  stock: number;
+  listPrice: number;
+  /** This colour's current price − the ordered colour's current price. */
+  priceDelta: number;
+  current: boolean;
+}
+
+export interface OrderColourOptions {
+  itemId: string;
+  productName: string;
+  current: string | null;
+  quantity: number;
+  /** What the buyer actually paid for one unit — unchanged by any swap. */
+  charged: number;
+  /** False once dispatched, for a gift-card line, or on a partner order. */
+  editable: boolean;
+  options: OrderColourOption[];
+}
+
+export interface ColourSwapInput {
+  /** A swatch on the same product. Mutually exclusive with productId. */
+  shade?: string;
+  /** A variant-family sibling SKU. Mutually exclusive with shade. */
+  productId?: string;
+  /** How the buyer confirmed — required, and the only record of it. */
+  reason: string;
+}
+
+export function getOrderItemColours(orderId: string, itemId: string): Promise<OrderColourOptions> {
+  const clean = orderId.replace(/^#/, '');
+  return apiFetch(`/orders/${clean}/items/${itemId}/colour-options`);
+}
+
+export async function changeOrderItemColour(
+  orderId: string,
+  itemId: string,
+  input: ColourSwapInput,
+): Promise<OrderWithCuid> {
+  const clean = orderId.replace(/^#/, '');
+  const raw = await apiFetch<Parameters<typeof toOrderFull>[0]>(
+    `/orders/${clean}/items/${itemId}/colour`,
+    { method: 'PATCH', body: input },
+  );
+  return toOrderFull(raw);
+}
+
 export interface VendorWalletBalance {
   supported: boolean;
   configured: boolean;

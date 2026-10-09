@@ -18,11 +18,27 @@ export const cancelOrderBody = z.object({
   note: z.string().max(500).optional(),
 });
 
-// Retry a stuck/failed gift-card voucher line: /orders/:id/items/:itemId/retry-voucher
-export const voucherRetryParams = z.object({
+// Any per-line order action: /orders/:id/items/:itemId/<verb>
+export const orderItemParams = z.object({
   id: z.string().min(1),
   itemId: z.string().min(1),
 });
 
+// Change a placed line's colour, because the ordered colour cannot be shipped.
+// Exactly one of `shade` (a swatch on the same product) or `productId` (a
+// variant-family sibling SKU) — the two ways this catalogue expresses colour.
+// `reason` is mandatory: the buyer is confirmed off-platform, so this note is the
+// only record of how that confirmation happened.
+export const colourSwapBody = z
+  .object({
+    shade: z.string().trim().min(1).max(60).optional(),
+    productId: z.string().min(1).optional(),
+    reason: z.string().trim().min(4).max(500),
+  })
+  .refine((b) => Boolean(b.shade) !== Boolean(b.productId), {
+    message: 'Choose exactly one of shade or productId',
+  });
+
 export type OrderListQuery = z.infer<typeof orderListQuery>;
 export type OverrideStatusInput = z.infer<typeof overrideStatusBody>;
+export type ColourSwapInput = z.infer<typeof colourSwapBody>;

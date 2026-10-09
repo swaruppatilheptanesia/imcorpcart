@@ -53,7 +53,12 @@ export function OrderDetailDrawer({
             <div className={styles.label}>Items</div>
             {data.items.map((it, i) => (
               <div key={i} className={styles.item}>
-                <div className={styles.itemName}>{it.name}</div>
+                <div className={styles.itemName}>
+                  {it.name}
+                  {/* The colour to pick off the shelf — including after the admin
+                      swapped it because the ordered colour was unavailable. */}
+                  {it.shade && <span className={styles.qty}> · {it.shade}</span>}
+                </div>
                 <div className={styles.itemMeta}>
                   <span className={styles.qty}>×{it.qty}</span>
                   <span className={styles.itemPrice}>{inr(it.price * it.qty)}</span>

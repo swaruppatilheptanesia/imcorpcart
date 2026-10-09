@@ -20,6 +20,12 @@ export function Cart() {
   const [code, setCode] = useState('');
   const seppMode = purchaseMode === 'SEPP';
 
+  // A line can go out of stock after it was added (and out-of-stock products are
+  // now browsable, so a stale cart is easy to build). The server refuses these at
+  // payment-order creation, so block here with the reason rather than letting the
+  // shopper reach checkout and meet a bare error.
+  const oosLines = cart.filter((l) => l.stock <= 0);
+
   // Smart EPP: the server prices the cart on the lease calculator (single source
   // of truth) and reports blockers — no phone, over the limit, no office address.
   const cartKey = cart.map((l) => `${l.itemId}:${l.qty}`).join('|');
@@ -201,7 +207,7 @@ export function Cart() {
               block
               onClick={() => navigate('/shop/checkout')}
               style={{ marginTop: 16 }}
-              disabled={!quote || !quote.canSubmit}
+              disabled={!quote || !quote.canSubmit || oosLines.length > 0}
             >
               Continue to Smart EPP request
             </Button>
@@ -288,9 +294,24 @@ export function Cart() {
           </div>
 
           {checkoutEnabled ? (
-            <Button size="lg" block onClick={() => navigate('/shop/checkout')} style={{ marginTop: 16 }} disabled={cart.length === 0}>
-              Proceed to checkout
-            </Button>
+            <>
+              <Button
+                size="lg"
+                block
+                onClick={() => navigate('/shop/checkout')}
+                style={{ marginTop: 16 }}
+                disabled={cart.length === 0 || oosLines.length > 0}
+              >
+                Proceed to checkout
+              </Button>
+              {oosLines.length > 0 && (
+                <p className={styles.checkoutSoon}>
+                  {oosLines.length === 1
+                    ? `"${oosLines[0].name}" is out of stock — remove it to continue.`
+                    : `${oosLines.length} items in your cart are out of stock — remove them to continue.`}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <Button size="lg" block disabled style={{ marginTop: 16 }}>

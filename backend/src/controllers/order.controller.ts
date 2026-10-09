@@ -35,3 +35,16 @@ export async function retryVoucher(req: Request, res: Response) {
 export async function resendVoucher(req: Request, res: Response) {
   res.json(await service.resendVoucher(getParam(req, 'id'), getParam(req, 'itemId')));
 }
+
+// The colours this line could be moved to, with live stock + any price gap.
+export async function itemColourOptions(req: Request, res: Response) {
+  res.json(await service.listColourOptions(getParam(req, 'id'), getParam(req, 'itemId')));
+}
+
+// Move the line to a colour the vendor can actually ship (buyer confirmed off-platform).
+export async function swapItemColour(req: Request, res: Response) {
+  if (!req.user) throw AppError.unauthorized();
+  res.json(
+    await service.swapItemColour(getParam(req, 'id'), getParam(req, 'itemId'), req.body, req.user.id),
+  );
+}
