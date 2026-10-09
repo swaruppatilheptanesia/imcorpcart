@@ -188,7 +188,7 @@ async function main() {
     });
   }
 
-  // ── Products — full storefront catalog (22 SKUs) with presentation ──────────
+  // ── Products — full storefront catalog (26 SKUs) with presentation ──────────
   // The `specs` JSON blob carries the storefront presentation the schema columns
   // don't (gradient g1/g2, per-shade swatches, spec rows, newness sort key) so
   // the live shop catalog *is* this demo content. Ported from the frontend
@@ -218,6 +218,69 @@ async function main() {
     { k: 'Laptop', v: 'Fits up to 16"' },
     { k: 'Warranty', v: 'Lifetime guarantee' },
   ];
+
+  // ── Catalogue / compliance attributes ──────────────────────────────────────
+  // These are properties of the *kind* of product rather than the SKU, so they
+  // are looked up from `sub` (falling back to `cat`) and `brand` instead of
+  // being repeated on all 26 rows. The storefront renders each of them in its
+  // own section on the product page; a null/empty value hides that section.
+
+  // HSN/SAC + GST rate. Real codes: 8517 telephony, 8518 audio, 8504 chargers,
+  // 3926 plastic cases, 4202 bags.
+  const TAX: Record<string, { hsn: string; gst: number }> = {
+    flagship: { hsn: '85171300', gst: 18 },
+    mid: { hsn: '85171300', gst: 18 },
+    budget: { hsn: '85171300', gst: 18 },
+    audio: { hsn: '85183000', gst: 18 },
+    power: { hsn: '85044030', gst: 18 },
+    cases: { hsn: '39269099', gst: 18 },
+    bags: { hsn: '42021290', gst: 18 },
+  };
+  const taxOf = (p: { sub: string; cat: string }) => TAX[p.sub] ?? TAX[p.cat] ?? TAX.bags;
+
+  // Statutory origin label, by brand.
+  const ORIGIN: Record<string, string> = {
+    Apple: 'China', Samsung: 'India', OnePlus: 'India', Google: 'Vietnam',
+    Nothing: 'India', Xiaomi: 'India', realme: 'India', Anker: 'China',
+    Spigen: 'South Korea', Nillkin: 'China', 'Peak Design': 'Vietnam',
+    tomtoc: 'China', 'Nappa Dori': 'India', Wildcraft: 'India', Baggit: 'India',
+  };
+
+  const WARRANTY: Record<string, string> = {
+    flagship: '1 year manufacturer warranty on the device and 6 months on in-box accessories. Carry-in service at any authorised service centre.',
+    mid: '1 year manufacturer warranty on the device and 6 months on in-box accessories. Carry-in service at any authorised service centre.',
+    budget: '1 year manufacturer warranty on the device and 6 months on in-box accessories. Carry-in service at any authorised service centre.',
+    audio: '1 year manufacturer warranty. Ear tips and other consumables are not covered.',
+    power: '18 months manufacturer warranty against manufacturing defects.',
+    cases: '6 months warranty against manufacturing defects. Normal wear and tear is not covered.',
+    bags: 'Lifetime guarantee against manufacturing defects in materials and workmanship.',
+  };
+  const warrantyOf = (p: { sub: string; cat: string }) => WARRANTY[p.sub] ?? WARRANTY[p.cat] ?? WARRANTY.bags;
+
+  // One shared set of corporate-EPP terms. Rendered with `white-space: pre-wrap`
+  // on the product page, so the line breaks below survive to the shopper.
+  const EPP_TERMS = [
+    'Corporate EPP pricing is available only to verified employees of enrolled companies and cannot be combined with other promotional offers.',
+    'The tax invoice is raised in the employee\'s name at the price shown at checkout, inclusive of GST.',
+    'Returns and replacements are accepted within 7 days of delivery for unused items in original packaging with all accessories and the invoice.',
+    'Devices registered for warranty service, and items damaged after delivery, are not eligible for return.',
+    'Products bought under this programme are for personal use and may not be resold.',
+  ].join('\n');
+
+  // ADLD & theft protection plan, priced as a % of the price the shopper sees.
+  // Display-only on the product page — there is no purchase flow for it yet.
+  const PROTECTION: Record<string, number> = { flagship: 7.5, mid: 6, budget: 6, audio: 9 };
+
+  // Box contents. Phones/audio/power already carry an 'In the box' spec row, so
+  // derive the array from it with the same split the backend's
+  // `legacyBoxContents` uses — no second copy of the same list to keep in sync.
+  // The spec row stays put: the product page filters it out of Specifications
+  // by regex, and leaving it keeps the legacy fallback exercised.
+  const IN_THE_BOX_KEY = /^(what'?s\s+)?in\s+the\s+box\??$/i;
+  const boxFromSpecs = (specs: Spec[]): string[] => {
+    const row = specs.find((r) => IN_THE_BOX_KEY.test(r.k));
+    return row ? row.v.split(/[|,]/).map((x) => x.trim()).filter(Boolean) : [];
+  };
   const titanium: Shade[] = [
     { name: 'Blue Titanium', g1: '#4a7fc0', g2: '#123a72', stock: 20 },
     { name: 'Natural Titanium', g1: '#c8c2b6', g2: '#8a8378', stock: 12 },
@@ -257,41 +320,49 @@ async function main() {
     familyKey?: string;
     optionColor?: string;
     optionVariant?: string;
+    /** Authored "About this item" bullets. Empty = the product page falls back
+     *  to the generic list it synthesises from freebie/variants/shades/stock. */
+    about?: string[];
+    /** Box contents for kinds with no 'In the box' spec row to derive from. */
+    box?: string[];
+    /** "Frequently bought together" — companion SKUs from this same array.
+     *  ACTIVE ones only: the resolver silently skips anything unbuyable. */
+    fbt?: string[];
   }
 
   const products: ProdSeed[] = [
-    { key: 'p1', sku: 'IMC-AP-1509', name: 'iPhone 15 Pro · 256GB', brand: 'Apple', cat: 'phones', sub: 'flagship', vendor: null, price: 124900, mrp: 134900, stock: 48, status: ProductStatus.ACTIVE, g1: '#4a7fc0', g2: '#123a72', rating: 4.8, reviews: 2140, desc: 'Titanium design with the A17 Pro chip, a 48MP main camera, and all-day battery.', freebie: 'Free silicone case + tempered glass', shades: titanium, specs: phoneSpecs('A17 Pro', '48MP main · 3× telephoto', 'Up to 23h video') },
-    { key: 'p2', sku: 'TR-SS-2401', name: 'Galaxy S24 Ultra · 512GB', brand: 'Samsung', cat: 'phones', sub: 'flagship', vendor: 'techno', price: 129999, mrp: 139999, stock: 32, status: ProductStatus.ACTIVE, g1: '#2b2f36', g2: '#0b0d10', rating: 4.7, reviews: 1620, desc: 'The ultimate Galaxy — S Pen, 200MP camera and a titanium frame.', shades: galaxyShades, specs: phoneSpecs('Snapdragon 8 Gen 3', '200MP main · 5× periscope', 'Up to 30h video') },
-    { key: 'p3', sku: 'IMC-OP-1200', name: 'OnePlus 12 · 256GB', brand: 'OnePlus', cat: 'phones', sub: 'flagship', vendor: null, price: 64999, mrp: 69999, stock: 60, status: ProductStatus.ACTIVE, g1: '#1f6f52', g2: '#0a2f22', rating: 4.6, reviews: 980, desc: 'Flagship performance with Hasselblad cameras and 100W fast charging.', freebie: 'Free 80W charger + protective case', shades: opShades, specs: phoneSpecs('Snapdragon 8 Gen 3', '50MP Hasselblad triple', '5400mAh · 100W') },
-    { key: 'p4', sku: 'IMC-GP-0812', name: 'Pixel 8 Pro · 128GB', brand: 'Google', cat: 'phones', sub: 'flagship', vendor: null, price: 84999, mrp: 89999, stock: 24, status: ProductStatus.ACTIVE, g1: '#7a8fae', g2: '#3a465c', rating: 4.5, reviews: 740, desc: 'Google Tensor G3, the best of Google AI, and a pro-grade camera.', freebie: 'Free Pixel Buds A-Series', specs: phoneSpecs('Google Tensor G3', '50MP · 5× optical', 'Up to 24h · 27W') },
-    { key: 'p5', sku: 'TR-SS-5501', name: 'Galaxy A55 5G · 128GB', brand: 'Samsung', cat: 'phones', sub: 'mid', vendor: 'techno', price: 39999, mrp: 42999, stock: 90, status: ProductStatus.ACTIVE, g1: '#c8a24a', g2: '#7a5f1e', rating: 4.3, reviews: 1310, desc: 'Premium mid-range with a vivid AMOLED display and all-day battery.', specs: phoneSpecs('Exynos 1480', '50MP OIS triple', '5000mAh · 25W') },
-    { key: 'p6', sku: 'MH-NT-2A00', name: 'Nothing Phone (2a)', brand: 'Nothing', cat: 'phones', sub: 'mid', vendor: 'mobilehub', price: 27999, mrp: 29999, stock: 75, status: ProductStatus.ACTIVE, g1: '#e6e8ec', g2: '#b6bcc6', rating: 4.4, reviews: 890, desc: 'Glyph Interface, clean design, and dependable performance.', freebie: 'Free clear case', specs: phoneSpecs('Dimensity 7200 Pro', '50MP dual', '5000mAh · 45W') },
-    { key: 'p7', sku: 'TR-VV-1000', name: 'Vivo X100 Pro', brand: 'Vivo', cat: 'phones', sub: 'flagship', vendor: 'techno', price: 89999, mrp: 94999, stock: 0, status: ProductStatus.INACTIVE, g1: '#3a2f5a', g2: '#171029', rating: 4.5, reviews: 410, desc: 'ZEISS optics and a 1-inch main sensor for pro-grade photography.', specs: phoneSpecs('Dimensity 9300', '50MP 1-inch ZEISS', '5400mAh · 100W') },
-    { key: 'p8', sku: 'MH-XM-1300', name: 'Redmi Note 13 Pro', brand: 'Xiaomi', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 24999, mrp: 26999, stock: 140, status: ProductStatus.DRAFT, g1: '#4a5670', g2: '#1e2536', rating: 4.2, reviews: 1520, desc: 'Big battery, bright display, and 200MP camera on a budget.', specs: phoneSpecs('Snapdragon 7s Gen 2', '200MP main', '5100mAh · 67W') },
+    { key: 'p1', sku: 'IMC-AP-1509', name: 'iPhone 15 Pro · 256GB', brand: 'Apple', cat: 'phones', sub: 'flagship', vendor: null, price: 124900, mrp: 134900, stock: 48, status: ProductStatus.ACTIVE, g1: '#4a7fc0', g2: '#123a72', rating: 4.8, reviews: 2140, desc: 'Titanium design with the A17 Pro chip, a 48MP main camera, and all-day battery.', freebie: 'Free silicone case + tempered glass', shades: titanium, specs: phoneSpecs('A17 Pro', '48MP main · 3× telephoto', 'Up to 23h video'), about: ['Aerospace-grade titanium body — lighter than the previous generation and fingerprint resistant.', 'Customisable Action button replaces the ring/silent switch.', 'USB-C with USB 3 speeds for 10Gbps transfers to an external drive.', 'Emergency SOS via satellite and Crash Detection at no extra cost.'], fbt: ['GP-AN-0065', 'GP-NL-0002', 'IMC-AP-2200'] },
+    { key: 'p2', sku: 'TR-SS-2401', name: 'Galaxy S24 Ultra · 512GB', brand: 'Samsung', cat: 'phones', sub: 'flagship', vendor: 'techno', price: 129999, mrp: 139999, stock: 32, status: ProductStatus.ACTIVE, g1: '#2b2f36', g2: '#0b0d10', rating: 4.7, reviews: 1620, desc: 'The ultimate Galaxy — S Pen, 200MP camera and a titanium frame.', shades: galaxyShades, specs: phoneSpecs('Snapdragon 8 Gen 3', '200MP main · 5× periscope', 'Up to 30h video'), about: ['Built-in S Pen docks in the body — no charging or pairing needed.', 'Galaxy AI: live call translate, note assist and generative photo edit, on device.', 'Gorilla Armor front glass cuts reflections in bright sunlight.', 'Seven years of OS and security updates from launch.'], fbt: ['TR-SP-2401', 'GP-NL-0002', 'GP-AN-1000'] },
+    { key: 'p3', sku: 'IMC-OP-1200', name: 'OnePlus 12 · 256GB', brand: 'OnePlus', cat: 'phones', sub: 'flagship', vendor: null, price: 64999, mrp: 69999, stock: 60, status: ProductStatus.ACTIVE, g1: '#1f6f52', g2: '#0a2f22', rating: 4.6, reviews: 980, desc: 'Flagship performance with Hasselblad cameras and 100W fast charging.', freebie: 'Free 80W charger + protective case', shades: opShades, specs: phoneSpecs('Snapdragon 8 Gen 3', '50MP Hasselblad triple', '5400mAh · 100W'), about: ['Hasselblad colour calibration across all three rear cameras.', '100W wired charging takes the battery from flat to full in about 26 minutes.', 'Dual-cell battery rated to retain 80% capacity after 1,600 cycles.', 'Alert Slider for instant ring, vibrate and silent.'], fbt: ['GP-AN-0065', 'GP-NL-0002', 'GP-AN-1000'] },
+    { key: 'p4', sku: 'IMC-GP-0812', name: 'Pixel 8 Pro · 128GB', brand: 'Google', cat: 'phones', sub: 'flagship', vendor: null, price: 84999, mrp: 89999, stock: 24, status: ProductStatus.ACTIVE, g1: '#7a8fae', g2: '#3a465c', rating: 4.5, reviews: 740, desc: 'Google Tensor G3, the best of Google AI, and a pro-grade camera.', freebie: 'Free Pixel Buds A-Series', specs: phoneSpecs('Google Tensor G3', '50MP · 5× optical', 'Up to 24h · 27W'), about: ['Seven years of OS, security and Feature Drop updates.', 'Magic Editor, Best Take and Audio Magic Eraser run on Tensor G3.', 'Built-in temperature sensor and a Pro camera interface with manual controls.', 'Call Screen answers unknown numbers and transcribes them in real time.'], fbt: ['GP-AN-0065', 'GP-NL-0002', 'IMC-AP-2200'] },
+    { key: 'p5', sku: 'TR-SS-5501', name: 'Galaxy A55 5G · 128GB', brand: 'Samsung', cat: 'phones', sub: 'mid', vendor: 'techno', price: 39999, mrp: 42999, stock: 90, status: ProductStatus.ACTIVE, g1: '#c8a24a', g2: '#7a5f1e', rating: 4.3, reviews: 1310, desc: 'Premium mid-range with a vivid AMOLED display and all-day battery.', specs: phoneSpecs('Exynos 1480', '50MP OIS triple', '5000mAh · 25W'), about: ['Metal frame and Gorilla Glass Victus+ on a mid-range handset.', 'Four generations of OS upgrades and five years of security patches.', 'Knox Vault secures PINs, passwords and biometrics in isolated hardware.', 'microSD slot for up to 1TB of extra storage.'], fbt: ['TR-SS-2500', 'GP-NL-0002', 'TR-SS-BD03'] },
+    { key: 'p6', sku: 'MH-NT-2A00', name: 'Nothing Phone (2a)', brand: 'Nothing', cat: 'phones', sub: 'mid', vendor: 'mobilehub', price: 27999, mrp: 29999, stock: 75, status: ProductStatus.ACTIVE, g1: '#e6e8ec', g2: '#b6bcc6', rating: 4.4, reviews: 890, desc: 'Glyph Interface, clean design, and dependable performance.', freebie: 'Free clear case', specs: phoneSpecs('Dimensity 7200 Pro', '50MP dual', '5000mAh · 45W'), about: ['Glyph Interface lights map to callers, timers and delivery progress.', 'Nothing OS ships with almost no pre-installed apps.', 'Three years of Android updates and four years of security patches.', 'Transparent-inspired design with a recycled aluminium frame.'], fbt: ['GP-AN-0065', 'GP-NL-0002'] },
+    { key: 'p7', sku: 'TR-VV-1000', name: 'Vivo X100 Pro', brand: 'Vivo', cat: 'phones', sub: 'flagship', vendor: 'techno', price: 89999, mrp: 94999, stock: 0, status: ProductStatus.INACTIVE, g1: '#3a2f5a', g2: '#171029', rating: 4.5, reviews: 410, desc: 'ZEISS optics and a 1-inch main sensor for pro-grade photography.', specs: phoneSpecs('Dimensity 9300', '50MP 1-inch ZEISS', '5400mAh · 100W'), about: ['ZEISS T* coating on every lens to suppress flare and ghosting.', 'The 1-inch main sensor gathers noticeably more light in night scenes.', '100x ZEISS APO telephoto for long-range detail.', 'V3 imaging chip for 4K cinematic portrait video.'], fbt: ['GP-AN-0065', 'GP-NL-0002'] },
+    { key: 'p8', sku: 'MH-XM-1300', name: 'Redmi Note 13 Pro', brand: 'Xiaomi', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 24999, mrp: 26999, stock: 140, status: ProductStatus.DRAFT, g1: '#4a5670', g2: '#1e2536', rating: 4.2, reviews: 1520, desc: 'Big battery, bright display, and 200MP camera on a budget.', specs: phoneSpecs('Snapdragon 7s Gen 2', '200MP main', '5100mAh · 67W'), about: ['1.5K AMOLED panel with 1,800 nits peak brightness.', '67W turbo charging refills roughly half the battery in 15 minutes.', 'IP54 rating against dust and splashes.', 'Side-mounted fingerprint reader doubles as the power button.'], fbt: ['GP-AN-1000', 'GP-NL-0002'] },
 
     // ── Variant family demo: realme C100X, two colours × two storage (each a
     //    separate SKU sharing familyKey 'realme-c100x'). The storefront shows it
     //    as one card and the detail page renders colour + storage selectors.
-    { key: 'rc1', sku: 'RM-C100X-G64', name: 'realme C100X · Gold · 64GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 12999, mrp: 16999, stock: 60, status: ProductStatus.ACTIVE, g1: '#d8c48a', g2: '#8a6f2e', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Gold', optionVariant: '64GB' },
-    { key: 'rc2', sku: 'RM-C100X-G128', name: 'realme C100X · Gold · 128GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 14999, mrp: 18999, stock: 40, status: ProductStatus.ACTIVE, g1: '#d8c48a', g2: '#8a6f2e', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Gold', optionVariant: '128GB' },
-    { key: 'rc3', sku: 'RM-C100X-B64', name: 'realme C100X · Blue · 64GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 12999, mrp: 16999, stock: 25, status: ProductStatus.ACTIVE, g1: '#2b4a8f', g2: '#12224a', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Blue', optionVariant: '64GB' },
-    { key: 'rc4', sku: 'RM-C100X-B128', name: 'realme C100X · Blue · 128GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 14999, mrp: 18999, stock: 18, status: ProductStatus.ACTIVE, g1: '#2b4a8f', g2: '#12224a', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Blue', optionVariant: '128GB' },
+    { key: 'rc1', sku: 'RM-C100X-G64', name: 'realme C100X · Gold · 64GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 12999, mrp: 16999, stock: 60, status: ProductStatus.ACTIVE, g1: '#d8c48a', g2: '#8a6f2e', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Gold', optionVariant: '64GB', about: ['8000mAh battery rated for up to two days of mixed use.', 'Reverse charging — top up earbuds or a second phone from this one.', 'Military-grade drop resistance certified to MIL-STD-810H.', 'Dynamic Button for one-tap shortcuts to the torch, camera or recorder.'], fbt: ['GP-NL-0002', 'GP-AN-1000'] },
+    { key: 'rc2', sku: 'RM-C100X-G128', name: 'realme C100X · Gold · 128GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 14999, mrp: 18999, stock: 40, status: ProductStatus.ACTIVE, g1: '#d8c48a', g2: '#8a6f2e', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Gold', optionVariant: '128GB', about: ['8000mAh battery rated for up to two days of mixed use.', 'Reverse charging — top up earbuds or a second phone from this one.', 'Military-grade drop resistance certified to MIL-STD-810H.', 'Dynamic Button for one-tap shortcuts to the torch, camera or recorder.'], fbt: ['GP-NL-0002', 'GP-AN-1000'] },
+    { key: 'rc3', sku: 'RM-C100X-B64', name: 'realme C100X · Blue · 64GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 12999, mrp: 16999, stock: 25, status: ProductStatus.ACTIVE, g1: '#2b4a8f', g2: '#12224a', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Blue', optionVariant: '64GB', about: ['8000mAh battery rated for up to two days of mixed use.', 'Reverse charging — top up earbuds or a second phone from this one.', 'Military-grade drop resistance certified to MIL-STD-810H.', 'Dynamic Button for one-tap shortcuts to the torch, camera or recorder.'], fbt: ['GP-NL-0002', 'GP-AN-1000'] },
+    { key: 'rc4', sku: 'RM-C100X-B128', name: 'realme C100X · Blue · 128GB', brand: 'realme', cat: 'phones', sub: 'budget', vendor: 'mobilehub', price: 14999, mrp: 18999, stock: 18, status: ProductStatus.ACTIVE, g1: '#2b4a8f', g2: '#12224a', rating: 4.4, reviews: 610, desc: '6.8-inch 120Hz display, 8000mAh battery, 45W fast charge, 50MP AI camera.', freebie: 'Free protective case', specs: phoneSpecs('Unisoc T7250', '50MP AI dual', '8000mAh · 45W'), familyKey: 'realme-c100x', optionColor: 'Blue', optionVariant: '128GB', about: ['8000mAh battery rated for up to two days of mixed use.', 'Reverse charging — top up earbuds or a second phone from this one.', 'Military-grade drop resistance certified to MIL-STD-810H.', 'Dynamic Button for one-tap shortcuts to the torch, camera or recorder.'], fbt: ['GP-NL-0002', 'GP-AN-1000'] },
 
-    { key: 'a1', sku: 'IMC-AP-2200', name: 'AirPods Pro (2nd gen)', brand: 'Apple', cat: 'accessories', sub: 'audio', vendor: null, price: 24900, mrp: 26900, stock: 210, status: ProductStatus.ACTIVE, g1: '#f2f3f5', g2: '#c6cad2', rating: 4.8, reviews: 3200, desc: 'Adaptive ANC, personalised spatial audio, and USB-C charging.', freebie: 'Free charging case sleeve', specs: audioSpecs },
-    { key: 'a2', sku: 'TR-SS-BD03', name: 'Galaxy Buds3 Pro', brand: 'Samsung', cat: 'accessories', sub: 'audio', vendor: 'techno', price: 18999, mrp: 19999, stock: 130, status: ProductStatus.ACTIVE, g1: '#7d8794', g2: '#3d434c', rating: 4.5, reviews: 1100, desc: 'Galaxy AI-powered earbuds with intelligent ANC.', specs: audioSpecs },
-    { key: 'a3', sku: 'GP-AN-0065', name: '65W GaN USB-C Charger', brand: 'Anker', cat: 'accessories', sub: 'power', vendor: 'gadgetpro', price: 3499, mrp: 3999, stock: 120, status: ProductStatus.ACTIVE, g1: '#f2f3f5', g2: '#c6cad2', rating: 4.7, reviews: 640, desc: 'Compact GaN charger with 65W of fast USB-C power.', specs: powerSpecs },
-    { key: 'a4', sku: 'TR-SS-2500', name: '25W Super Fast Charger', brand: 'Samsung', cat: 'accessories', sub: 'power', vendor: 'techno', price: 1799, mrp: 1999, stock: 300, status: ProductStatus.ACTIVE, g1: '#e9ebf0', g2: '#cfd3da', rating: 4.4, reviews: 520, desc: '25W super-fast charging in a travel-friendly size.', specs: powerSpecs },
-    { key: 'a5', sku: 'GP-AN-1000', name: '10000mAh Power Bank', brand: 'Anker', cat: 'accessories', sub: 'power', vendor: 'gadgetpro', price: 2499, mrp: 2999, stock: 180, status: ProductStatus.ACTIVE, g1: '#2b2f36', g2: '#0b0d10', rating: 4.6, reviews: 880, desc: 'Slim 10000mAh power bank with USB-C in/out.', specs: powerSpecs },
-    { key: 'a6', sku: 'TR-SP-2401', name: 'Galaxy S24 Ultra Case', brand: 'Spigen', cat: 'accessories', sub: 'cases', vendor: 'techno', price: 1299, mrp: 1499, stock: 260, status: ProductStatus.ACTIVE, g1: '#3a3f47', g2: '#16191d', rating: 4.3, reviews: 210, desc: 'Rugged protection with military-grade drop resistance.', specs: [{ k: 'Fit', v: 'Galaxy S24 Ultra' }, { k: 'Protection', v: 'MIL-STD 810G' }] },
-    { key: 'a7', sku: 'GP-NL-0002', name: 'Tempered Glass (2 pack)', brand: 'Nillkin', cat: 'accessories', sub: 'cases', vendor: 'gadgetpro', price: 599, mrp: 799, stock: 500, status: ProductStatus.ACTIVE, g1: '#dfe3ea', g2: '#b3b9c4', rating: 4.2, reviews: 990, desc: '2.5D tempered glass with oleophobic coating (2 pack).', specs: [{ k: 'Hardness', v: '9H' }, { k: 'Pack', v: '2 sheets + wipes' }] },
-    { key: 'a8', sku: 'IMC-AP-0100', name: 'USB-C to Lightning Cable', brand: 'Apple', cat: 'accessories', sub: 'power', vendor: null, price: 1900, mrp: 2200, stock: 0, status: ProductStatus.DRAFT, g1: '#eceef1', g2: '#c9ced6', rating: 4.6, reviews: 430, desc: 'Braided USB-C to Lightning cable, 1m, fast-charge ready.', specs: powerSpecs },
+    { key: 'a1', sku: 'IMC-AP-2200', name: 'AirPods Pro (2nd gen)', brand: 'Apple', cat: 'accessories', sub: 'audio', vendor: null, price: 24900, mrp: 26900, stock: 210, status: ProductStatus.ACTIVE, g1: '#f2f3f5', g2: '#c6cad2', rating: 4.8, reviews: 3200, desc: 'Adaptive ANC, personalised spatial audio, and USB-C charging.', freebie: 'Free charging case sleeve', specs: audioSpecs, about: ['Adaptive Audio blends Transparency and ANC automatically as you move.', 'Conversation Awareness lowers media and boosts voices when you start speaking.', 'Precision Finding locates the case on the Find My map.', 'Case charges over USB-C, MagSafe, Qi or an Apple Watch charger.'], fbt: ['GP-AN-0065', 'GP-AN-1000'] },
+    { key: 'a2', sku: 'TR-SS-BD03', name: 'Galaxy Buds3 Pro', brand: 'Samsung', cat: 'accessories', sub: 'audio', vendor: 'techno', price: 18999, mrp: 19999, stock: 130, status: ProductStatus.ACTIVE, g1: '#7d8794', g2: '#3d434c', rating: 4.5, reviews: 1100, desc: 'Galaxy AI-powered earbuds with intelligent ANC.', specs: audioSpecs, about: ['Blade-shaped stems with an LED accent, built for a lighter in-ear fit.', 'Real-time interpreter translates a conversation through the buds.', 'Adaptive EQ tunes playback to the shape of your ear canal.', 'IP57 rated against dust and water.'], fbt: ['TR-SS-2500', 'GP-AN-1000'] },
+    { key: 'a3', sku: 'GP-AN-0065', name: '65W GaN USB-C Charger', brand: 'Anker', cat: 'accessories', sub: 'power', vendor: 'gadgetpro', price: 3499, mrp: 3999, stock: 120, status: ProductStatus.ACTIVE, g1: '#f2f3f5', g2: '#c6cad2', rating: 4.7, reviews: 640, desc: 'Compact GaN charger with 65W of fast USB-C power.', specs: powerSpecs, about: ['One USB-C port charges a laptop, tablet or phone at full speed.', 'GaN II internals make it about half the size of a standard 65W brick.', 'ActiveShield monitors temperature over 3 million times a day.', 'Foldable pins — no protruding prongs in a bag.'], fbt: ['GP-AN-1000'] },
+    { key: 'a4', sku: 'TR-SS-2500', name: '25W Super Fast Charger', brand: 'Samsung', cat: 'accessories', sub: 'power', vendor: 'techno', price: 1799, mrp: 1999, stock: 300, status: ProductStatus.ACTIVE, g1: '#e9ebf0', g2: '#cfd3da', rating: 4.4, reviews: 520, desc: '25W super-fast charging in a travel-friendly size.', specs: powerSpecs, about: ['Super Fast Charging on compatible Galaxy devices.', 'Intelligent output steps down safely for earbuds and watches.', 'Compact enough for a laptop sleeve or a jacket pocket.'], fbt: ['GP-AN-1000'] },
+    { key: 'a5', sku: 'GP-AN-1000', name: '10000mAh Power Bank', brand: 'Anker', cat: 'accessories', sub: 'power', vendor: 'gadgetpro', price: 2499, mrp: 2999, stock: 180, status: ProductStatus.ACTIVE, g1: '#2b2f36', g2: '#0b0d10', rating: 4.6, reviews: 880, desc: 'Slim 10000mAh power bank with USB-C in/out.', specs: powerSpecs, about: ['Charges a typical phone about twice on a single fill.', 'USB-C in and out — one cable for the bank and the phone.', 'Recharges itself in roughly 4 hours over USB-C PD.', 'Trickle-charging mode for earbuds and fitness bands.'], fbt: ['GP-AN-0065'] },
+    { key: 'a6', sku: 'TR-SP-2401', name: 'Galaxy S24 Ultra Case', brand: 'Spigen', cat: 'accessories', sub: 'cases', vendor: 'techno', price: 1299, mrp: 1499, stock: 260, status: ProductStatus.ACTIVE, g1: '#3a3f47', g2: '#16191d', rating: 4.3, reviews: 210, desc: 'Rugged protection with military-grade drop resistance.', specs: [{ k: 'Fit', v: 'Galaxy S24 Ultra' }, { k: 'Protection', v: 'MIL-STD 810G' }], about: ['Air Cushion corners absorb drop impact at the weakest points.', 'Raised bezels keep the screen and camera rings off flat surfaces.', 'Precise cut-outs leave the S Pen slot and all ports usable.', 'Works with wireless charging without removing the case.'], box: ['Case', 'Cleaning cloth'] },
+    { key: 'a7', sku: 'GP-NL-0002', name: 'Tempered Glass (2 pack)', brand: 'Nillkin', cat: 'accessories', sub: 'cases', vendor: 'gadgetpro', price: 599, mrp: 799, stock: 500, status: ProductStatus.ACTIVE, g1: '#dfe3ea', g2: '#b3b9c4', rating: 4.2, reviews: 990, desc: '2.5D tempered glass with oleophobic coating (2 pack).', specs: [{ k: 'Hardness', v: '9H' }, { k: 'Pack', v: '2 sheets + wipes' }], about: ['Two sheets per pack — one spare for a mis-aligned first attempt.', 'Oleophobic coating resists fingerprints and smudges.', 'Bubble-free adhesive with an alignment frame in the box.', 'Case-friendly cut keeps the edges clear of most covers.'], box: ['2 x tempered glass sheets', 'Alignment frame', 'Alcohol wipe', 'Dust sticker'] },
+    { key: 'a8', sku: 'IMC-AP-0100', name: 'USB-C to Lightning Cable', brand: 'Apple', cat: 'accessories', sub: 'power', vendor: null, price: 1900, mrp: 2200, stock: 0, status: ProductStatus.DRAFT, g1: '#eceef1', g2: '#c9ced6', rating: 4.6, reviews: 430, desc: 'Braided USB-C to Lightning cable, 1m, fast-charge ready.', specs: powerSpecs, about: ['Braided jacket rated for far more bend cycles than a standard cable.', 'Fast charge up to 50% in around 30 minutes on a compatible adapter.', '1 metre — long enough for desk and bedside use.'] },
 
-    { key: 'b1', sku: 'UC-PD-0020', name: 'Everyday Backpack 20L', brand: 'Peak Design', cat: 'bags', sub: 'backpacks', vendor: 'urbancarry', price: 18999, mrp: 21999, stock: 64, status: ProductStatus.ACTIVE, g1: '#6a5240', g2: '#332417', rating: 4.9, reviews: 560, desc: 'Weatherproof everyday carry with the signature MagLatch.', freebie: 'Free rain cover', specs: bagSpecs },
-    { key: 'b2', sku: 'UC-TT-1400', name: 'Slim Laptop Sleeve 14"', brand: 'tomtoc', cat: 'bags', sub: 'sleeves', vendor: 'urbancarry', price: 2499, mrp: 2999, stock: 150, status: ProductStatus.ACTIVE, g1: '#3a3f47', g2: '#16191d', rating: 4.5, reviews: 320, desc: 'Slim, padded sleeve with a soft-touch interior.', specs: bagSpecs },
-    { key: 'b3', sku: 'UC-ND-0001', name: 'Executive Briefcase', brand: 'Nappa Dori', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 12999, mrp: 15999, stock: 40, status: ProductStatus.ACTIVE, g1: '#5a3d2b', g2: '#2a1a10', rating: 4.6, reviews: 180, desc: 'Full-grain leather briefcase for the modern professional.', specs: bagSpecs },
-    { key: 'b4', sku: 'UC-WC-0025', name: 'Commuter Backpack 25L', brand: 'Wildcraft', cat: 'bags', sub: 'backpacks', vendor: 'urbancarry', price: 4999, mrp: 5999, stock: 110, status: ProductStatus.ACTIVE, g1: '#2f3a44', g2: '#121a22', rating: 4.3, reviews: 410, desc: 'Spacious 25L commuter backpack with a dedicated laptop bay.', specs: bagSpecs },
-    { key: 'b5', sku: 'UC-ND-0002', name: 'Leather Portfolio Case', brand: 'Nappa Dori', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 6999, mrp: 7999, stock: 55, status: ProductStatus.DRAFT, g1: '#7a5a3a', g2: '#3a2817', rating: 4.4, reviews: 140, desc: 'Handcrafted leather portfolio for documents and a tablet.', specs: bagSpecs },
-    { key: 'b6', sku: 'UC-BG-0003', name: 'Canvas Messenger Bag', brand: 'Baggit', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 3499, mrp: 3999, stock: 0, status: ProductStatus.INACTIVE, g1: '#4a4636', g2: '#22201a', rating: 4.1, reviews: 260, desc: 'Durable canvas messenger with an adjustable strap.', specs: bagSpecs },
+    { key: 'b1', sku: 'UC-PD-0020', name: 'Everyday Backpack 20L', brand: 'Peak Design', cat: 'bags', sub: 'backpacks', vendor: 'urbancarry', price: 18999, mrp: 21999, stock: 64, status: ProductStatus.ACTIVE, g1: '#6a5240', g2: '#332417', rating: 4.9, reviews: 560, desc: 'Weatherproof everyday carry with the signature MagLatch.', freebie: 'Free rain cover', specs: bagSpecs, about: ['MagLatch closure expands the main compartment as you load it.', 'FlexFold dividers reconfigure for a camera body, a laptop or neither.', 'Weatherproof 400D nylon canvas with sealed zips.', 'Dual side access — reach the bottom without taking the bag off.'], box: ['Backpack', '2 x FlexFold dividers', 'Rain cover'], fbt: ['UC-TT-1400'] },
+    { key: 'b2', sku: 'UC-TT-1400', name: 'Slim Laptop Sleeve 14"', brand: 'tomtoc', cat: 'bags', sub: 'sleeves', vendor: 'urbancarry', price: 2499, mrp: 2999, stock: 150, status: ProductStatus.ACTIVE, g1: '#3a3f47', g2: '#16191d', rating: 4.5, reviews: 320, desc: 'Slim, padded sleeve with a soft-touch interior.', specs: bagSpecs, about: ['CornerArmor padding at the four corners where drops land.', 'Soft fleece lining will not scratch an aluminium lid.', 'Front pocket takes a charger and a notebook.', 'Slim enough to slide inside a larger backpack.'], box: ['Sleeve'] },
+    { key: 'b3', sku: 'UC-ND-0001', name: 'Executive Briefcase', brand: 'Nappa Dori', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 12999, mrp: 15999, stock: 40, status: ProductStatus.ACTIVE, g1: '#5a3d2b', g2: '#2a1a10', rating: 4.6, reviews: 180, desc: 'Full-grain leather briefcase for the modern professional.', specs: bagSpecs, about: ['Full-grain leather that develops a patina with use.', 'Padded laptop bay plus organised card and pen slots.', 'Solid brass hardware with a detachable shoulder strap.', 'Handmade — small variations in grain and tone are expected.'], box: ['Briefcase', 'Shoulder strap', 'Dust bag'], fbt: ['UC-TT-1400'] },
+    { key: 'b4', sku: 'UC-WC-0025', name: 'Commuter Backpack 25L', brand: 'Wildcraft', cat: 'bags', sub: 'backpacks', vendor: 'urbancarry', price: 4999, mrp: 5999, stock: 110, status: ProductStatus.ACTIVE, g1: '#2f3a44', g2: '#121a22', rating: 4.3, reviews: 410, desc: 'Spacious 25L commuter backpack with a dedicated laptop bay.', specs: bagSpecs, about: ['Dedicated padded laptop bay reachable without opening the main compartment.', 'Breathable mesh back panel and padded straps for a daily commute.', 'Quick-access front pocket for a pass, keys and wallet.', 'Water-resistant finish with an included rain cover.'], box: ['Backpack', 'Rain cover'], fbt: ['UC-TT-1400'] },
+    { key: 'b5', sku: 'UC-ND-0002', name: 'Leather Portfolio Case', brand: 'Nappa Dori', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 6999, mrp: 7999, stock: 55, status: ProductStatus.DRAFT, g1: '#7a5a3a', g2: '#3a2817', rating: 4.4, reviews: 140, desc: 'Handcrafted leather portfolio for documents and a tablet.', specs: bagSpecs, about: ['Slim profile designed for documents, a tablet and a pen.', 'Full-grain leather with hand-stitched edges.', 'Opens flat on a meeting table.'], box: ['Portfolio', 'Dust bag'] },
+    { key: 'b6', sku: 'UC-BG-0003', name: 'Canvas Messenger Bag', brand: 'Baggit', cat: 'bags', sub: 'briefcases', vendor: 'urbancarry', price: 3499, mrp: 3999, stock: 0, status: ProductStatus.INACTIVE, g1: '#4a4636', g2: '#22201a', rating: 4.1, reviews: 260, desc: 'Durable canvas messenger with an adjustable strap.', specs: bagSpecs, about: ['Heavy cotton canvas with leather trim.', 'Adjustable strap carries cross-body or on the shoulder.', 'Padded inner sleeve fits most 14-inch laptops.'], box: ['Messenger bag', 'Adjustable strap'] },
   ];
 
   const smartOf = (epp: number) => Math.round(epp * 1.03);
@@ -303,6 +374,25 @@ async function main() {
       newness: products.length - i,
       shades: p.shades ?? [],
       rows: p.specs,
+    };
+
+    // Catalogue / compliance attributes, spread into BOTH upsert branches so a
+    // re-run fills rows that already exist. That makes these ten columns
+    // re-run-overwritable for the 26 demo SKUs — the same contract this upsert
+    // already has for specs / description / status / mrp / rating.
+    const tax = taxOf(p);
+    const protectionPct = PROTECTION[p.sub];
+    const attrs = {
+      hsnCode: tax.hsn,
+      gstPercent: D(tax.gst),
+      countryOfOrigin: ORIGIN[p.brand] ?? 'India',
+      warrantyText: warrantyOf(p),
+      termsText: EPP_TERMS,
+      aboutItem: p.about ?? [],
+      inTheBox: p.box ?? boxFromSpecs(p.specs),
+      protectionPlanAvailable: protectionPct != null,
+      protectionPlanPct: protectionPct != null ? D(protectionPct) : null,
+      frequentlyBoughtSkus: p.fbt?.length ? p.fbt.join(',') : null,
     };
     const prod = await prisma.product.upsert({
       where: { sku: p.sku },
@@ -319,6 +409,7 @@ async function main() {
         familyKey: p.familyKey ?? null,
         optionColor: p.optionColor ?? null,
         optionVariant: p.optionVariant ?? null,
+        ...attrs,
       },
       create: {
         id: id('prod', p.key),
@@ -339,6 +430,7 @@ async function main() {
         familyKey: p.familyKey ?? null,
         optionColor: p.optionColor ?? null,
         optionVariant: p.optionVariant ?? null,
+        ...attrs,
         inventory: { create: { quantity: p.stock } },
         prices: {
           create: [
