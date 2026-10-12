@@ -42,3 +42,12 @@ export const colourSwapBody = z
 export type OrderListQuery = z.infer<typeof orderListQuery>;
 export type OverrideStatusInput = z.infer<typeof overrideStatusBody>;
 export type ColourSwapInput = z.infer<typeof colourSwapBody>;
+
+// ePOD upload. The file itself arrives as multipart; `capturedAt` is when the
+// courier captured the proof (not when we uploaded it), so it is operator-set
+// and defaults server-side to the delivery time.
+export const epodBody = z.object({
+  capturedAt: z.coerce.date().optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export type EpodInput = z.infer<typeof epodBody>;

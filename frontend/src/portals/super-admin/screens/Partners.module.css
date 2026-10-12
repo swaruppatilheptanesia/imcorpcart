@@ -657,3 +657,44 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── Orders tab ───────────────────────────────────────────────────────────── */
+
+/* Eye + expand chevron, kept on one line in a narrow trailing cell. */
+.ordActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+/* The inline fulfilment form, rendered as a sibling of the row inside the table
+   body so it reads as part of that row rather than as a separate card. */
+.ordPanel {
+  padding: 16px 18px 18px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.ordPanelGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .ordPanelGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+}
+.ordPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.ordPagerBtns {
+  display: flex;
+  gap: 8px;
+}

@@ -48,7 +48,13 @@ function buildUrl(path: string, query?: RequestOpts['query']): string {
 
 export interface HttpClient {
   apiFetch<T = unknown>(path: string, opts?: RequestOpts): Promise<T>;
-  apiUpload<T = unknown>(path: string, file: File, onProgress?: (pct: number) => void): Promise<T>;
+  apiUpload<T = unknown>(
+    path: string,
+    file: File,
+    onProgress?: (pct: number) => void,
+    fields?: Record<string, string | undefined>,
+  ): Promise<T>;
+  apiBlob(path: string): Promise<Blob>;
 }
 
 export function createHttpClient(store: AuthStore): HttpClient {
@@ -86,10 +92,30 @@ export function createHttpClient(store: AuthStore): HttpClient {
     return (await parse(res)) as T;
   }
 
+  // Binary GET (a stored document). Kept separate from apiFetch because parse()
+  // always JSON-parses the body, which a PDF is not.
+  async function apiBlob(path: string): Promise<Blob> {
+    const headers: Record<string, string> = {};
+    const token = store.getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(buildUrl(path), { headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        store.clearAuth();
+        store.emitExpired();
+      }
+      throw new ApiError(res.status, 'ERROR', `Download failed (${res.status})`);
+    }
+    return res.blob();
+  }
+
+  // `fields` rides alongside the file in the same multipart body, for endpoints
+  // that take the file AND a little metadata (e.g. an ePOD's capture time).
   function apiUpload<T = unknown>(
     path: string,
     file: File,
     onProgress?: (pct: number) => void,
+    fields?: Record<string, string | undefined>,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -115,11 +141,14 @@ export function createHttpClient(store: AuthStore): HttpClient {
       xhr.onerror = () => reject(new ApiError(0, 'NETWORK', 'Network error during upload'));
       const form = new FormData();
       form.append('file', file);
+      for (const [k, v] of Object.entries(fields ?? {})) {
+        if (v !== undefined && v !== '') form.append(k, v);
+      }
       xhr.send(form);
     });
   }
 
-  return { apiFetch, apiUpload };
+  return { apiFetch, apiUpload, apiBlob };
 }
 
 // ─── Shared auth API (login → OTP → session), reused by every live portal ─────
@@ -204,3 +233,4 @@ export function createAuthApi(client: HttpClient, store: AuthStore) {
 const adminClient = createHttpClient(adminStore);
 export const apiFetch = adminClient.apiFetch;
 export const apiUpload = adminClient.apiUpload;
+export const apiBlob = adminClient.apiBlob;

@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Download, AlertTriangle, Truck, Gift, RefreshCw, Mail, Palette } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Gift, RefreshCw, Mail, Palette } from 'lucide-react';
 import { Button, Card, EmptyState, Field, Input, Modal, ProductThumb, Select, Skeleton, StatusPill, Timeline, useToast } from '@/components';
 import {
   getOrder,
   orderStatusTone,
   timelineSteps,
   statusToStep,
-  updateOrderTransit,
   retryVoucherFulfilment,
   resendVoucherEmail,
   getOrderItemColours,
@@ -18,6 +17,7 @@ import type { SemanticTone, Order, OrderItem } from '@/data/types';
 import { useAsync } from '@/lib/useAsync';
 import { fmtDate } from '@/data/map';
 import { inr } from '@/lib/format';
+import { CourierAutomation, EpodControl, TransitControl } from './OrderFulfilment';
 import s from './screen.module.css';
 import styles from './OrderDetail.module.css';
 
@@ -185,18 +185,13 @@ export function OrderDetail() {
               </Card>
 
               <Card>
-                <div className={s.sectionTitle}>Documents</div>
-                <div className={styles.docs}>
-                  {['Tax invoice', 'Proof of delivery'].map((d) => (
-                    <button key={d} className={styles.doc}>
-                      <span className={styles.docLeft}>
-                        <FileText size={17} />
-                        {d}
-                      </span>
-                      <Download size={16} />
-                    </button>
-                  ))}
-                </div>
+                <div className={s.sectionTitle}>Proof of delivery</div>
+                <EpodControl
+                  orderId={id ?? ''}
+                  delivered={order.status === 'Delivered'}
+                  info={order.fulfilment}
+                  onDone={reload}
+                />
               </Card>
             </>
           )}
@@ -246,9 +241,17 @@ export function OrderDetail() {
 
               <Card>
                 <div className={s.sectionTitle}>Update fulfilment</div>
+                <CourierAutomation
+                  orderId={id ?? ''}
+                  hasAwb={order.awb !== '—'}
+                  cancelled={cancelled}
+                  info={order.fulfilment}
+                  onDone={reload}
+                />
                 <TransitControl
                   orderId={id ?? ''}
                   cancelled={cancelled}
+                  currentAwb={order.awb !== '—' ? order.awb : null}
                   // Pre-select the courier assigned to the first line's product.
                   // A hint only — the operator ships with whatever they pick.
                   defaultCourier={order.items.find((it) => it.courierCode)?.courierCode ?? undefined}
@@ -271,91 +274,6 @@ export function OrderDetail() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-const SHIPMENT_STATUSES = [
-  { value: 'DISPATCHED', label: 'Dispatched' },
-  { value: 'IN_TRANSIT', label: 'In transit' },
-  { value: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
-  { value: 'DELIVERED', label: 'Delivered' },
-  { value: 'RETURNED', label: 'Returned' },
-];
-const COURIERS = ['BLUEDART', 'DELHIVERY', 'DTDC', 'EKART', 'INDIA_POST'];
-
-function TransitControl({
-  orderId,
-  cancelled,
-  defaultCourier,
-  onDone,
-}: {
-  orderId: string;
-  cancelled: boolean;
-  /** The product's assigned courier, pre-selected but freely overridable. */
-  defaultCourier?: string;
-  onDone: () => void;
-}) {
-  const { flash } = useToast();
-  const [status, setStatus] = useState('DISPATCHED');
-  const [awb, setAwb] = useState('');
-  const [courier, setCourier] = useState(defaultCourier ?? '');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  if (cancelled) {
-    return <p className={s.muted} style={{ fontSize: 12.5 }}>This order is cancelled — fulfilment is closed.</p>;
-  }
-
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await updateOrderTransit(orderId, {
-        status,
-        awbNumber: awb.trim() || undefined,
-        courierCode: courier || undefined,
-        description: note.trim() || undefined,
-      });
-      flash('Fulfilment status updated');
-      onDone();
-    } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not update');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
-        You handle fulfilment for this order — set the shipment status (drives the customer's tracking timeline).
-      </p>
-      <Field label="Status">
-        <Select block value={status} onChange={(e) => setStatus(e.target.value)}>
-          {SHIPMENT_STATUSES.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </Select>
-      </Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Courier">
-          <Select block value={courier} onChange={(e) => setCourier(e.target.value)}>
-            <option value="">—</option>
-            {COURIERS.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="AWB / tracking no.">
-          <Input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="Optional" />
-        </Field>
-      </div>
-      <Field label="Note (optional)">
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Shown on the tracking event" />
-      </Field>
-      <Button onClick={submit} disabled={busy}>
-        <Truck size={15} /> {busy ? 'Updating…' : 'Update fulfilment'}
-      </Button>
     </div>
   );
 }

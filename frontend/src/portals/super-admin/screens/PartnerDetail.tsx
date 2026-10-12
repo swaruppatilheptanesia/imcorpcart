@@ -1,30 +1,27 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook, Eye, ShoppingBag } from 'lucide-react';
-import { Button, Card, DataTable, Drawer, EmptyState, Field, Input, ProductThumb, Row, Segmented, Select, Skeleton, StatusPill, useToast } from '@/components';
+import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook } from 'lucide-react';
+import { Button, Card, EmptyState, Field, Input, Segmented, Select, Skeleton, StatusPill, useToast } from '@/components';
 import { PartnerCatalogue } from './PartnerCatalogue';
+import { PartnerOrders } from './PartnerOrders';
 import {
   getPartner,
   getPartnerActivity,
-  getPartnerOrders,
+  getPartnerWebhooks,
   updatePartner,
   deletePartner,
   rotatePartnerToken,
   rotatePartnerWebhookSecret,
   testPartnerWebhook,
   resendPartnerWebhook,
-  orderStatusTone,
   type AdminPartner,
   type WebhookDeliveryRow,
   type PartnerActivityRow,
-  type PartnerOrderRow,
   type PartnerStatus,
   type PartnerPriceBasis,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
-import { inr } from '@/lib/format';
-import { fmtDate } from '@/data/map';
 import type { SemanticTone } from '@/data/types';
 import { CopyRow } from './Partners';
 import s from './screen.module.css';
@@ -37,26 +34,23 @@ const BASE_URL = `${window.location.origin}/partner-api/v1`;
 const DOCS_URL = `${window.location.origin}/api/partner-api/v1/docs`;
 const webhookTone: Record<string, SemanticTone> = { DELIVERED: 'success', PENDING: 'warning', FAILED: 'error' };
 
-// Hidden for now — flip to true to bring back the IP allowlist + webhook card.
-// When re-enabling, also restore getPartnerWebhooks in the useAsync fetch above.
-const SHOW_ACCESS_CARD = false;
+// The Access card is where a partner's webhook URL and IP allowlist are set, and
+// where the delivery log is read — set both to false to hide it again.
+const SHOW_ACCESS_CARD = true;
 
-// Webhook status-push (#5) isn't wired to a live vendor yet, so the webhook-secret
-// controls are hidden (not removed — the rotate handler + backend stay intact).
-// Flip to true to show "Webhook secret ending ••…" + Regenerate in the Integration card.
-const SHOW_WEBHOOK_SECRET = false;
+// "Webhook secret ending ••…" + Regenerate, in the Integration card.
+const SHOW_WEBHOOK_SECRET = true;
 
 export function PartnerDetail() {
   const navigate = useNavigate();
   const { id = '' } = useParams();
   const { flash } = useToast();
   const { data, state, error, reload } = useAsync(
-    () => Promise.all([getPartner(id), getPartnerActivity(id), getPartnerOrders(id)]),
+    () => Promise.all([getPartner(id), getPartnerActivity(id), getPartnerWebhooks(id)]),
     [id],
   );
   const [rotated, setRotated] = useState<{ label: string; value: string } | null>(null);
-  const [tab, setTab] = useState<'overview' | 'catalogue'>('overview');
-  const [orderRow, setOrderRow] = useState<PartnerOrderRow | null>(null);
+  const [tab, setTab] = useState<'overview' | 'catalogue' | 'orders'>('overview');
 
   if (state === 'loading') {
     return (
@@ -78,7 +72,7 @@ export function PartnerDetail() {
     );
   }
 
-  const [partner, activity, orders] = data;
+  const [partner, activity, webhooks] = data;
 
   // Status is the single control: Active enables the partner (auth gate needs
   // active && status === ACTIVE), Onboarding/Suspended disable it. We keep the
@@ -158,28 +152,29 @@ export function PartnerDetail() {
           options={[
             { value: 'overview', label: 'Overview' },
             { value: 'catalogue', label: 'Catalogue' },
+            { value: 'orders', label: 'Orders' },
           ]}
           value={tab}
           onChange={setTab}
         />
       </div>
 
-      {tab === 'overview' ? (
+      {tab === 'overview' && (
         <div className={styles.detailGrid}>
           <IntegrationCard partner={partner} onRotateToken={rotateToken} onRotateWebhook={rotateWebhook} />
-          {SHOW_ACCESS_CARD && <AccessCard partner={partner} webhooks={[]} onSaved={reload} onReloadWebhooks={reload} />}
-          <OrdersCard orders={orders.items} total={orders.meta.total} onView={setOrderRow} />
+          {SHOW_ACCESS_CARD && <AccessCard partner={partner} webhooks={webhooks} onSaved={reload} onReloadWebhooks={reload} />}
           <CommercialsCard partner={partner} onSaved={reload} />
           <ActivityCard activity={activity} />
         </div>
-      ) : (
+      )}
+      {tab === 'catalogue' && (
         <PartnerCatalogue partnerId={id} defaultBasis={partner.priceField} defaultCommission={partner.commissionPct ?? 0} />
       )}
+      {tab === 'orders' && <PartnerOrders partnerId={id} />}
 
       {rotated && (
         <SecretModal label={rotated.label} value={rotated.value} onClose={() => setRotated(null)} />
       )}
-      {orderRow && <PartnerOrderDrawer order={orderRow} onClose={() => setOrderRow(null)} />}
     </div>
   );
 }
@@ -363,26 +358,11 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 
-// Dev-only placeholder so the empty Activity UI is reviewable. Never shown in a
-// production build, and only when the partner has no real activity yet.
-const ago = (mins: number) => new Date(Date.now() - mins * 60_000).toISOString();
-const DEMO_ACTIVITY: PartnerActivityRow[] = [
-  { id: 'demo-1', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(12) },
-  { id: 'demo-2', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(74) },
-  { id: 'demo-3', action: 'partner.auth.fail', ipAddress: '203.0.113.42', after: null, createdAt: ago(190) },
-  { id: 'demo-4', action: 'partner.order.accept', ipAddress: null, after: null, createdAt: ago(320) },
-  { id: 'demo-5', action: 'partner.auth.fail', ipAddress: '198.51.100.7', after: null, createdAt: ago(1500) },
-];
-
 function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
-  const usingDemo = activity.length === 0 && import.meta.env.DEV;
-  const rows = usingDemo ? DEMO_ACTIVITY : activity;
+  const rows = activity;
   return (
     <Card pad="lg">
-      <div className={styles.cardTitle}>
-        Activity
-        {usingDemo && <span className={s.muted} style={{ fontWeight: 400, fontSize: 12 }}> · sample data</span>}
-      </div>
+      <div className={styles.cardTitle}>Activity</div>
       {rows.length === 0 ? (
         <div className={s.muted} style={{ padding: '8px 0' }}>No recorded activity yet.</div>
       ) : (
@@ -397,134 +377,6 @@ function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
         </ul>
       )}
     </Card>
-  );
-}
-
-// ── Orders received ──────────────────────────────────────────────────────────
-
-const ORDER_COLS = '1.3fr 0.85fr 1.4fr 1fr 0.95fr 0.9fr 40px';
-
-// Dev-only sample so the empty Orders UI is reviewable (never in production).
-const DEMO_ORDERS: PartnerOrderRow[] = [
-  {
-    id: 'demo-o1', orderNo: 'IMC-84213007', externalRef: 'GM-9921', checkoutGroup: null, status: 'Processing', reseller: 'TechnoReseller',
-    subtotal: 3299, total: 3299, itemCount: 1, createdAt: ago(38), dispatchedAt: null, awb: null, courier: null,
-    items: [{ name: 'Galaxy A15 5G', sku: 'GP-AN-1000', image: null, qty: 1, unitPrice: 3299, lineTotal: 3299 }],
-  },
-  {
-    id: 'demo-o2', orderNo: 'IMC-84119221', externalRef: 'GM-9907', checkoutGroup: null, status: 'In transit', reseller: 'MobileHub',
-    subtotal: 12980, total: 12980, itemCount: 2, createdAt: ago(300), dispatchedAt: ago(90), awb: 'BD1234567', courier: 'Bluedart',
-    items: [
-      { name: 'Anker PowerCore 20K', sku: 'AC-PC-2000', image: null, qty: 2, unitPrice: 3990, lineTotal: 7980 },
-      { name: 'USB-C Cable 100W', sku: 'AC-CB-1010', image: null, qty: 1, unitPrice: 5000, lineTotal: 5000 },
-    ],
-  },
-  {
-    id: 'demo-o3', orderNo: 'IMC-83911772', externalRef: 'GM-9880', checkoutGroup: null, status: 'Delivered', reseller: 'First-party',
-    subtotal: 74999, total: 74999, itemCount: 1, createdAt: ago(2880), dispatchedAt: ago(2600), awb: 'DL9988776', courier: 'Delhivery',
-    items: [{ name: 'Galaxy S24 Ultra', sku: 'GP-SS-9000', image: null, qty: 1, unitPrice: 74999, lineTotal: 74999 }],
-  },
-];
-
-function OrdersCard({ orders, total, onView }: { orders: PartnerOrderRow[]; total: number; onView: (o: PartnerOrderRow) => void }) {
-  const usingDemo = orders.length === 0 && import.meta.env.DEV;
-  const rows = usingDemo ? DEMO_ORDERS : orders;
-  const count = usingDemo ? DEMO_ORDERS.length : total;
-  return (
-    <Card pad="lg">
-      <div className={styles.cardTitle}>
-        Orders received{count ? ` · ${count}` : ''}
-        {usingDemo && <span className={s.muted} style={{ fontWeight: 400, fontSize: 12 }}> · sample data</span>}
-      </div>
-      {rows.length === 0 ? (
-        <EmptyState icon={<ShoppingBag size={22} />} title="No orders received yet" body="Orders this partner posts through the API will appear here." />
-      ) : (
-        <DataTable cols={ORDER_COLS} headers={['Order', 'Date', 'Product', 'Reseller', 'Status', 'Total', '']}>
-          {rows.slice(0, 10).map((o) => (
-            <Row key={o.id} cols={ORDER_COLS} onClick={() => onView(o)}>
-              <div className={styles.ordId}>
-                <span>{o.orderNo}</span>
-                {o.externalRef && <span className={s.mono}>{o.externalRef}</span>}
-              </div>
-              <div className={s.muted}>{fmtDate(o.createdAt)}</div>
-              <div className={styles.ordProduct}>
-                {o.items[0]?.name ?? '—'}
-                {o.itemCount > 1 && <span className={s.muted}> +{o.itemCount - 1} more</span>}
-              </div>
-              <div className={s.muted}>{o.reseller}</div>
-              <div><StatusPill label={o.status} tone={orderStatusTone[o.status]} /></div>
-              <div className={s.price}>{inr(o.total)}</div>
-              <button className={s.iconBtn} onClick={(e) => { e.stopPropagation(); onView(o); }} aria-label="View order"><Eye size={15} /></button>
-            </Row>
-          ))}
-        </DataTable>
-      )}
-    </Card>
-  );
-}
-
-function OrderLine({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className={styles.ordLine}>
-      <span className={strong ? undefined : s.muted}>{label}</span>
-      <span className={strong ? styles.ordLineStrong : undefined}>{value}</span>
-    </div>
-  );
-}
-
-function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClose: () => void }) {
-  return (
-    <Drawer open onClose={onClose} title={order.orderNo} width={460}>
-      <div className={styles.pdWrap}>
-        <div className={styles.pdHead}>
-          <div className={s.muted} style={{ fontSize: 12.5 }}>
-            {order.externalRef ? `Ref ${order.externalRef} · ` : ''}{fmtDate(order.createdAt)}
-          </div>
-          <StatusPill label={order.status} tone={orderStatusTone[order.status]} />
-        </div>
-
-        <div className={styles.pdSection}>
-          <div className={styles.pdSectionTitle}>Items</div>
-          <ul className={styles.ordItems}>
-            {order.items.map((it, i) => (
-              <li key={i} className={styles.ordItem}>
-                <ProductThumb g1={it.image ?? '#dfe3ea'} g2="#b3b9c4" w={34} h={42} />
-                <div className={styles.ordItemName}>
-                  <span>{it.name}</span>
-                  <span className={s.mono}>{it.sku}</span>
-                </div>
-                <div className={styles.ordItemQty}>{it.qty} × {inr(it.unitPrice)}</div>
-                <div className={styles.ordItemTotal}>{inr(it.lineTotal)}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className={styles.pdSection}>
-          <div className={styles.pdSectionTitle}>Fulfilment</div>
-          <dl className={styles.pdMeta}>
-            <div><dt>Reseller</dt><dd>{order.reseller}</dd></div>
-          </dl>
-        </div>
-
-        {(order.courier || order.awb || order.dispatchedAt) && (
-          <div className={styles.pdSection}>
-            <div className={styles.pdSectionTitle}>Shipping</div>
-            <dl className={styles.pdMeta}>
-              {order.courier && <div><dt>Courier</dt><dd>{order.courier}</dd></div>}
-              {order.awb && <div><dt>AWB</dt><dd>{order.awb}</dd></div>}
-              {order.dispatchedAt && <div><dt>Dispatched</dt><dd>{fmtDate(order.dispatchedAt)}</dd></div>}
-            </dl>
-          </div>
-        )}
-
-        <div className={styles.pdSection}>
-          <div className={styles.pdSectionTitle}>Total</div>
-          <OrderLine label="Subtotal" value={inr(order.subtotal)} />
-          <OrderLine label="Amount payable" value={inr(order.total)} strong />
-        </div>
-      </div>
-    </Drawer>
   );
 }
 

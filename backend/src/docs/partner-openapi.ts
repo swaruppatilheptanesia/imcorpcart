@@ -14,10 +14,55 @@ export const partnerOpenApiSpec = {
       '```\nAuthorization: Bearer <your-token>\n```\n\n' +
       'All traffic is over HTTPS. Prices shown are *your* price (basis + commission); catalogue is a ' +
       'snapshot, so availability and price are re-validated at order time with structured error codes. ' +
-      'Order status updates are pushed to your webhook — this reference is read-only.',
+      'This reference is read-only.\n\n' +
+      '## Webhooks (we → you)\n\n' +
+      'If you have given us a webhook URL we POST events to it, with `X-Event` carrying the event ' +
+      'name and `Authorization: Bearer <your-webhook-secret>` — a different value from your API ' +
+      'token. Compare that bearer against your webhook secret to confirm an event is from us. ' +
+      'Reply `2xx` to acknowledge; we retry with backoff (1m · 5m · 30m · 2h · 6h, then give up).\n\n' +
+      '| Event | When | Payload |\n' +
+      '|---|---|---|\n' +
+      '| `order.accepted` | We accepted an order you placed | `OrderAccepted` |\n' +
+      '| `order.status` | Every status change — shipment transitions, courier tracking, and changes ' +
+      'made by our staff | `WebhookOrderStatus` |\n' +
+      '| `order.cancelled` | The order was cancelled, by you or by us | `WebhookOrderStatus` |\n' +
+      '| `order.epod` | A proof of delivery was captured | `WebhookEpod` |\n' +
+      '| `ping` | Test event from our admin console | `{ message, at }` |\n\n' +
+      'Events are **at least once** — the same status can repeat, and an ePOD can be re-sent on ' +
+      'request — so key your handling on `externalRef` and make it idempotent. The payload schemas ' +
+      'are under **Schemas** below.\n\n' +
+      '## Pull or push — same data, your choice\n\n' +
+      'Webhooks are a convenience, not a requirement. Everything we push is also readable from ' +
+      'this API, built from the same representation, so you can poll instead of (or as well as) ' +
+      'receiving events:\n\n' +
+      '| We push | You can pull |\n' +
+      '|---|---|\n' +
+      '| `order.status` / `order.cancelled` | `GET /orders?updatedSince=` and `GET /orders/{ref}` |\n' +
+      '| `order.epod` | `GET /orders/{ref}/epod` |\n\n' +
+      '**Polling recipe.** Call `GET /orders?updatedSince=<the previous response\u2019s ' +
+      '`meta.syncedAt`>`; keep the new `syncedAt` for the next call. The window deliberately ' +
+      'overlaps — reads are idempotent, so seeing a row twice is harmless, and nothing is ever ' +
+      'missed. A first sync omits `updatedSince` and pages through everything.\n\n' +
+      '## Order status\n\n' +
+      'Every order carries both `statusCode` (stable, switch on this) and `status` (the label, ' +
+      'show this). Status reflects the **shipment** where there is one, so In Transit and Out for ' +
+      'Delivery are distinct states and not folded into Dispatched.\n\n' +
+      '| `statusCode` | `status` | Meaning |\n' +
+      '|---|---|---|\n' +
+      '| `CONFIRMED` | Confirmed | Accepted, nothing shipped yet |\n' +
+      '| `DISPATCHED` | Dispatched | Handed to the courier |\n' +
+      '| `IN_TRANSIT` | In Transit | Moving through the network |\n' +
+      '| `OUT_FOR_DELIVERY` | Out for Delivery | On the delivery run |\n' +
+      '| `DELIVERED` | Delivered | Received — a proof of delivery usually follows |\n' +
+      '| `CANCELLED` | Cancelled | Cancelled by you or by us (`remarks` says why) |\n' +
+      '| `RETURNED` | Returned | Returned to origin |\n' +
+      '| `FAILED` | Failed | A delivery attempt failed |\n\n' +
+      '## Rate limit\n\n' +
+      '**120 requests per minute per token**, reported on every response in the standard ' +
+      '`RateLimit-*` headers. A minute-by-minute poll of `GET /orders?updatedSince=` costs one.',
   },
   servers: [
-    { url: 'https://imcorpcart.com/partner-api/v1', description: 'Production' },
+    { url: 'https://imcorp.heptanesia.com/partner-api/v1', description: 'Production' },
     { url: 'http://localhost:4000/partner-api/v1', description: 'Local dev' },
   ],
   tags: [
@@ -101,6 +146,39 @@ export const partnerOpenApiSpec = {
       },
     },
     '/orders': {
+      get: {
+        tags: ['Orders'],
+        summary: 'List your orders — poll this for changes',
+        description:
+          'Newest change first. Pass `updatedSince` with the previous response\u2019s `meta.syncedAt` to ' +
+          'get only what moved since; omit it for a full sync. Catches every change that matters, ' +
+          'including courier scans and a proof of delivery being attached.',
+        parameters: [
+          { name: 'updatedSince', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'The previous response\u2019s meta.syncedAt' },
+          { name: 'status', in: 'query', schema: { $ref: '#/components/schemas/StatusCode' } },
+          { name: 'dealerCode', in: 'query', schema: { type: 'string' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 20, maximum: 100 } },
+        ],
+        responses: {
+          200: {
+            description: 'Your orders',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    data: { type: 'array', items: { $ref: '#/components/schemas/OrderView' } },
+                    meta: { $ref: '#/components/schemas/SyncMeta' },
+                  },
+                },
+              },
+            },
+          },
+          422: { description: 'Unknown status or malformed updatedSince', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
       post: {
         tags: ['Orders'],
         summary: 'Place an order',
@@ -119,11 +197,41 @@ export const partnerOpenApiSpec = {
     '/orders/{ref}': {
       get: {
         tags: ['Orders'],
-        summary: 'Read an order by our orderNo or your externalRef',
+        summary: 'Read one order by our orderNo or your externalRef',
+        description: 'The same object `GET /orders` returns, plus a `timeline` of every transition.',
         parameters: [{ name: 'ref', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
-          200: { description: 'Order (split orders share one externalRef)', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/OrderDetail' } } } } } } },
+          200: { description: 'Order (split orders share one externalRef)', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/OrderView' } } } } } } },
           404: { $ref: '#/components/responses/NotFound' },
+          401: { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
+    },
+    '/orders/{ref}/epod': {
+      get: {
+        tags: ['Orders'],
+        summary: 'Download the proof of delivery',
+        description:
+          'The same document the `order.epod` webhook pushes, so one parser serves both. Default ' +
+          '`format=json` returns it base64-encoded in the webhook envelope; `format=file` streams ' +
+          'the raw PDF or image.\n\nIf your `externalRef` split into several orders and more than ' +
+          'one has a proof, `format=file` returns **409 `AMBIGUOUS_REF`** listing the order ' +
+          'numbers — pass `orderNo` to choose. `format=json` returns them all.',
+        parameters: [
+          { name: 'ref', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'format', in: 'query', schema: { type: 'string', enum: ['json', 'file'], default: 'json' } },
+          { name: 'orderNo', in: 'query', schema: { type: 'string' }, description: 'Pick one of the split orders' },
+        ],
+        responses: {
+          200: {
+            description: 'The proof of delivery',
+            content: {
+              'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/WebhookEpod' } } } } },
+              'application/pdf': { schema: { type: 'string', format: 'binary' } },
+            },
+          },
+          404: { description: 'No order, or no proof captured yet', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          409: { description: 'The reference covers several orders with a proof — pass orderNo', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' }, example: { error: { code: 'AMBIGUOUS_REF', message: 'This reference covers 2 orders with a proof of delivery — pass ?orderNo= to choose one.', details: { orderNos: ['IMC-97227298-1', 'IMC-97227298-2'] } } } } } },
           401: { $ref: '#/components/responses/Unauthorized' },
         },
       },
@@ -258,30 +366,173 @@ export const partnerOpenApiSpec = {
         },
         example: { status: 'REJECTED', reasons: [{ code: 'PRICE_MISMATCH', sku: 'GP-AN-1000', message: 'Price mismatch for GP-AN-1000', expected: 3299, got: 2999 }] },
       },
-      OrderDetail: {
+      StatusCode: {
+        type: 'string',
+        enum: ['CONFIRMED', 'DISPATCHED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'],
+        description: 'Stable machine value — switch on this, not on the label.',
+      },
+      SyncMeta: {
         type: 'object',
         properties: {
-          orderNo: { type: 'string' },
-          externalRef: { type: 'string', nullable: true },
-          status: { type: 'string' },
-          checkoutGroup: { type: 'string', nullable: true },
+          total: { type: 'integer' },
+          page: { type: 'integer' },
+          pageSize: { type: 'integer' },
+          pageCount: { type: 'integer' },
+          syncedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Pass this back as `updatedSince` on your next poll.',
+          },
+        },
+      },
+      OrderView: {
+        type: 'object',
+        description:
+          'One order as we report it. The **same object** backs the list, the detail read and the ' +
+          'status webhooks, so polling and listening can never disagree.',
+        properties: {
+          orderNo: { type: 'string', description: 'Our order number' },
+          externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
+          checkoutGroup: { type: 'string', nullable: true, description: 'Shared by the orders one submission split into' },
+          status: { type: 'string', example: 'Out for Delivery', description: 'Human label — display this' },
+          statusCode: { $ref: '#/components/schemas/StatusCode' },
+          statusAt: { type: 'string', format: 'date-time', description: 'When the status last moved' },
           dealerCode: { type: 'string', nullable: true },
           dealerName: { type: 'string', nullable: true },
           dealerMobile: { type: 'string', nullable: true },
           deliveryInstructions: { type: 'string', nullable: true },
-          cancelReason: { type: 'string', nullable: true },
+          remarks: { type: 'string', nullable: true, description: 'Cancellation reason, when cancelled' },
+          pincode: { type: 'string', nullable: true },
+          city: { type: 'string', nullable: true },
+          state: { type: 'string', nullable: true },
+          awb: { type: 'string', nullable: true, description: 'Airway bill number' },
+          courier: { type: 'string', nullable: true },
+          courierCode: { type: 'string', nullable: true },
+          tentativeDeliveryDate: { type: 'string', format: 'date-time', nullable: true, description: 'Null once delivered or closed' },
+          dispatchedAt: { type: 'string', format: 'date-time', nullable: true },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
+          epod: {
+            type: 'object',
+            nullable: true,
+            description: 'Present once a proof of delivery exists. Metadata only — fetch the document from `url`.',
+            properties: {
+              available: { type: 'boolean' },
+              capturedAt: { type: 'string', format: 'date-time', nullable: true },
+              fileName: { type: 'string', nullable: true },
+              mimeType: { type: 'string', nullable: true },
+              url: { type: 'string', example: '/orders/GM-9921/epod' },
+            },
+          },
           subtotal: { type: 'number' },
           total: { type: 'number' },
           createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
           items: {
             type: 'array',
-            items: { type: 'object', properties: { sku: { type: 'string' }, name: { type: 'string' }, quantity: { type: 'integer' }, unitPrice: { type: 'number' }, lineTotal: { type: 'number' } } },
+            items: {
+              type: 'object',
+              properties: {
+                sku: { type: 'string' },
+                name: { type: 'string' },
+                colour: { type: 'string', nullable: true },
+                quantity: { type: 'integer' },
+                unitPrice: { type: 'number' },
+                lineTotal: { type: 'number' },
+              },
+            },
           },
+          timeline: {
+            type: 'array',
+            description: 'Every transition, oldest first. Returned by `GET /orders/{ref}` only.',
+            items: {
+              type: 'object',
+              properties: {
+                status: { type: 'string' },
+                statusCode: { $ref: '#/components/schemas/StatusCode' },
+                at: { type: 'string', format: 'date-time' },
+                note: { type: 'string', nullable: true },
+              },
+            },
+          },
+        },
+        example: {
+          orderNo: 'IMC-97226830',
+          externalRef: 'GM-9921',
+          checkoutGroup: 'J6xPCcKxA_F2',
+          status: 'Out for Delivery',
+          statusCode: 'OUT_FOR_DELIVERY',
+          statusAt: '2026-10-12T09:27:07.404Z',
+          dealerCode: 'HK-4471',
+          pincode: '400001',
+          awb: 'DE7400020',
+          courier: 'Delhivery',
+          tentativeDeliveryDate: '2026-10-14T00:00:00.000Z',
+          dispatchedAt: '2026-10-09T06:18:27.487Z',
+          deliveredAt: null,
+          epod: null,
+          subtotal: 11022,
+          total: 11022,
+          items: [{ sku: 'GP-AN-1000', name: '10000mAh Power Bank', quantity: 2, unitPrice: 5511, lineTotal: 11022 }],
         },
       },
       Error: {
         type: 'object',
         properties: { error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' }, details: {} } } },
+      },
+      // ── Webhook payloads (we POST these to you; not callable endpoints) ──
+      WebhookOrderStatus: {
+        type: 'object',
+        description:
+          'Body of an `order.status` or `order.cancelled` event. The same facts are readable at ' +
+          '`GET /orders/{ref}` — see **Order status** above for the vocabulary.',
+        properties: {
+          orderNo: { type: 'string', description: 'Our order number' },
+          externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
+          dealerCode: { type: 'string', nullable: true },
+          itemCodes: { type: 'array', items: { type: 'string' }, description: 'SKUs on the order' },
+          pincode: { type: 'string', nullable: true },
+          status: { type: 'string', example: 'Out for Delivery', description: 'Human label' },
+          statusCode: { $ref: '#/components/schemas/StatusCode' },
+          statusAt: { type: 'string', format: 'date-time' },
+          shipmentId: { type: 'string', nullable: true },
+          awb: { type: 'string', nullable: true, description: 'Airway bill number' },
+          courier: { type: 'string', nullable: true },
+          tentativeDeliveryDate: { type: 'string', format: 'date-time', nullable: true },
+          dispatchedAt: { type: 'string', format: 'date-time', nullable: true },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
+          remarks: { type: 'string', nullable: true, description: 'Cancellation reason, when cancelled' },
+          checkoutGroup: { type: 'string', nullable: true },
+        },
+      },
+      WebhookEpod: {
+        type: 'object',
+        description:
+          'Body of an `order.epod` event, sent once a proof of delivery has been captured. The ' +
+          'document is embedded as base64. Source files are capped at 2 MB before encoding. The ' +
+          'same envelope is returned by `GET /orders/{ref}/epod`, so you can pull it instead.',
+        properties: {
+          orderNo: { type: 'string' },
+          externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
+          dealerCode: { type: 'string', nullable: true },
+          itemCodes: { type: 'array', items: { type: 'string' } },
+          awb: { type: 'string', nullable: true, description: 'Airway bill number' },
+          courier: { type: 'string', nullable: true },
+          document: { type: 'string', format: 'byte', description: 'The document, base64-encoded' },
+          documentFileName: { type: 'string', nullable: true },
+          documentMimeType: {
+            type: 'string',
+            nullable: true,
+            enum: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
+          },
+          capturedAt: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'When the courier captured the proof — not when it was uploaded',
+          },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
+          checkoutGroup: { type: 'string', nullable: true },
+        },
       },
     },
   },

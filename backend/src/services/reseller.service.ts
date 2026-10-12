@@ -39,7 +39,9 @@ const BUCKET_STATUSES: Record<string, OrderStatus[]> = {
 };
 
 // Map a shipment status onto the coarser order status vocabulary.
-const ORDER_FOR_SHIPMENT: Partial<Record<ShipmentStatus, OrderStatus>> = {
+// Exported: the partner timeline uses it to recognise an order-status row that
+// is just the coarse echo of a courier scan written in the same transaction.
+export const ORDER_FOR_SHIPMENT: Partial<Record<ShipmentStatus, OrderStatus>> = {
   PENDING: OrderStatus.CONFIRMED,
   DISPATCHED: OrderStatus.DISPATCHED,
   IN_TRANSIT: OrderStatus.DISPATCHED,
@@ -452,7 +454,9 @@ export async function updateTransit(userId: string, id: string, input: TransitUp
 // (scoped) and by the admin (any order — house/vendor orders included).
 export type OrderForTransit = Prisma.OrderGetPayload<{ include: { shipment: true } }>;
 
-export async function applyTransit(order: OrderForTransit, input: TransitUpdateInput, actorId: string) {
+// actorId is null for transitions driven by the courier tracking poller rather
+// than a person; OrderStatusHistory.changedById is nullable for exactly that.
+export async function applyTransit(order: OrderForTransit, input: TransitUpdateInput, actorId: string | null) {
   if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED) {
     throw AppError.badRequest(`Cannot update transit on a ${order.status} order`);
   }

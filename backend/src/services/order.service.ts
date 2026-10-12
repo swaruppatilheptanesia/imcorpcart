@@ -1,4 +1,6 @@
-import { Prisma, OrderStatus, OrderSource, ProductStatus } from '@prisma/client';
+import path from 'path';
+import fs from 'fs/promises';
+import { Prisma, OrderStatus, OrderSource, ProductStatus, DocumentType, DocumentSource } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { parsePagination, pageMeta } from '../utils/pagination';
@@ -7,11 +9,15 @@ import { serialize, toNumber } from '../models/serializers';
 import { applyTransit } from './reseller.service';
 import { shopProductInclude, toStoreProduct, pickBuyBox } from './shop.service';
 import { retryVoucherFulfilment, resendVoucherEmail } from './voucher-fulfilment.service';
-import type { OrderListQuery, OverrideStatusInput, ColourSwapInput } from '../validators/order.schema';
+import { notifyPartnerOrderStatus, notifyPartnerEpod } from './webhook.service';
+import { PRIVATE_UPLOAD_DIR } from '../config/document-upload';
+import type { OrderListQuery, OverrideStatusInput, ColourSwapInput, EpodInput } from '../validators/order.schema';
 import type { TransitUpdateInput } from '../validators/reseller.schema';
 
-// The coarse buckets the Orders screen filters by.
-const BUCKET_STATUSES: Record<string, OrderStatus[]> = {
+// The coarse buckets the Orders screen filters by. Exported so the partner
+// detail page's Orders tab filters by the same three chips rather than defining
+// its own.
+export const BUCKET_STATUSES: Record<string, OrderStatus[]> = {
   active: [OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.DISPATCHED],
   delivered: [OrderStatus.DELIVERED],
   cancelled: [OrderStatus.CANCELLED, OrderStatus.RETURNED],
@@ -71,6 +77,12 @@ export async function overrideStatus(id: string, input: OverrideStatusInput, act
     }),
   ]);
 
+  // Tell the origin partner. Outside the transaction so a rolled-back change is
+  // never pushed; a no-op for internal orders (the notifier checks order.source).
+  // Without this an admin could move a partner order to DELIVERED here and the
+  // partner would never hear — only the transit path used to notify.
+  await notifyPartnerOrderStatus(order.id);
+
   return getOrder(order.id);
 }
 
@@ -120,17 +132,26 @@ export async function cancelOrder(id: string, note: string | undefined, actorId:
   if (order.status === OrderStatus.CANCELLED) throw AppError.badRequest('Order is already cancelled');
   if (order.status === OrderStatus.DELIVERED) throw AppError.badRequest('Delivered orders cannot be cancelled');
 
+  const reason = note ?? 'Cancelled by admin';
+
   await prisma.$transaction([
-    prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } }),
+    // cancelReason is what the partner webhook sends as `remarks`; this used to
+    // be left null here while the partner-initiated cancel set it.
+    prisma.order.update({
+      where: { id: order.id },
+      data: { status: OrderStatus.CANCELLED, cancelReason: reason },
+    }),
     prisma.orderStatusHistory.create({
       data: {
         orderId: order.id,
         status: OrderStatus.CANCELLED,
         changedById: actorId,
-        note: note ?? 'Cancelled by admin',
+        note: reason,
       },
     }),
   ]);
+
+  await notifyPartnerOrderStatus(order.id, { event: 'order.cancelled' });
 
   return getOrder(order.id);
 }
@@ -408,4 +429,101 @@ export async function swapItemColour(
   }
 
   return getOrder(item.order.id);
+}
+
+// ─── Proof of delivery (ePOD) ────────────────────────────────────────────────
+// Staff upload the courier's delivery proof against a delivered order. For an
+// order that came in through the partner API this also pushes the document to
+// the partner as base64, so there is no separate "now send it" step to forget.
+
+async function loadOrderForEpod(id: string) {
+  const order = await prisma.order.findFirst({
+    where: { OR: [{ id }, { orderNo: id }] },
+    include: {
+      shipment: { select: { id: true, deliveredAt: true } },
+      documents: { where: { docType: DocumentType.POD }, orderBy: { createdAt: 'desc' }, take: 1 },
+    },
+  });
+  if (!order) throw AppError.notFound('Order not found');
+  return order;
+}
+
+export async function attachOrderEpod(
+  id: string,
+  file: Express.Multer.File | undefined,
+  input: EpodInput,
+  actorId: string,
+) {
+  if (!file) throw AppError.badRequest('No file provided (expected field "file")');
+  const order = await loadOrderForEpod(id);
+
+  // A proof of delivery before delivery is a mistake, not an edge case.
+  if (order.status !== OrderStatus.DELIVERED) {
+    // Remove the file multer already wrote, so a rejected upload leaves nothing.
+    await fs.unlink(file.path).catch(() => undefined);
+    throw AppError.badRequest(`Proof of delivery can only be attached to a delivered order (this one is ${order.status}).`);
+  }
+
+  // When the courier captured the proof — not when we uploaded it. Defaults to
+  // the recorded delivery time, which is the closest thing we know.
+  const capturedAt = input.capturedAt ?? order.shipment?.deliveredAt ?? new Date();
+
+  const doc = await prisma.orderDocument.create({
+    data: {
+      orderId: order.id,
+      docType: DocumentType.POD,
+      source: DocumentSource.UPLOADED,
+      fileUrl: file.path,
+      generatedAt: capturedAt,
+      uploadedById: actorId,
+      metadata: {
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        ...(input.note ? { note: input.note } : {}),
+      },
+    },
+  });
+
+  // Convenience pointer for the fulfilment views; OrderDocument is the record.
+  if (order.shipment) {
+    await prisma.shipment.update({ where: { id: order.shipment.id }, data: { podUrl: file.path } });
+  }
+
+  // Post-commit, and a no-op for internal orders.
+  const delivery = await notifyPartnerEpod(order.id);
+
+  return { document: serialize(doc), pushedToPartner: Boolean(delivery) };
+}
+
+/** Re-queue the ePOD push, for when the partner's endpoint was down. */
+export async function resendOrderEpod(id: string) {
+  const order = await loadOrderForEpod(id);
+  if (order.source !== OrderSource.PARTNER) {
+    throw AppError.badRequest('This order did not come from a partner, so there is nothing to send.');
+  }
+  if (!order.documents.length) throw AppError.badRequest('No proof of delivery has been uploaded yet.');
+  const delivery = await notifyPartnerEpod(order.id);
+  if (!delivery) throw AppError.badRequest('This partner has no webhook URL configured.');
+  return { queued: true };
+}
+
+/** The stored ePOD file itself. Authenticated — these are never served statically. */
+export async function getOrderEpodFile(id: string) {
+  const order = await loadOrderForEpod(id);
+  const doc = order.documents[0];
+  if (!doc?.fileUrl) throw AppError.notFound('No proof of delivery for this order');
+
+  // Resolve under the private directory and refuse anything that escapes it, so
+  // a tampered row can never read an arbitrary file off disk.
+  const resolved = path.resolve(doc.fileUrl);
+  if (!resolved.startsWith(PRIVATE_UPLOAD_DIR + path.sep)) {
+    throw AppError.notFound('No proof of delivery for this order');
+  }
+  const meta = (doc.metadata ?? {}) as Record<string, unknown>;
+  return {
+    filePath: resolved,
+    fileName: typeof meta.fileName === 'string' ? meta.fileName : path.basename(resolved),
+    mimeType: typeof meta.mimeType === 'string' ? meta.mimeType : 'application/octet-stream',
+  };
 }

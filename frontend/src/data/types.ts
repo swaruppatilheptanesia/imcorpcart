@@ -92,6 +92,8 @@ export interface Order {
   status: OrderStatus;
   courier: string;
   awb: string;
+  /** Courier-automation + proof-of-delivery state (admin order detail only). */
+  fulfilment?: OrderFulfilmentInfo;
   total: number;
   items: OrderItem[];
 }
@@ -184,3 +186,16 @@ export interface ReportDef {
 
 /* Shared semantic tone used by status pills. */
 export type SemanticTone = 'success' | 'warning' | 'error' | 'info' | 'neutral';
+
+/** Courier automation + ePOD state, shown on the Super Admin order detail. */
+export interface OrderFulfilmentInfo {
+  /** True when the order arrived through the partner API — only those push an ePOD. */
+  fromPartner: boolean;
+  /** Shipping label PDF from AWB generation. Printed at booking, not a POD. */
+  labelUrl: string | null;
+  lastTrackedAt: string | null;
+  /** Why automatic tracking last failed, for staff falling back to manual. */
+  trackingError: string | null;
+  /** The uploaded proof of delivery, if any. */
+  epod: { id: string; capturedAt: string | null; fileName: string | null; uploadedAt: string } | null;
+}

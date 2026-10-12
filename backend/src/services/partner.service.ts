@@ -1,4 +1,4 @@
-import { Prisma, OrgStatus, ProductStatus, PartnerPriceBasis, OrderSource } from '@prisma/client';
+import { Prisma, OrgStatus, ProductStatus, PartnerPriceBasis, OrderSource, DocumentType } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { serialize, toNumber } from '../models/serializers';
@@ -8,6 +8,7 @@ import { parsePagination, pageMeta } from '../utils/pagination';
 import { encryptSecret, generateApiToken, generateWebhookSecret, hashToken } from '../utils/secretbox';
 import { toStoreProduct, shopProductInclude, pickBuyBox } from './shop.service';
 import { estimateDelivery } from './delivery.service';
+import { BUCKET_STATUSES } from './order.service';
 import type {
   CreatePartnerInput,
   UpdatePartnerInput,
@@ -178,7 +179,29 @@ const partnerOrderSelect = {
   total: true,
   createdAt: true,
   reseller: { select: { name: true } }, // null = first-party / house fulfilment
-  shipment: { select: { status: true, awbNumber: true, dispatchedAt: true, deliveredAt: true, courier: { select: { name: true } } } },
+  // Courier + ePOD state is carried on the row itself: the Orders tab updates
+  // fulfilment inline, and fetching the full order per row would be one request
+  // per visible order.
+  shipment: {
+    select: {
+      status: true,
+      awbNumber: true,
+      dispatchedAt: true,
+      deliveredAt: true,
+      labelUrl: true,
+      lastTrackedAt: true,
+      trackingError: true,
+      courier: { select: { name: true, code: true } },
+    },
+  },
+  documents: {
+    where: { docType: DocumentType.POD },
+    // docType is selected even though the `where` already pins it: the frontend
+    // runs these rows through the same `toFulfilmentInfo` mapper as the full
+    // order, and that filters on docType itself.
+    select: { id: true, docType: true, generatedAt: true, metadata: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  },
   items: {
     select: { quantity: true, unitPrice: true, lineTotal: true, product: { select: { name: true, sku: true, images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 } } } },
   },
@@ -198,8 +221,18 @@ function toPartnerOrderRow(o: PartnerOrderPayload) {
     total: o.total,
     createdAt: o.createdAt,
     dispatchedAt: o.shipment?.dispatchedAt ?? null,
+    deliveredAt: o.shipment?.deliveredAt ?? null,
     awb: o.shipment?.awbNumber ?? null,
     courier: o.shipment?.courier?.name ?? null,
+    // The enum code, not the display name: the transit form selects by code.
+    courierCode: o.shipment?.courier?.code ?? null,
+    // Order.status collapses IN_TRANSIT and OUT_FOR_DELIVERY into one label, so
+    // the shipment's own status is the only place the difference shows.
+    shipmentStatus: o.shipment?.status ?? null,
+    labelUrl: o.shipment?.labelUrl ?? null,
+    lastTrackedAt: o.shipment?.lastTrackedAt ?? null,
+    trackingError: o.shipment?.trackingError ?? null,
+    documents: o.documents,
     itemCount: o.items.length,
     items: o.items.map((i) => ({
       name: i.product.name,
@@ -215,6 +248,21 @@ function toPartnerOrderRow(o: PartnerOrderPayload) {
 export async function listPartnerOrders(partnerId: string, query: PartnerOrdersQuery) {
   const p = parsePagination(query);
   const where: Prisma.OrderWhereInput = { partnerId, source: OrderSource.PARTNER };
+
+  if (query.bucket && query.bucket !== 'all') {
+    where.status = { in: BUCKET_STATUSES[query.bucket] };
+  }
+  // Our number, the partner's own reference, or anything in the box. partnerId
+  // and source stay top-level, so they AND with this OR group.
+  if (query.q) {
+    const contains = { contains: query.q, mode: Prisma.QueryMode.insensitive };
+    where.OR = [
+      { orderNo: contains },
+      { externalRef: contains },
+      { items: { some: { product: { OR: [{ name: contains }, { sku: contains }] } } } },
+    ];
+  }
+
   const [rows, total] = await prisma.$transaction([
     prisma.order.findMany({ where, select: partnerOrderSelect, orderBy: { createdAt: 'desc' }, skip: p.skip, take: p.take }),
     prisma.order.count({ where }),

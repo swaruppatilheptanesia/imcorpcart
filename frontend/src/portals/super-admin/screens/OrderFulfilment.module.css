@@ -1,0 +1,28 @@
+.docs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.doc:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.docLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}

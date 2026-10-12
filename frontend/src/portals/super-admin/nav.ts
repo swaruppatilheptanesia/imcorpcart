@@ -63,7 +63,7 @@ export const titles: Record<string, RouteMeta> = {
   categories: { title: 'Categories', sub: 'Category & sub-category master' },
   pincodes: { title: 'Pincodes', sub: 'Courier delivery TAT & serviceability per pincode' },
   partners: { title: 'Partners', sub: 'Integration partners — API access, catalogue & webhooks' },
-  partnerDetail: { title: 'Partner', sub: 'Integration, access, catalogue & activity' },
+  partnerDetail: { title: 'Partner', sub: 'Integration, catalogue, orders & activity' },
   'vendor-sources': { title: 'Vendor sources', sub: 'Integrated vendors — sync their products into the catalog' },
   vendorSourceDetail: { title: 'Vendor source', sub: 'Sync, configure & import log' },
   orders: { title: 'Orders', sub: 'All orders across every company' },

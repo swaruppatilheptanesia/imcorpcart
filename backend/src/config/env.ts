@@ -63,6 +63,16 @@ const schema = z.object({
   HUBBLE_CLIENT_ID: z.string().optional(),
   HUBBLE_CLIENT_SECRET: z.string().optional(),
   HUBBLE_BASE_URL: z.string().optional(), // default: staging (see config/hubble.ts)
+
+  // H.K. Data Services courier aggregator — AWB generation (DTDC only) + AWB
+  // tracking for DTDC/Bluedart/Delhivery. Optional so the app boots without it;
+  // when disabled or unconfigured every call short-circuits and fulfilment falls
+  // back to manual AWB entry and manual transit updates. The API key lives ONLY
+  // in .env, never .env.example. Blank base URL = the production host in
+  // services/courier/hkds.ts.
+  HKDS_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  HKDS_API_KEY: z.string().optional(),
+  HKDS_BASE_URL: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

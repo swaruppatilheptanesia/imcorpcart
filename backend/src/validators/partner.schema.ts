@@ -56,12 +56,37 @@ export const updateCatalogueEntryBody = z.object({
   commissionPct: z.number().min(0).max(100).optional(),
 });
 
+// `bucket` deliberately reuses the admin order-list vocabulary (orderListQuery)
+// rather than inventing a second one for the same chips.
 export const partnerOrdersQuery = z.object({
+  q: z.string().trim().optional(),
+  bucket: z.enum(['all', 'active', 'delivered', 'cancelled']).optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
 
 // ── Partner API ──────────────────────────────────────────────────────────────
+
+// Polling: `updatedSince` is the previous response's `meta.syncedAt`. `status`
+// is the partner status vocabulary (see services/partner-order-view.ts), not our
+// internal OrderStatus enum — partners never see that.
+export const partnerOrderListQuery = z.object({
+  updatedSince: z.coerce.date().optional(),
+  status: z
+    .enum(['CONFIRMED', 'DISPATCHED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'])
+    .optional(),
+  dealerCode: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+
+// `file` streams the document; `json` (the default) returns it base64-encoded in
+// the same envelope the order.epod webhook pushes. `orderNo` disambiguates when
+// one externalRef split into several orders.
+export const epodQuery = z.object({
+  format: z.enum(['json', 'file']).optional(),
+  orderNo: z.string().trim().max(60).optional(),
+});
 export const partnerCatalogueQuery = z.object({
   q: z.string().trim().optional(),
   category: z.string().trim().optional(),
@@ -116,3 +141,5 @@ export type CatalogueCandidatesQuery = z.infer<typeof catalogueCandidatesQuery>;
 export type AddCatalogueInput = z.infer<typeof addCatalogueBody>;
 export type UpdateCatalogueEntryInput = z.infer<typeof updateCatalogueEntryBody>;
 export type PartnerOrdersQuery = z.infer<typeof partnerOrdersQuery>;
+export type PartnerOrderListQuery = z.infer<typeof partnerOrderListQuery>;
+export type EpodQuery = z.infer<typeof epodQuery>;

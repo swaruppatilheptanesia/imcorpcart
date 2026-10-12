@@ -158,7 +158,19 @@ export const orderFullInclude = {
     },
   },
   documents: {
-    select: { id: true, docType: true, source: true, number: true, fileUrl: true, createdAt: true },
+    // generatedAt carries WHEN the proof was captured (not uploaded) and
+    // metadata the original filename/mime, both shown on the admin order page.
+    // fileUrl is an absolute path in a private directory — never a public URL.
+    select: {
+      id: true,
+      docType: true,
+      source: true,
+      number: true,
+      fileUrl: true,
+      generatedAt: true,
+      metadata: true,
+      createdAt: true,
+    },
   },
 } satisfies Prisma.OrderInclude;
 

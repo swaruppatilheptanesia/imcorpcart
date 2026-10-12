@@ -113,6 +113,8 @@ model Order {
   updatedAt DateTime @updatedAt
 
   @@index([partnerId, externalRef])
+  // Partner polling (GET /partner-api/v1/orders?updatedSince=).
+  @@index([partnerId, updatedAt])
   @@index([employeeId])
   @@index([companyId])
   @@index([resellerId])

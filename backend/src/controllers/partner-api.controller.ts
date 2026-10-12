@@ -2,8 +2,14 @@ import type { Request, Response } from 'express';
 import { getQuery, getParam } from '../middleware/validate';
 import { AppError } from '../utils/AppError';
 import * as catalogue from '../services/partner.service';
-import { acceptOrder, cancelPartnerOrder, getPartnerOrder } from '../services/partner-order.service';
-import type { PartnerCatalogueQuery, DeliveryQuery } from '../validators/partner.schema';
+import {
+  acceptOrder,
+  cancelPartnerOrder,
+  getPartnerOrder,
+  getPartnerOrderEpod,
+  listPartnerOrders,
+} from '../services/partner-order.service';
+import type { PartnerCatalogueQuery, DeliveryQuery, EpodQuery, PartnerOrderListQuery } from '../validators/partner.schema';
 
 function partner(req: Request) {
   if (!req.partner) throw AppError.unauthorized();
@@ -32,8 +38,25 @@ export async function createOrder(req: Request, res: Response) {
   res.status(result.statusCode).json(result.body);
 }
 
+export async function listOrders(req: Request, res: Response) {
+  res.json(await listPartnerOrders(partner(req), getQuery<PartnerOrderListQuery>(req)));
+}
+
 export async function getOrder(req: Request, res: Response) {
   res.json({ data: await getPartnerOrder(partner(req), getParam(req, 'ref')) });
+}
+
+export async function orderEpod(req: Request, res: Response) {
+  const result = await getPartnerOrderEpod(partner(req), getParam(req, 'ref'), getQuery<EpodQuery>(req));
+  if (result.kind === 'json') {
+    res.json({ data: result.data });
+    return;
+  }
+  // Streamed straight from the private store — these files are never served
+  // statically (they carry a recipient's name and signature).
+  res.type(result.file.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${result.file.fileName.replace(/"/g, '')}"`);
+  res.sendFile(result.file.filePath);
 }
 
 export async function cancelOrder(req: Request, res: Response) {

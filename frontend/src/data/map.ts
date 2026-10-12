@@ -8,6 +8,7 @@ import type {
   CouponStatus,
   CouponType,
   Order,
+  OrderFulfilmentInfo,
   OrderItem,
   OrderStatus,
   OrderSubstitution,
@@ -250,7 +251,14 @@ interface ApiOrderListRow {
   company: { name: string } | null; // null for partner orders
   employee: { user: { fullName: string } } | null;
   reseller: { name: string } | null;
-  shipment: { awbNumber: string | null; dispatchedAt: string | null; courier: { name: string } | null } | null;
+  shipment: {
+    awbNumber: string | null;
+    dispatchedAt: string | null;
+    courier: { name: string } | null;
+    labelUrl?: string | null;
+    lastTrackedAt?: string | null;
+    trackingError?: string | null;
+  } | null;
   items: {
     quantity: number;
     product: { name: string; reseller?: { name: string } | null; sourceId?: string | null; source?: { name: string } | null };
@@ -301,13 +309,54 @@ interface ApiOrderItem {
     source?: { name: string } | null;
   };
 }
+interface ApiOrderDocument {
+  id: string;
+  docType: string;
+  // Optional: a POD's path is private (served only through the authed route), so
+  // the partner order rows leave it out entirely. Nothing reads it either way.
+  fileUrl?: string | null;
+  generatedAt: string | null;
+  createdAt: string;
+  metadata?: { fileName?: string | null } | null;
+}
 interface ApiOrderFull extends ApiOrderListRow {
   id: string;
+  source?: string | null;
+  documents?: ApiOrderDocument[];
   // The full order carries the buyer's email (orderFullInclude); the list row doesn't.
   employee: { user: { fullName: string; email?: string | null } } | null;
   couponCode: string | null;
   subtotal: number;
   items: ApiOrderItem[];
+}
+
+/**
+ * Courier-automation + ePOD state, shared by the admin order detail and the
+ * partner detail page's Orders tab — so the "newest POD wins" rule and the
+ * `fromPartner` test have exactly one implementation.
+ */
+export function toFulfilmentInfo(o: {
+  source?: string | null;
+  shipment?: { labelUrl?: string | null; lastTrackedAt?: string | null; trackingError?: string | null } | null;
+  documents?: ApiOrderDocument[] | null;
+}): OrderFulfilmentInfo {
+  // Newest POD wins; re-uploading a corrected scan supersedes the old one.
+  const pods = (o.documents ?? []).filter((d) => d.docType === 'POD');
+  const pod = pods[pods.length - 1];
+  return {
+    fromPartner: o.source === 'PARTNER',
+    labelUrl: o.shipment?.labelUrl ?? null,
+    lastTrackedAt: o.shipment?.lastTrackedAt ?? null,
+    trackingError: o.shipment?.trackingError ?? null,
+    epod: pod
+      ? {
+          id: pod.id,
+          capturedAt: pod.generatedAt,
+          fileName: pod.metadata?.fileName ?? null,
+          uploadedAt: pod.createdAt,
+        }
+      : null,
+  };
 }
 
 export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
@@ -350,6 +399,7 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
     status: ORDER_STATUS_IN[o.status] ?? 'Processing',
     courier: o.shipment?.courier?.name ?? 'Awaiting dispatch',
     awb: o.shipment?.awbNumber ?? '—',
+    fulfilment: toFulfilmentInfo(o),
     total: o.total,
     items,
   };

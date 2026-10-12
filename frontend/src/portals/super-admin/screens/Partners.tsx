@@ -12,10 +12,10 @@ import styles from './Partners.module.css';
 
 const COLS = '1.3fr 1.4fr 0.9fr 0.8fr 0.8fr 130px';
 
-// Webhook status-push (#5) isn't wired to a live vendor yet, so the webhook URL
-// input + webhook-secret reveal are hidden (not removed — the state, create
-// payload, and backend stay intact). Flip to true to bring both back.
-const SHOW_WEBHOOK_FIELDS = false;
+// Status + ePOD pushes are live, so the webhook URL input and the one-time
+// webhook-secret reveal are part of onboarding a partner. Flip to false to hide
+// both again (the state, create payload and backend stay intact either way).
+const SHOW_WEBHOOK_FIELDS = true;
 
 export const statusTone: Record<string, SemanticTone> = {
   ACTIVE: 'success',

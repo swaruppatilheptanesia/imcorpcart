@@ -9,7 +9,9 @@ import {
   cancelOrderBody,
   orderItemParams,
   colourSwapBody,
+  epodBody,
 } from '../validators/order.schema';
+import { documentUpload } from '../config/document-upload';
 import { transitUpdateBody } from '../validators/reseller.schema';
 
 const router = Router();
@@ -40,5 +42,22 @@ router.patch(
   validate({ params: orderItemParams, body: colourSwapBody }),
   asyncHandler(ctrl.swapItemColour),
 );
+
+// Courier automation. Both are additive to the manual transit form above: when
+// the aggregator is off or fails, staff enter the AWB and drive transit by hand.
+router.post('/:id/awb', validate({ params: idParam }), asyncHandler(ctrl.generateAwb));
+router.post('/:id/tracking/refresh', validate({ params: idParam }), asyncHandler(ctrl.refreshTracking));
+
+// Proof of delivery. Upload stores the document AND pushes it to the origin
+// partner in one call, so it can never sit uploaded-but-unsent. The file is kept
+// outside the statically-served uploads directory and read back only here.
+router.post(
+  '/:id/epod',
+  documentUpload.single('file'),
+  validate({ params: idParam, body: epodBody }),
+  asyncHandler(ctrl.uploadEpod),
+);
+router.get('/:id/epod/file', validate({ params: idParam }), asyncHandler(ctrl.downloadEpod));
+router.post('/:id/epod/resend', validate({ params: idParam }), asyncHandler(ctrl.resendEpod));
 
 export default router;

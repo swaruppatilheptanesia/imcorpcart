@@ -3,12 +3,13 @@
  *  (see ./map). Screens import from here, never from ./fixtures directly.
  *  Static label/config constants are still re-exported synchronously below. */
 
-import { apiFetch, apiUpload, type PageMeta } from './http';
+import { apiFetch, apiUpload, type PageMeta, apiBlob } from './http';
 import { setToken, setUser, clearAuth, type AuthUser } from './auth-store';
 import type {
   Coupon,
   DateRange,
   Order,
+  OrderFulfilmentInfo,
   OrderStatus,
   Product,
   UserDataset,
@@ -20,6 +21,7 @@ import {
   toCoupon,
   toOrderListRow,
   toOrderFull,
+  toFulfilmentInfo,
   toUserDataset,
   PRODUCT_STATUS_OUT,
   COUPON_TYPE_OUT,
@@ -758,9 +760,10 @@ export function removeCatalogueEntry(id: string, entryId: string): Promise<{ ok:
   return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'DELETE' });
 }
 
-// Orders a partner has sent us (admin view). Self-contained — each row carries its
-// items, so no separate order-detail fetch is needed (the admin order mapping
-// assumes a company/employee buyer, which partner orders don't have).
+// Orders a partner has sent us (admin view). Self-contained — each row carries
+// its items plus the shipment and ePOD state the Orders tab updates inline, so
+// no per-row order-detail fetch is needed (and the admin order mapping assumes a
+// company/employee buyer, which partner orders don't have).
 export interface PartnerOrderItem {
   name: string;
   sku: string;
@@ -782,15 +785,47 @@ export interface PartnerOrderRow {
   items: PartnerOrderItem[];
   createdAt: string;
   dispatchedAt: string | null;
+  deliveredAt: string | null;
   awb: string | null;
+  /** Courier display name. */
   courier: string | null;
+  /** Courier enum code — what the transit form selects by. */
+  courierCode: string | null;
+  /** The shipment's own status: the only place IN_TRANSIT and OUT_FOR_DELIVERY differ. */
+  shipmentStatus: string | null;
+  /** Same block, same mapper as the order detail page's `fulfilment`. */
+  fulfilment: OrderFulfilmentInfo;
 }
-interface ApiPartnerOrderRow extends Omit<PartnerOrderRow, 'status'> {
+interface ApiPartnerOrderRow extends Omit<PartnerOrderRow, 'status' | 'fulfilment'> {
   status: string; // raw enum from the API
+  labelUrl: string | null;
+  lastTrackedAt: string | null;
+  trackingError: string | null;
+  documents: { id: string; docType: string; generatedAt: string | null; createdAt: string; metadata?: { fileName?: string | null } | null }[];
 }
-export async function getPartnerOrders(id: string, query: { page?: number; pageSize?: number } = {}): Promise<{ items: PartnerOrderRow[]; meta: PageMeta }> {
-  const r = await apiFetch<Envelope<ApiPartnerOrderRow[]>>(`/partners/${id}/orders`, { query: { page: query.page, pageSize: query.pageSize } });
-  const items = r.data.map((o) => ({ ...o, status: ORDER_STATUS_IN[o.status] ?? 'Processing' }));
+
+export interface PartnerOrdersQuery {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  bucket?: 'all' | 'active' | 'delivered' | 'cancelled';
+}
+
+export async function getPartnerOrders(id: string, query: PartnerOrdersQuery = {}): Promise<{ items: PartnerOrderRow[]; meta: PageMeta }> {
+  const r = await apiFetch<Envelope<ApiPartnerOrderRow[]>>(`/partners/${id}/orders`, {
+    query: { page: query.page, pageSize: query.pageSize, q: query.q, bucket: query.bucket },
+  });
+  const items = r.data.map((o) => ({
+    ...o,
+    status: ORDER_STATUS_IN[o.status] ?? 'Processing',
+    // The POD rows come back pre-filtered by docType, but go through the shared
+    // mapper anyway so "newest wins" and the field names stay in one place.
+    fulfilment: toFulfilmentInfo({
+      source: 'PARTNER', // every row on this screen is a partner order by definition
+      shipment: { labelUrl: o.labelUrl, lastTrackedAt: o.lastTrackedAt, trackingError: o.trackingError },
+      documents: o.documents,
+    }),
+  }));
   return { items, meta: r.meta };
 }
 
@@ -1223,6 +1258,67 @@ export function getVendorSourceRun(id: string, runId: string): Promise<VendorImp
 /** Admin per-product show/hide on the storefront (PUT the product master). */
 export function setProductHidden(id: string, hidden: boolean): Promise<unknown> {
   return apiFetch(`/products/${id}`, { method: 'PUT', body: { hidden } });
+}
+
+// ─── Courier automation + proof of delivery ─────────────────────────────────
+
+export interface CourierActionResult {
+  ok: boolean;
+  reason?: string;
+  message?: string;
+  awbNo?: string;
+  labelUrl?: string | null;
+  status?: string;
+  mapped?: string | null;
+  applied?: boolean;
+  lastTrackedAt?: string;
+}
+
+/** Book an AWB with the courier aggregator (DTDC only). */
+export function generateOrderAwb(id: string): Promise<CourierActionResult> {
+  return apiFetch(`/orders/${id}/awb`, { method: 'POST' });
+}
+
+/** Pull the courier's latest view of this shipment and apply it if it moved. */
+export function refreshOrderTracking(id: string): Promise<CourierActionResult> {
+  return apiFetch(`/orders/${id}/tracking/refresh`, { method: 'POST' });
+}
+
+/** Upload the proof of delivery. Also pushes it to the partner for partner orders. */
+export function uploadOrderEpod(
+  id: string,
+  file: File,
+  capturedAt?: string,
+  onProgress?: (pct: number) => void,
+): Promise<{ pushedToPartner: boolean }> {
+  return apiUpload(`/orders/${id}/epod`, file, onProgress, { capturedAt });
+}
+
+/** Re-queue the ePOD push (for when the partner's endpoint was down). */
+export function resendOrderEpod(id: string): Promise<{ queued: boolean }> {
+  return apiFetch(`/orders/${id}/epod/resend`, { method: 'POST' });
+}
+
+/**
+ * Fetch the stored ePOD and hand it to the browser.
+ *
+ * These files are not served statically (they carry a recipient's name and
+ * signature), so a plain <a href> would 401 — the bearer token has to be on the
+ * request, which means fetching the bytes and opening them as a blob.
+ */
+export async function downloadOrderEpod(id: string, fileName?: string | null): Promise<void> {
+  const blob = await apiBlob(`/orders/${id}/epod/file`);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  if (fileName) a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke late: Safari aborts the navigation if the URL dies immediately.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 /** Admin fulfilment: update the real shipment/transit status for any order. */

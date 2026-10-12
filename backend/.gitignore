@@ -14,3 +14,4 @@ uploads/*
 
 # Local-only demo reseller seed (not committed)
 prisma/seed-demo-reseller.ts
+private-uploads/

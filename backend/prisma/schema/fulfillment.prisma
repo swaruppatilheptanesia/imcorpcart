@@ -50,6 +50,17 @@ model Shipment {
   deliveredAt    DateTime?
   podUrl         String? // proof of delivery upload
 
+  // Courier-aggregator (H.K. Data Services) state. `labelUrl` is the shipping
+  // label PDF returned at AWB generation — printed before dispatch, NOT a proof
+  // of delivery. `nextPollAt` is the tracking poller's claim predicate (same
+  // shape as WebhookDelivery.nextAttemptAt); null = never polled / due now.
+  // `trackingError` holds the last failure reason so staff can see why automatic
+  // tracking is not advancing and fall back to a manual transit update.
+  labelUrl      String?   @map("label_url")
+  lastTrackedAt DateTime? @map("last_tracked_at")
+  nextPollAt    DateTime? @map("next_poll_at")
+  trackingError String?   @map("tracking_error")
+
   trackingEvents ShipmentTrackingEvent[]
 
   createdAt DateTime @default(now())
@@ -58,6 +69,9 @@ model Shipment {
   @@index([fulfillmentPartnerId])
   @@index([courierId])
   @@index([status])
+  // A transit update often touches only this row, so partner polling filters on
+  // it as well as on the order's own updatedAt.
+  @@index([updatedAt])
   @@map("shipments")
 }
 

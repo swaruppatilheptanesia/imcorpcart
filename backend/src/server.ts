@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { connectPrisma, disconnectPrisma } from './config/prisma';
 import { startWebhookRetryLoop } from './services/webhook.service';
+import { startCourierTrackingLoop } from './services/courier/tracking.service';
 import { resumePendingFulfilments } from './services/voucher-fulfilment.service';
 
 // Minimal bootstrap: connect the DB, start listening, wire graceful shutdown.
@@ -17,6 +18,10 @@ async function main() {
   // Reprocess due partner webhook deliveries (retry with backoff). Runs only in
   // the main server process.
   startWebhookRetryLoop();
+
+  // Poll the courier aggregator for AWB movement on active shipments and feed
+  // changes through the normal transit engine. Inert unless HKDS is configured.
+  startCourierTrackingLoop();
 
   // Resume any voucher (Hubble) fulfilments that were mid-flight when the process
   // last stopped — place/poll continues until the code is delivered or refunded.

@@ -5,7 +5,14 @@ import { partnerLimiter } from '../../middleware/rateLimit';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { partnerDocsRouter } from './docs';
-import { partnerCatalogueQuery, deliveryQuery, acceptOrderBody, cancelOrderBody } from '../../validators/partner.schema';
+import {
+  partnerCatalogueQuery,
+  deliveryQuery,
+  acceptOrderBody,
+  cancelOrderBody,
+  epodQuery,
+  partnerOrderListQuery,
+} from '../../validators/partner.schema';
 
 // Machine-to-machine partner API, mounted at /partner-api/v1. Every route is
 // bearer-token + IP authenticated and rate-limited per partner.
@@ -24,7 +31,11 @@ router.get('/catalogue', validate({ query: partnerCatalogueQuery }), asyncHandle
 router.get('/catalogue/:sku', asyncHandler(ctrl.getCatalogueItem));
 router.get('/delivery', validate({ query: deliveryQuery }), asyncHandler(ctrl.delivery));
 router.post('/orders', validate({ body: acceptOrderBody }), asyncHandler(ctrl.createOrder));
+// Pull surface: poll the list for anything that moved, read one order in full,
+// fetch its proof of delivery. Same data the webhooks push.
+router.get('/orders', validate({ query: partnerOrderListQuery }), asyncHandler(ctrl.listOrders));
 router.get('/orders/:ref', asyncHandler(ctrl.getOrder));
+router.get('/orders/:ref/epod', validate({ query: epodQuery }), asyncHandler(ctrl.orderEpod));
 router.post('/orders/:ref/cancel', validate({ body: cancelOrderBody }), asyncHandler(ctrl.cancelOrder));
 
 export default router;

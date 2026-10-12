@@ -1,7 +1,13 @@
-import { WebhookStatus, OrderStatus, ShipmentStatus } from '@prisma/client';
+import fs from 'fs/promises';
+import { WebhookStatus, OrderStatus, ShipmentStatus, DocumentType } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { decryptSecret } from '../utils/secretbox';
-import { estimateDelivery } from './delivery.service';
+import {
+  buildEpodEnvelope,
+  partnerOrderViewSelect,
+  partnerStatusFromShipment,
+  toPartnerOrderView,
+} from './partner-order-view';
 
 // Lightweight, in-process outbound webhook delivery. Each event is logged to
 // `webhook_deliveries` and POSTed to the partner's URL (authenticated with the
@@ -35,7 +41,13 @@ export async function attemptDelivery(id: string): Promise<void> {
   const d = await prisma.webhookDelivery.findUnique({ where: { id }, include: { partner: true } });
   if (!d || d.status === WebhookStatus.DELIVERED) return;
   const attempts = d.attempts + 1;
-  const body = JSON.stringify(d.payload);
+  let body: string;
+  try {
+    body = JSON.stringify(await materialisePayload(d.payload));
+  } catch (e) {
+    await markFailure(id, attempts, null, e instanceof Error ? e.message : 'could not build payload');
+    return;
+  }
   try {
     if (!d.partner.webhookSecretEnc) {
       await markFailure(id, attempts, null, 'partner has no webhook secret');
@@ -97,60 +109,77 @@ export function startWebhookRetryLoop() {
   return timer;
 }
 
-// Map our internal statuses to GenieMart's vocabulary. The shipment carries the
-// granular states (In Transit / Out for Delivery) that Order.status collapses.
-const SHIPMENT_TO_PARTNER_STATUS: Record<ShipmentStatus, string> = {
-  PENDING: 'Confirmed',
-  DISPATCHED: 'Dispatched',
-  IN_TRANSIT: 'In Transit',
-  OUT_FOR_DELIVERY: 'Out for Delivery',
-  DELIVERED: 'Delivered',
-  FAILED: 'Failed',
-  RETURNED: 'Returned',
-};
-const ORDER_TO_PARTNER_STATUS: Record<OrderStatus, string> = {
-  PLACED: 'Confirmed',
-  CONFIRMED: 'Confirmed',
-  DISPATCHED: 'Dispatched',
-  DELIVERED: 'Delivered',
-  CANCELLED: 'Cancelled',
-  RETURNED: 'Returned',
-};
-
 // Push an order status change to the origin partner's webhook (no-op for internal
 // orders). Loads the order and builds the rich payload GenieMart expects. Pass a
 // `shipmentStatus` for transit updates (so In Transit / Out for Delivery are
 // emitted), or an `event` (e.g. 'order.cancelled') to override the event name.
 export async function notifyPartnerOrderStatus(orderId: string, opts: { event?: string; shipmentStatus?: ShipmentStatus } = {}) {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      address: { select: { pincode: true } },
-      items: { select: { product: { select: { sku: true } } } },
-      shipment: { select: { id: true, awbNumber: true, dispatchedAt: true, deliveredAt: true, courier: { select: { name: true } } } },
-    },
-  });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: partnerOrderViewSelect });
   if (!order || order.source !== 'PARTNER' || !order.partnerId) return;
 
-  const status = opts.shipmentStatus ? SHIPMENT_TO_PARTNER_STATUS[opts.shipmentStatus] : ORDER_TO_PARTNER_STATUS[order.status];
-  const eta = order.address?.pincode ? await estimateDelivery(order.address.pincode) : null;
+  const view = await toPartnerOrderView(order);
+  // `shipmentStatus` is the transition that just happened, passed by applyTransit
+  // so the push names it exactly even if the row is read back mid-flight.
+  const status = opts.shipmentStatus ? partnerStatusFromShipment(opts.shipmentStatus) : null;
 
   await enqueueWebhook(order.partnerId, opts.event ?? 'order.status', {
-    orderNo: order.orderNo,
-    externalRef: order.externalRef,
-    dealerCode: order.dealerCode,
-    itemCodes: order.items.map((i) => i.product.sku),
-    pincode: order.address?.pincode ?? null,
-    status,
+    orderNo: view.orderNo,
+    externalRef: view.externalRef,
+    dealerCode: view.dealerCode,
+    itemCodes: view.items.map((i) => i.sku),
+    pincode: view.pincode,
+    status: status?.label ?? view.status,
+    statusCode: status?.code ?? view.statusCode,
     statusAt: new Date().toISOString(),
     shipmentId: order.shipment?.id ?? null,
-    awb: order.shipment?.awbNumber ?? null,
-    courier: order.shipment?.courier?.name ?? null,
-    tentativeDeliveryDate: eta?.etaDate ?? null,
-    dispatchedAt: order.shipment?.dispatchedAt ? order.shipment.dispatchedAt.toISOString() : null,
-    deliveredAt: order.shipment?.deliveredAt ? order.shipment.deliveredAt.toISOString() : null,
-    remarks: order.cancelReason ?? null,
-    checkoutGroup: order.checkoutGroup,
+    awb: view.awb,
+    courier: view.courier,
+    tentativeDeliveryDate: view.tentativeDeliveryDate,
+    dispatchedAt: view.dispatchedAt,
+    deliveredAt: view.deliveredAt,
+    remarks: view.remarks,
+    checkoutGroup: view.checkoutGroup,
+  });
+}
+
+/**
+ * Expand a stored payload into the body we actually send.
+ *
+ * `order.epod` carries the proof-of-delivery document as base64, but storing
+ * that in `webhook_deliveries.payload` would put a multi-megabyte blob in the
+ * log and carry it through all six retries. So the row holds `documentRef` (a
+ * path on disk) and the file is read here, at send time, into `document`.
+ * A missing file fails this delivery loudly rather than shipping a body with no
+ * document in it.
+ */
+async function materialisePayload(payload: unknown): Promise<unknown> {
+  if (!payload || typeof payload !== 'object') return payload;
+  const p = payload as Record<string, unknown>;
+  const ref = p.documentRef;
+  if (typeof ref !== 'string' || !ref) return payload;
+
+  const buf = await fs.readFile(ref).catch(() => null);
+  if (!buf) throw new Error(`ePOD document is missing on disk (${ref})`);
+
+  const { documentRef: _omit, ...rest } = p;
+  return { ...rest, document: buf.toString('base64') };
+}
+
+// Push the proof-of-delivery document to the origin partner (no-op for internal
+// orders). Carries the partner's own order reference, the AWB, the document as
+// base64 and when the proof was captured.
+export async function notifyPartnerEpod(orderId: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: partnerOrderViewSelect });
+  if (!order || order.source !== 'PARTNER' || !order.partnerId) return null;
+
+  const envelope = buildEpodEnvelope(order);
+  if (!envelope) return null;
+  const { fileUrl, ...rest } = envelope;
+
+  return enqueueWebhook(order.partnerId, 'order.epod', {
+    ...rest,
+    // Swapped for `document: <base64>` by materialisePayload at send time.
+    documentRef: fileUrl,
   });
 }
 
