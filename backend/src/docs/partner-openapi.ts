@@ -414,7 +414,7 @@ export const partnerOpenApiSpec = {
               capturedAt: { type: 'string', format: 'date-time', nullable: true },
               fileName: { type: 'string', nullable: true },
               mimeType: { type: 'string', nullable: true },
-              url: { type: 'string', example: '/orders/GM-9921/epod' },
+              url: { type: 'string', example: '/orders/IMC-97226830/epod', description: 'Always keyed on our orderNo, so it is never ambiguous for a split order' },
             },
           },
           subtotal: { type: 'number' },

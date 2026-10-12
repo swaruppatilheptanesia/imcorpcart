@@ -211,7 +211,10 @@ export async function toPartnerOrderView(
           capturedAt: pod.generatedAt?.toISOString() ?? null,
           fileName: typeof podMeta.fileName === 'string' ? podMeta.fileName : null,
           mimeType: typeof podMeta.mimeType === 'string' ? podMeta.mimeType : null,
-          url: `/orders/${encodeURIComponent(o.externalRef ?? o.orderNo)}/epod`,
+          // Always our orderNo, never their externalRef: one externalRef can cover
+          // several split orders, and `?format=file` refuses an ambiguous ref.
+          // This link is for one order's document, so it must name that order.
+          url: `/orders/${encodeURIComponent(o.orderNo)}/epod`,
         }
       : null,
     subtotal: Number(o.subtotal),

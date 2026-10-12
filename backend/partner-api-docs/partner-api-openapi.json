@@ -1051,7 +1051,8 @@
               },
               "url": {
                 "type": "string",
-                "example": "/orders/GM-9921/epod"
+                "example": "/orders/IMC-97226830/epod",
+                "description": "Always keyed on our orderNo, so it is never ambiguous for a split order"
               }
             }
           },
