@@ -16,6 +16,24 @@ export const partnerDocsRouter = Router();
 
 partnerDocsRouter.get('/openapi.json', (_req, res) => res.json(partnerOpenApiSpec));
 
+// One options object for BOTH calls. `serveFiles` is what actually serves
+// `swagger-ui-init.js`, and it is mounted first — so options given only to
+// `setup()` never reach the browser (it rendered `customOptions: {}`, which is
+// why "Try it out" and Execute showed up on a reference we describe as
+// read-only).
+const uiOptions = {
+  customSiteTitle: 'Imcorpcart Partner API',
+  customCss: swaggerCustomCss,
+  customfavIcon: swaggerFavicon,
+  swaggerOptions: {
+    supportedSubmitMethods: [], // read-only — no "Try it out", no Execute
+    tryItOutEnabled: false,
+    docExpansion: 'list',
+    defaultModelsExpandDepth: 1,
+    syntaxHighlight: { theme: 'idea' },
+  },
+};
+
 partnerDocsRouter.use(
   '/docs',
   // Swagger UI's inline assets trip the global helmet CSP — drop it for this subtree.
@@ -23,19 +41,8 @@ partnerDocsRouter.use(
     res.removeHeader('Content-Security-Policy');
     next();
   },
-  swaggerUi.serveFiles(spec),
-  swaggerUi.setup(spec, {
-    customSiteTitle: 'Imcorpcart Partner API',
-    customCss: swaggerCustomCss,
-    customfavIcon: swaggerFavicon,
-    swaggerOptions: {
-      supportedSubmitMethods: [], // read-only — no "Try it out"
-      tryItOutEnabled: false,
-      docExpansion: 'list',
-      defaultModelsExpandDepth: 1,
-      syntaxHighlight: { theme: 'idea' },
-    },
-  }),
+  swaggerUi.serveFiles(spec, uiOptions),
+  swaggerUi.setup(spec, uiOptions),
 );
 
 export default partnerDocsRouter;

@@ -9,43 +9,37 @@ export const partnerOpenApiSpec = {
     version: '1.0.0',
     description:
       'The **Imcorpcart Partner API** lets approved integration partners browse their catalogue, ' +
-      'check delivery serviceability, and place, read, and cancel orders — machine-to-machine.\n\n' +
+      'check delivery serviceability, place orders, and follow those orders all the way to a signed ' +
+      'proof of delivery — machine-to-machine.\n\n' +
+      '**Base URL.** `https://imcorp.heptanesia.com/partner-api/v1` — every path below is relative ' +
+      'to it.\n\n' +
       '**Authentication.** Every request carries a single bearer token issued to you:\n\n' +
       '```\nAuthorization: Bearer <your-token>\n```\n\n' +
-      'All traffic is over HTTPS. Prices shown are *your* price (basis + commission); catalogue is a ' +
-      'snapshot, so availability and price are re-validated at order time with structured error codes. ' +
-      'This reference is read-only.\n\n' +
-      '## Webhooks (we → you)\n\n' +
-      'If you have given us a webhook URL we POST events to it, with `X-Event` carrying the event ' +
-      'name and `Authorization: Bearer <your-webhook-secret>` — a different value from your API ' +
-      'token. Compare that bearer against your webhook secret to confirm an event is from us. ' +
-      'Reply `2xx` to acknowledge; we retry with backoff (1m · 5m · 30m · 2h · 6h, then give up).\n\n' +
-      '| Event | When | Payload |\n' +
-      '|---|---|---|\n' +
-      '| `order.accepted` | We accepted an order you placed | `OrderAccepted` |\n' +
-      '| `order.status` | Every status change — shipment transitions, courier tracking, and changes ' +
-      'made by our staff | `WebhookOrderStatus` |\n' +
-      '| `order.cancelled` | The order was cancelled, by you or by us | `WebhookOrderStatus` |\n' +
-      '| `order.epod` | A proof of delivery was captured | `WebhookEpod` |\n' +
-      '| `ping` | Test event from our admin console | `{ message, at }` |\n\n' +
-      'Events are **at least once** — the same status can repeat, and an ePOD can be re-sent on ' +
-      'request — so key your handling on `externalRef` and make it idempotent. The payload schemas ' +
-      'are under **Schemas** below.\n\n' +
-      '## Pull or push — same data, your choice\n\n' +
-      'Webhooks are a convenience, not a requirement. Everything we push is also readable from ' +
-      'this API, built from the same representation, so you can poll instead of (or as well as) ' +
-      'receiving events:\n\n' +
-      '| We push | You can pull |\n' +
-      '|---|---|\n' +
-      '| `order.status` / `order.cancelled` | `GET /orders?updatedSince=` and `GET /orders/{ref}` |\n' +
-      '| `order.epod` | `GET /orders/{ref}/epod` |\n\n' +
+      'All traffic is over HTTPS. Prices shown are *your* price (basis + commission); the catalogue ' +
+      'is a snapshot, so availability and price are re-validated at order time with structured error ' +
+      'codes. This reference is read-only.\n\n' +
+      '## How an integration works\n\n' +
+      '1. **Browse** — `GET /catalogue` for what you may sell, `GET /delivery` to check a pincode.\n' +
+      '2. **Order** — `POST /orders` with your own `externalRef`. It is the dedup key, so retries ' +
+      'are safe.\n' +
+      '3. **Follow** — poll `GET /orders?updatedSince=` to see dispatch, every courier scan, and ' +
+      'delivery.\n' +
+      '4. **Collect the proof** — `GET /orders/{ref}/epod` once an order is delivered.\n\n' +
+      '## Following an order\n\n' +
+      'There is nothing to subscribe to and no endpoint for you to host: everything we know about ' +
+      'your orders is readable here, and you decide how often to look.\n\n' +
       '**Polling recipe.** Call `GET /orders?updatedSince=<the previous response\u2019s ' +
-      '`meta.syncedAt`>`; keep the new `syncedAt` for the next call. The window deliberately ' +
-      'overlaps — reads are idempotent, so seeing a row twice is harmless, and nothing is ever ' +
+      '`meta.syncedAt`>` and keep the new `syncedAt` for the next call. The window deliberately ' +
+      'overlaps — reads are idempotent, so seeing a row twice is harmless and nothing is ever ' +
       'missed. A first sync omits `updatedSince` and pages through everything.\n\n' +
+      '`updatedSince` catches every change that matters, including the ones that do not change the ' +
+      'order itself: a courier scan (`In Transit` → `Out for Delivery`) and a proof of delivery ' +
+      'being attached both bring the order back on your next poll.\n\n' +
+      'Nothing expires. An order stays readable, and its proof of delivery stays downloadable, for ' +
+      'as long as the order exists — so a gap in your polling costs you nothing.\n\n' +
       '## Order status\n\n' +
-      'Every order carries both `statusCode` (stable, switch on this) and `status` (the label, ' +
-      'show this). Status reflects the **shipment** where there is one, so In Transit and Out for ' +
+      'Every order carries both `statusCode` (stable, switch on this) and `status` (the label, show ' +
+      'this). Status reflects the **shipment** where there is one, so In Transit and Out for ' +
       'Delivery are distinct states and not folded into Dispatched.\n\n' +
       '| `statusCode` | `status` | Meaning |\n' +
       '|---|---|---|\n' +
@@ -68,7 +62,7 @@ export const partnerOpenApiSpec = {
   tags: [
     { name: 'Catalogue', description: 'Products enabled for you, at your configured price' },
     { name: 'Delivery', description: 'Serviceability + delivery ETA' },
-    { name: 'Orders', description: 'Place, read, and cancel orders' },
+    { name: 'Orders', description: 'Place orders, poll them for changes, and collect the proof of delivery' },
     { name: 'System', description: 'Health' },
   ],
   paths: {
@@ -212,9 +206,9 @@ export const partnerOpenApiSpec = {
         tags: ['Orders'],
         summary: 'Download the proof of delivery',
         description:
-          'The same document the `order.epod` webhook pushes, so one parser serves both. Default ' +
-          '`format=json` returns it base64-encoded in the webhook envelope; `format=file` streams ' +
-          'the raw PDF or image.\n\nIf your `externalRef` split into several orders and more than ' +
+          'Available once an order is delivered — `epod.available` on the order says when. Default ' +
+          '`format=json` returns the document base64-encoded alongside its metadata; ' +
+          '`format=file` streams the raw PDF or image.\n\nIf your `externalRef` split into several orders and more than ' +
           'one has a proof, `format=file` returns **409 `AMBIGUOUS_REF`** listing the order ' +
           'numbers — pass `orderNo` to choose. `format=json` returns them all.',
         parameters: [
@@ -226,7 +220,7 @@ export const partnerOpenApiSpec = {
           200: {
             description: 'The proof of delivery',
             content: {
-              'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/WebhookEpod' } } } } },
+              'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/EpodDocument' } } } } },
               'application/pdf': { schema: { type: 'string', format: 'binary' } },
             },
           },
@@ -388,8 +382,8 @@ export const partnerOpenApiSpec = {
       OrderView: {
         type: 'object',
         description:
-          'One order as we report it. The **same object** backs the list, the detail read and the ' +
-          'status webhooks, so polling and listening can never disagree.',
+          'One order as we report it. The **same object** backs the list and the detail read, so a ' +
+          'poll and a lookup can never disagree.',
         properties: {
           orderNo: { type: 'string', description: 'Our order number' },
           externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
@@ -479,37 +473,12 @@ export const partnerOpenApiSpec = {
         type: 'object',
         properties: { error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' }, details: {} } } },
       },
-      // ── Webhook payloads (we POST these to you; not callable endpoints) ──
-      WebhookOrderStatus: {
+      EpodDocument: {
         type: 'object',
         description:
-          'Body of an `order.status` or `order.cancelled` event. The same facts are readable at ' +
-          '`GET /orders/{ref}` — see **Order status** above for the vocabulary.',
-        properties: {
-          orderNo: { type: 'string', description: 'Our order number' },
-          externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
-          dealerCode: { type: 'string', nullable: true },
-          itemCodes: { type: 'array', items: { type: 'string' }, description: 'SKUs on the order' },
-          pincode: { type: 'string', nullable: true },
-          status: { type: 'string', example: 'Out for Delivery', description: 'Human label' },
-          statusCode: { $ref: '#/components/schemas/StatusCode' },
-          statusAt: { type: 'string', format: 'date-time' },
-          shipmentId: { type: 'string', nullable: true },
-          awb: { type: 'string', nullable: true, description: 'Airway bill number' },
-          courier: { type: 'string', nullable: true },
-          tentativeDeliveryDate: { type: 'string', format: 'date-time', nullable: true },
-          dispatchedAt: { type: 'string', format: 'date-time', nullable: true },
-          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
-          remarks: { type: 'string', nullable: true, description: 'Cancellation reason, when cancelled' },
-          checkoutGroup: { type: 'string', nullable: true },
-        },
-      },
-      WebhookEpod: {
-        type: 'object',
-        description:
-          'Body of an `order.epod` event, sent once a proof of delivery has been captured. The ' +
-          'document is embedded as base64. Source files are capped at 2 MB before encoding. The ' +
-          'same envelope is returned by `GET /orders/{ref}/epod`, so you can pull it instead.',
+          'A captured proof of delivery, returned by `GET /orders/{ref}/epod`. The document is ' +
+          'embedded as base64; source files are capped at 2 MB before encoding, so expect roughly ' +
+          '2.7 MB of base64 at most.',
         properties: {
           orderNo: { type: 'string' },
           externalRef: { type: 'string', nullable: true, description: 'Your own order reference' },
