@@ -57,8 +57,9 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
       const outcome = await upsertImportedProduct({
         sku: row.sku,
         scalars: scal,
-        // `null` (not []) when the column was present but blank, so the update
-        // path can tell "clear these" from "the sheet didn't mention them".
+        // `undefined` = the sheet isn't managing these (a blank or absent cell) →
+        // leave them alone. `null` = the cell said CLEAR → parse to `[]`, which is
+        // what the update path reads as "empty these".
         specRows: row.spec_rows === undefined ? undefined : parseSpecRows(row.spec_rows),
         images: row.image_urls === undefined ? undefined : parseImageUrls(row.image_urls),
         offer: { resellerId: null, ...houseOfferData(row, scal.status) },
@@ -86,9 +87,9 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
 // Row → Product scalars.
 //
 // Values are passed through UNTOUCHED on purpose. The row schema has already
-// mapped an empty cell to `null` (clear) and left an absent column `undefined`
-// (preserve), and Prisma honours exactly that distinction: it skips `undefined`
-// and writes `null`. The old `?? null` coercions here collapsed the two, which is
+// mapped a blank or absent cell to `undefined` (preserve) and a `CLEAR` cell to
+// `null`, and Prisma honours exactly that distinction: it skips `undefined` and
+// writes `null`. The old `?? null` coercions here collapsed the two, which is
 // why a price-only update sheet used to wipe unrelated fields.
 function productScalars(row: BulkImportRow, categoryId: string) {
   return {

@@ -19,10 +19,11 @@ const PERCENT = new Set(['gst_percent', 'protection_plan_pct']);
 // Minimal CSV parser (handles quoted fields + commas). Returns row objects keyed
 // by the header row, with numeric columns coerced.
 //
-// Every header becomes a key, INCLUDING one whose cell is empty — that is what
-// lets the importer tell "column present and blank, so clear the field" from
-// "column absent, so leave it alone". Dropping empty cells (the original
-// behaviour) made the two indistinguishable, so neither intent was expressible.
+// Every header becomes a key, INCLUDING one whose cell is empty, so the server
+// sees the sheet exactly as filled. Both a blank cell and an absent column mean
+// "leave this field alone"; only the literal CLEAR empties a field. (A blank cell
+// used to CLEAR the field, which is how a pricing-only upload deleted every
+// product gallery on 13 Oct 2026.)
 //
 // Known limitation: lines are split before quotes are honoured, so a newline
 // inside a quoted cell breaks the row. Multi-value cells are pipe-separated.
@@ -194,6 +195,83 @@ export function Bulk() {
             </a>
           </div>
 
+          {/* Read before uploading, not after: an upload is applied immediately and
+              there is no undo. The blank-vs-CLEAR rule is the one that bites. */}
+          <div className={styles.rules}>
+            <div className={styles.rulesHead}>
+              <Info size={15} />
+              How an upload is applied
+            </div>
+
+            <div className={styles.ruleGrid}>
+              <div className={styles.ruleCard}>
+                <div className={styles.ruleCardTitle}>Leave a cell blank</div>
+                <div className={styles.ruleCardBody}>
+                  The field is <strong>left exactly as it is</strong>. So a sheet with only your
+                  pricing columns filled changes only the pricing.
+                </div>
+              </div>
+              <div className={styles.ruleCard}>
+                <div className={styles.ruleCardTitle}>
+                  Type <span className={styles.tokInline}>CLEAR</span>
+                </div>
+                <div className={styles.ruleCardBody}>
+                  The field is <strong>emptied</strong>. This is the only way to remove a value
+                  through the sheet.
+                </div>
+              </div>
+            </div>
+
+            <ul className={styles.ruleList}>
+              <li className={styles.ruleItem}>
+                <span className={styles.tok}>image_urls</span>
+                <span>
+                  Leave it blank to keep the images you uploaded on the product page — they are not
+                  touched. Fill it to replace the gallery (first URL = main image), or{' '}
+                  <span className={styles.tokQuiet}>CLEAR</span> to remove every image.
+                </span>
+              </li>
+              <li className={styles.ruleItem}>
+                <span className={styles.tok}>sku</span>
+                <span>
+                  Matches the product. An existing SKU is updated, a new one is created. A column you
+                  leave out of the sheet entirely is never touched.
+                </span>
+              </li>
+              <li className={styles.ruleItem}>
+                <span className={styles.tokWarn}>exceptions</span>
+                <span>
+                  <span className={styles.tokQuiet}>mop_price</span>,{' '}
+                  <span className={styles.tokQuiet}>cashback_type</span>,{' '}
+                  <span className={styles.tokQuiet}>cashback_value</span> and{' '}
+                  <span className={styles.tokQuiet}>stock_quantity</span> are always taken from the
+                  sheet as given — a blank cell <strong>does</strong> reset these.
+                </span>
+              </li>
+              <li className={styles.ruleItem}>
+                <span className={styles.tokWarn}>required</span>
+                <span>
+                  <span className={styles.tokQuiet}>sku</span>,{' '}
+                  <span className={styles.tokQuiet}>name</span>,{' '}
+                  <span className={styles.tokQuiet}>category</span>,{' '}
+                  <span className={styles.tokQuiet}>mrp</span> and{' '}
+                  <span className={styles.tokQuiet}>epp_price</span> cannot be blank — those rows are
+                  rejected and listed back to you, and nothing else in the file is affected.
+                </span>
+              </li>
+              <li className={styles.ruleItem}>
+                <span className={styles.tok}>a | b</span>
+                <span>
+                  Multi-value cells (<span className={styles.tokQuiet}>image_urls</span>,{' '}
+                  <span className={styles.tokQuiet}>spec_rows</span>,{' '}
+                  <span className={styles.tokQuiet}>about_item</span>,{' '}
+                  <span className={styles.tokQuiet}>in_the_box</span>) separate entries with a pipe,
+                  all on one line. Do not press Alt+Enter inside a cell — a line break splits the row.
+                </span>
+              </li>
+            </ul>
+          </div>
+
           <button
             className={styles.dropzone}
             style={{ width: '100%', cursor: 'pointer' }}
@@ -203,6 +281,9 @@ export function Bulk() {
             <UploadCloud size={28} />
             <div className={styles.dropTitle}>{importing ? 'Importing…' : 'Upload a filled CSV'}</div>
             <div className={styles.dropSub}>.csv · header row required · max 5MB</div>
+            <div className={styles.dropSub}>
+              Blank cells are left unchanged — write CLEAR to empty a field
+            </div>
           </button>
 
           {importResult && (

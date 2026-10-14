@@ -2,16 +2,48 @@ import { z } from 'zod';
 import { CourierCode } from '@prisma/client';
 
 // ─── Blank-cell semantics ────────────────────────────────────────────────────
-// The sheet's COLUMNS are a product's full truth:
-//   • a column PRESENT with an empty cell  → clears that field
-//   • a column ABSENT from the sheet       → never reaches the row object, stays
-//                                            `undefined`, and Prisma leaves the
-//                                            column alone
-// That is what makes a partial update sheet safe: uploading only
-// `sku,name,category,mrp,epp_price,stock_quantity` cannot wipe the rest.
+// A BLANK cell means "I am not managing this field here" and PRESERVES whatever
+// the product already has. To actually empty a field, write the literal `CLEAR`.
+//
+// This is the inverse of the original rule, which read a present-but-blank cell
+// as "clear this field". That cost us every product image on 13 Oct 2026: the
+// client authors details in the sheet but uploads images through the admin
+// product-edit page, so `image_urls` is always blank in their sheets — and a
+// pricing update deleted 3,658 gallery rows across 697 products (restored by
+// migration 20261014120000_restore_product_images_blanked_by_bulk_import).
+//
+// The same trap applied to every field maintained in the admin UI rather than
+// typed into the sheet: descriptions, spec rows, About-this-item and In-the-box
+// bullets, and the variant-family columns. Nobody re-types an uploaded
+// `/uploads/<nanoid>.jpg` path into a spreadsheet, so blank was never a
+// deliberate erasure there — it was the normal state of the column.
+//
+// Three columns keep the take-as-given behaviour, because they are priced in the
+// sheet and a blank is meaningful: `mop_price`, `cashback_type`/`cashback_value`
+// and `stock_quantity`. The `required()` columns still error on a blank cell.
 const isBlank = (v: unknown): boolean => typeof v === 'string' && v.trim() === '';
 
-/** Nullable column: empty cell → null (clear). Absent → undefined (preserve). */
+/** The one way to deliberately empty a field from the sheet. */
+const CLEAR = 'CLEAR';
+const isClear = (v: unknown): boolean => typeof v === 'string' && v.trim().toUpperCase() === CLEAR;
+
+/**
+ * Optional column: blank cell → `undefined` (preserve), `CLEAR` → `null` (empty
+ * it), anything else → parsed by `inner`. An absent column is `undefined` too.
+ *
+ * The inner schema must accept both `null` and `undefined`, because this
+ * preprocess hands it whichever the cell resolved to — `.optional()` on the
+ * OUTER wrapper only short-circuits a key that was missing from the row.
+ */
+const preserving = <T extends z.ZodTypeAny>(inner: T) =>
+  z
+    .preprocess(
+      (v) => (isBlank(v) ? undefined : isClear(v) ? null : v),
+      inner.nullable().optional(),
+    )
+    .optional();
+
+/** Take-as-given column: empty cell → null (clear). Absent → undefined. */
 const clearable = <T extends z.ZodTypeAny>(inner: T) =>
   z.preprocess((v) => (isBlank(v) ? null : v), inner.nullable()).optional();
 
@@ -26,15 +58,20 @@ const MONEY_ERR = 'Required — must be an amount in rupees (this column cannot 
 
 /** Point-wise cell: pipe-separated, matching `spec_rows`. A pipe rather than a
  *  newline because the CSV parser splits on newlines before honouring quotes, so
- *  a multi-line cell is not representable. */
+ *  a multi-line cell is not representable.
+ *
+ *  Blank preserves the existing bullets; `CLEAR` empties them. A bare `[]` from a
+ *  blank cell used to reach Prisma and overwrite the column with an empty array. */
 const bullets = (max = 10) =>
   z
     .preprocess(
       (v) => {
         if (typeof v !== 'string') return v;
+        if (v.trim() === '') return undefined;
+        if (isClear(v)) return [];
         return v.split('|').map((b) => b.trim()).filter(Boolean);
       },
-      z.array(z.string().max(300)).max(max),
+      z.array(z.string().max(300)).max(max).optional(),
     )
     .optional();
 
@@ -68,17 +105,21 @@ const courierCell = (v: unknown) => {
   return COURIER_ALIASES[key] ?? v; // unknown falls through to a readable enum error
 };
 
-/** "Applicable" / "Not Applicable", plus the Y/N forms the rest of the sheet uses. */
+/** "Applicable" / "Not Applicable", plus the Y/N forms the rest of the sheet uses.
+ *
+ *  Blank preserves the current flag — it used to read as `false`, so a sheet that
+ *  simply didn't fill the column switched the plan off. "Not Applicable" (or N)
+ *  is how you turn it off, which is also the only reading a client would expect. */
 const applicable = () =>
   z
     .preprocess((v) => {
       if (typeof v !== 'string') return v;
       const t = v.trim().toLowerCase();
-      if (!t) return false;
+      if (!t) return undefined;
       if (['applicable', 'y', 'yes', 'true', '1'].includes(t)) return true;
       if (['not applicable', 'na', 'n/a', 'n', 'no', 'false', '0'].includes(t)) return false;
       return v; // fall through to the boolean parse → a readable row error
-    }, z.boolean())
+    }, z.boolean().optional())
     .optional();
 
 // One product row from the client XLSX/CSV upload. Mirrors the columns of the
@@ -88,27 +129,30 @@ export const importRow = z
   .object({
     sku: required(z.string().trim().min(1)),
     name: required(z.string().trim().min(1)),
-    brand: clearable(z.string().trim()),
-    description: clearable(z.string()),
+    brand: preserving(z.string().trim()),
+    description: preserving(z.string()),
     category: required(z.string().trim().min(1)), // free-text; created on import
-    sub_category: clearable(z.string().trim()),
-    color_options: clearable(z.string()),
-    variant_options: clearable(z.string()),
+    sub_category: preserving(z.string().trim()),
+    color_options: preserving(z.string()),
+    variant_options: preserving(z.string()),
     // Variant family: sibling SKUs sharing family_key collapse to one storefront
     // card with colour/storage selectors. Each row = one SKU (own colour + images
     // + price + stock). family_key is slug-normalised on import.
-    family_key: clearable(z.string().trim()),
-    option_color: clearable(z.string().trim()),
-    option_variant: clearable(z.string().trim()),
-    freebie_text: clearable(z.string().trim()),
-    spec_rows: clearable(z.string()), // "Label: Value | Label: Value" → specs.rows[]
-    status: clearable(z.enum(['DRAFT', 'ACTIVE', 'INACTIVE'])),
+    family_key: preserving(z.string().trim()),
+    option_color: preserving(z.string().trim()),
+    option_variant: preserving(z.string().trim()),
+    freebie_text: preserving(z.string().trim()),
+    spec_rows: preserving(z.string()), // "Label: Value | Label: Value" → specs.rows[]
+    status: preserving(z.enum(['DRAFT', 'ACTIVE', 'INACTIVE'])),
     // Smart EPP eligibility — a Y/N cell parsed to a boolean (Y/Yes/True/1 = true).
+    // Blank preserves: it used to fall through to `false`, so any sheet without
+    // the column filled quietly took products out of Smart EPP.
     smart_epp: z
-      .preprocess(
-        (v) => (typeof v === 'string' ? ['y', 'yes', 'true', '1'].includes(v.trim().toLowerCase()) : v),
-        z.boolean(),
-      )
+      .preprocess((v) => {
+        if (typeof v !== 'string') return v;
+        const t = v.trim().toLowerCase();
+        return t === '' ? undefined : ['y', 'yes', 'true', '1'].includes(t);
+      }, z.boolean().optional())
       .optional(),
     // Coerce numbers — CSV cells arrive as strings; coercion accepts both strings
     // and numbers so the import is robust regardless of how the client parses.
@@ -129,19 +173,21 @@ export const importRow = z
     // Tax + policy attributes (master-level).
     // HSN/SAC is 4, 6 or 8 digits under GST — the required length depends on
     // turnover, so all three are accepted and anything else is a row error.
-    hsn_code: clearable(
+    hsn_code: preserving(
       z.string().trim().regex(/^(\d{4}|\d{6}|\d{8})$/, 'HSN must be 4, 6 or 8 digits'),
     ),
-    gst_percent: z.preprocess((v) => (isBlank(v) ? null : v), percentCell()).optional(),
-    terms_text: clearable(z.string().max(4000)),
-    warranty_text: clearable(z.string().max(2000)),
-    country_of_origin: clearable(z.string().trim().max(60)),
+    gst_percent: z
+      .preprocess((v) => (isBlank(v) ? undefined : isClear(v) ? null : v), percentCell().optional())
+      .optional(),
+    terms_text: preserving(z.string().max(4000)),
+    warranty_text: preserving(z.string().max(2000)),
+    country_of_origin: preserving(z.string().trim().max(60)),
     // Point-wise copy shown on the product page, pipe-separated.
     about_item: bullets(),
     in_the_box: bullets(),
     // 3–4 sibling SKUs for the "Frequently bought together" shelf. Stored as text
     // and resolved on read, so a SKU further down the same sheet still works.
-    frequently_bought_skus: clearable(
+    frequently_bought_skus: preserving(
       z
         .string()
         .trim()
@@ -153,13 +199,15 @@ export const importRow = z
     // ADLD & theft protection plan: offered or not, and its rate as a % of the
     // EPP price. Display-only — see the Product model comment.
     protection_plan: applicable(),
-    protection_plan_pct: z.preprocess((v) => (isBlank(v) ? null : v), percentCell()).optional(),
+    protection_plan_pct: z
+      .preprocess((v) => (isBlank(v) ? undefined : isClear(v) ? null : v), percentCell().optional())
+      .optional(),
     // Preferred courier for dispatch — pre-selected, never enforced.
-    courier_partner: clearable(z.preprocess(courierCell, z.nativeEnum(CourierCode))),
+    courier_partner: preserving(z.preprocess(courierCell, z.nativeEnum(CourierCode))),
     epp_price: required(z.coerce.number({ error: MONEY_ERR }).nonnegative()),
-    smart_epp_price: clearable(z.coerce.number().nonnegative()),
+    smart_epp_price: preserving(z.coerce.number().nonnegative()),
     stock_quantity: required(z.coerce.number({ error: 'Must be a whole number of units' }).int().nonnegative()).default(0),
-    image_urls: clearable(z.string()), // comma/pipe separated
+    image_urls: preserving(z.string()), // comma/pipe separated
   })
   // A rate with no plan to attach it to is a data error, not something to
   // silently store — the product page would price a plan it never offers.

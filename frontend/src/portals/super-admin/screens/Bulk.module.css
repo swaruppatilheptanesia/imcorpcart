@@ -202,3 +202,121 @@
   padding: 1px 6px;
   flex: none;
 }
+
+/* ─── Import rules ───────────────────────────────────────────────────────────
+   Sits above the dropzone: an import applies immediately and cannot be undone,
+   so the blank-vs-CLEAR rule has to be read before the file is picked. */
+.rules {
+  margin-bottom: 18px;
+  padding: 14px 16px 15px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2, color-mix(in srgb, var(--text) 3%, var(--surface)));
+}
+.rulesHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-card);
+  font-weight: 600;
+  color: var(--text);
+}
+.ruleGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.ruleCard {
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.ruleCardTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ruleCardBody {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text2);
+  margin-top: 4px;
+}
+.ruleCardBody strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.ruleList {
+  list-style: none;
+  margin: 13px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ruleItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text2);
+}
+.ruleItem strong {
+  color: var(--text);
+  font-weight: 600;
+}
+/* Column names are typed into a spreadsheet verbatim — monospace so an
+   underscore or a pipe can't be misread. */
+.tok,
+.tokInline,
+.tokQuiet,
+.tokWarn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-table-head);
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+/* Inside a heading — sized to its text, not to the list's gutter. */
+.tokInline {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+/* Leading token in a rule row: a fixed gutter so the sentences align. */
+.tok {
+  flex: none;
+  min-width: 92px;
+  text-align: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.tokWarn {
+  flex: none;
+  min-width: 92px;
+  text-align: center;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 15%, var(--surface));
+}
+/* Inline, inside a sentence — quieter than the leading token. */
+.tokQuiet {
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, var(--surface));
+  padding: 1px 5px;
+}
+@media (max-width: 720px) {
+  .ruleGrid {
+    grid-template-columns: 1fr;
+  }
+  .ruleItem {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
