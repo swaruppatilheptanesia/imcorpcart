@@ -42,7 +42,7 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
     const label = rawSku || `(row ${i + 2})`; // +2 = header row + 1-based
 
     // Per-row validation → per-field errors.
-    const parsed = importRow.safeParse(raw);
+    const parsed = importRow.safeParse(applyHeaderAliases(raw));
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         result.errors.push({ sku: label, field: String(issue.path[0] ?? '—'), message: issue.message });
@@ -81,6 +81,39 @@ export async function importProducts(input: BulkImportInput, actorId: string) {
   });
 
   return result;
+}
+
+// Header aliases the importer accepts alongside the canonical column names.
+//
+// The client knows this field as ADLD; the database column, the Prisma field and
+// the API have always called it the protection plan. Accepting both keeps every
+// sheet already in circulation working after the template was relabelled.
+//
+// Aliasing happens HERE rather than in the admin screen's CSV parser because the
+// endpoint takes loose rows (`bulkImportBody` is a record of unknown), so a sheet
+// posted by anything other than that screen has to be aliased too.
+const HEADER_ALIASES: Record<string, string> = {
+  adld: 'protection_plan',
+  adld_pct: 'protection_plan_pct',
+};
+
+/**
+ * Copy aliased columns onto their canonical keys.
+ *
+ * The canonical name wins when a sheet somehow carries both, and an alias only
+ * fills a key that is *absent* — so aliasing can never silently override a
+ * column the sheet stated outright. An absent key stays absent, which is what
+ * preserves the field (see the blank-cell semantics in validators/bulk.schema).
+ */
+function applyHeaderAliases(raw: Record<string, unknown>): Record<string, unknown> {
+  let out: Record<string, unknown> | null = null;
+  for (const [alias, canonical] of Object.entries(HEADER_ALIASES)) {
+    if (alias in raw && !(canonical in raw)) {
+      out ??= { ...raw };
+      out[canonical] = raw[alias];
+    }
+  }
+  return out ?? raw;
 }
 
 // Shared master-scalar mapping so create + update stay in sync.

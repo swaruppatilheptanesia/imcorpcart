@@ -280,14 +280,21 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     // the bullets it synthesises; `inTheBox` empty → the legacy spec row.
     aboutItem: p.aboutItem,
     inTheBox: p.inTheBox.length ? p.inTheBox : legacyBoxContents(pres.rows),
-    // ADLD & theft plan, priced off the SAME figure shown as `price` above so the
-    // amount can never disagree with the price beside it. Display-only: nothing
-    // adds it to a cart. Unrelated to Company.adldPct (Smart-EPP lease insurance).
+    // ADLD & theft plan, always quoted against the EPP price: it is an employee
+    // benefit, and the bulk sheet's own column promises "% of the EPP price".
+    // Display-only — nothing adds it to a cart. Unrelated to Company.adldPct,
+    // which is Smart-EPP *lease* insurance.
+    //
+    // Withheld from anonymous visitors, and that is a requirement rather than
+    // tidiness: `amount` and `pct` together solve back to the EPP price
+    // (epp = amount ÷ pct × 100), which the public catalogue must never expose.
+    // Quoting it off the displayed price instead would mean the same product
+    // advertising two different plan prices depending on who is looking.
     protectionPlan:
-      p.protectionPlanAvailable && p.protectionPlanPct != null
+      !opts.public && p.protectionPlanAvailable && p.protectionPlanPct != null
         ? {
             pct: toNumber(p.protectionPlanPct),
-            amount: Math.round((opts.public ? mrp : epp) * (toNumber(p.protectionPlanPct) / 100)),
+            amount: Math.round(epp * (toNumber(p.protectionPlanPct) / 100)),
           }
         : null,
     stock: winner?.quantity ?? 0,

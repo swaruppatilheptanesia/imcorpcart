@@ -93,6 +93,18 @@ export function ProductDetail() {
               )}
               <Line label="MRP (list price)" value={raw.mrp != null ? inr(raw.mrp) : '—'} strong />
               <Line label="MOP (public price)" value={raw.mop != null ? inr(raw.mop) : '—'} />
+              {/* Shown as a percentage, not a rupee figure: the amount is a % of
+                  the EPP price, and this product may have several sellers at
+                  different prices (see Sellers & prices alongside), so a single
+                  amount here would be true of only one of them. */}
+              <Line
+                label="ADLD & theft cover"
+                value={
+                  raw.protectionPlanAvailable && raw.protectionPlanPct != null
+                    ? `${raw.protectionPlanPct}% of EPP`
+                    : 'Not offered'
+                }
+              />
               <Line label="Date added" value={product.dateAdded} />
             </div>
             {raw.description && (
