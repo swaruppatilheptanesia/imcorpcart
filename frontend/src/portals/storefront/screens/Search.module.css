@@ -1,6 +1,19 @@
+/* The top nav carries the search box, so on desktop this was a second,
+   identical field bound to the same state — the term appeared twice on the
+   results page, one above the other.
+   It survives below 768px because TopNav.module.css hides the whole nav there
+   and MobileHeader has no search affordance, which makes this input the only
+   way to type a query on mobile. Keep the two breakpoints in step. */
 .searchBar {
+  display: none;
   position: relative;
   margin-bottom: 20px;
+}
+
+@media (max-width: 768px) {
+  .searchBar {
+    display: block;
+  }
 }
 .searchIcon {
   position: absolute;

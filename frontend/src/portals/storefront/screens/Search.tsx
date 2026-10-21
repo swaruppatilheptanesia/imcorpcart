@@ -41,7 +41,10 @@ export function Search() {
 
         <div className={s.catalogResults}>
           <div className={s.sectionHead}>
-            <span className={s.count}>{items.length} products</span>
+            <span className={s.count}>
+              {items.length} products
+              {search.trim() && ` for “${search.trim()}”`}
+            </span>
             <div className={s.controls}>
               <button className={s.filterBtn} onClick={openFilter}>
                 <SlidersHorizontal size={16} /> Filters
