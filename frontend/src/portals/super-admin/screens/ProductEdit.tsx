@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ImagePlus, AlertTriangle, X, Trash2, Save } from 'lucide-react';
 import { Button, Card, Chip, EmptyState, Field, Input, Segmented, Select, Skeleton, Toggle, useToast } from '@/components';
 import { useAsync } from '@/lib/useAsync';
+import { COURIER_OPTIONS, MODE_OPTIONS } from '@/lib/courier';
 import {
   getCategories,
   getProduct,
@@ -28,9 +29,6 @@ function darken(hex: string, factor = 0.6): string {
   const b = Math.round((n & 255) * factor);
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 }
-
-// Mirrors the CourierCode enum. The same list the transit drawers offer.
-const COURIERS = ['BLUEDART', 'DELHIVERY', 'DTDC', 'EKART', 'INDIA_POST'] as const;
 
 export function ProductEdit() {
   const navigate = useNavigate();
@@ -124,6 +122,7 @@ function EditForm({
   );
   const [fbtSkus, setFbtSkus] = useState(product?.frequentlyBoughtSkus ?? '');
   const [courierCode, setCourierCode] = useState(product?.courierCode ?? '');
+  const [deliveryMode, setDeliveryMode] = useState(product?.deliveryMode ?? '');
   const [termsText, setTermsText] = useState(product?.termsText ?? '');
   const [familyKey, setFamilyKey] = useState(product?.familyKey ?? '');
   const [optionColor, setOptionColor] = useState(product?.optionColor ?? '');
@@ -213,6 +212,7 @@ function EditForm({
           .slice(0, 4)
           .join(',') || null,
       courierCode: courierCode || null,
+      deliveryMode: deliveryMode || null,
       familyKey: familyKey.trim() || null,
       optionColor: optionColor.trim() || null,
       optionVariant: optionVariant.trim() || null,
@@ -574,12 +574,22 @@ function EditForm({
                   placeholder="GP-AN-0065, UC-PD-0020"
                 />
               </Field>
-              <Field label="Courier partner" hint="Pre-selected when an order is dispatched; staff can still change it">
+              <Field label="Delivery partner" hint="Pre-selected when an order is dispatched; staff can still change it">
                 <Select block value={courierCode} onChange={(e) => setCourierCode(e.target.value)}>
                   <option value="">No preference</option>
-                  {COURIERS.map((c) => (
-                    <option key={c} value={c}>
-                      {c.replace(/_/g, ' ')}
+                  {COURIER_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Transport mode" hint="Apex is air, DP is domestic priority, Surface is road. A dispatch preference only">
+                <Select block value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value)}>
+                  <option value="">No preference</option>
+                  {MODE_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
                     </option>
                   ))}
                 </Select>

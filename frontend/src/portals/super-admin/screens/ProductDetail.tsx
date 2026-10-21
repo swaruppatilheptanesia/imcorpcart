@@ -15,6 +15,7 @@ import {
 } from '@/data/api';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
+import { COURIER_LABEL, MODE_LABEL } from '@/lib/courier';
 import s from './screen.module.css';
 import styles from './ProductDetail.module.css';
 import { statusTone, statusLabel } from './Products';
@@ -104,6 +105,18 @@ export function ProductDetail() {
                     ? `${raw.protectionPlanPct}% of EPP`
                     : 'Not offered'
                 }
+              />
+              {/* Dispatch preferences: both pre-select the courier when staff
+                  ship an order containing this product, and neither is enforced
+                  — a courier may not serve the destination pincode. "No
+                  preference" matches the empty option in the product form. */}
+              <Line
+                label="Delivery partner"
+                value={raw.courierCode ? COURIER_LABEL[raw.courierCode] ?? raw.courierCode : 'No preference'}
+              />
+              <Line
+                label="Transport mode"
+                value={raw.deliveryMode ? MODE_LABEL[raw.deliveryMode] ?? raw.deliveryMode : 'No preference'}
               />
               <Line label="Date added" value={product.dateAdded} />
             </div>

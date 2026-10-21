@@ -173,6 +173,7 @@ export interface RawProductDetail {
   protectionPlanPct: number | null;
   frequentlyBoughtSkus: string | null;
   courierCode: string | null;
+  deliveryMode: string | null;
   termsText: string | null;
   warrantyText: string | null;
   familyKey: string | null;
@@ -217,6 +218,7 @@ export interface ProductInput {
   protectionPlanPct?: number | null;
   frequentlyBoughtSkus?: string | null;
   courierCode?: string | null;
+  deliveryMode?: string | null;
   termsText?: string;
   warrantyText?: string;
   familyKey?: string | null;
@@ -254,6 +256,7 @@ function toProductBody(input: ProductInput) {
     protectionPlanPct: input.protectionPlanPct,
     frequentlyBoughtSkus: input.frequentlyBoughtSkus,
     courierCode: input.courierCode,
+    deliveryMode: input.deliveryMode,
     termsText: input.termsText,
     warrantyText: input.warrantyText,
     familyKey: input.familyKey,

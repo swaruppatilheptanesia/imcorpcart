@@ -148,6 +148,7 @@ function productScalars(row: BulkImportRow, categoryId: string) {
     protectionPlanAvailable: row.protection_plan,
     protectionPlanPct: DN(row.protection_plan_pct),
     courierCode: row.courier_partner,
+    deliveryMode: row.transport_mode,
     colorOptions: row.color_options,
     variantOptions: row.variant_options,
     familyKey: row.family_key ? slugishFamily(row.family_key) : row.family_key,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CourierCode } from '@prisma/client';
+import { CourierCode, DeliveryMode } from '@prisma/client';
 
 // ─── Blank-cell semantics ────────────────────────────────────────────────────
 // A BLANK cell means "I am not managing this field here" and PRESERVES whatever
@@ -105,6 +105,28 @@ const courierCell = (v: unknown) => {
   return COURIER_ALIASES[key] ?? v; // unknown falls through to a readable enum error
 };
 
+// How people actually write transport modes, mapped onto the DeliveryMode enum
+// (the courier TAT vocabulary: APEX = air/priority, DP = domestic priority,
+// SURFACE = ground). A bare "Air" resolves to APEX, the faster of the two air
+// services — DP has to be asked for by name.
+const MODE_ALIASES: Record<string, DeliveryMode> = {
+  APEX: DeliveryMode.APEX,
+  AIR: DeliveryMode.APEX,
+  PRIORITY: DeliveryMode.APEX,
+  DP: DeliveryMode.DP,
+  DOMESTIC_PRIORITY: DeliveryMode.DP,
+  SURFACE: DeliveryMode.SURFACE,
+  ROAD: DeliveryMode.SURFACE,
+  GROUND: DeliveryMode.SURFACE,
+};
+
+/** "Air" / "surface" / "Domestic Priority" → APEX / SURFACE / DP. */
+const modeCell = (v: unknown) => {
+  if (typeof v !== 'string') return v;
+  const key = v.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return MODE_ALIASES[key] ?? v; // unknown falls through to a readable enum error
+};
+
 /** "Applicable" / "Not Applicable", plus the Y/N forms the rest of the sheet uses.
  *
  *  Blank preserves the current flag — it used to read as `false`, so a sheet that
@@ -202,8 +224,10 @@ export const importRow = z
     protection_plan_pct: z
       .preprocess((v) => (isBlank(v) ? undefined : isClear(v) ? null : v), percentCell().optional())
       .optional(),
-    // Preferred courier for dispatch — pre-selected, never enforced.
+    // Preferred courier + transport mode for dispatch — pre-selected, never
+    // enforced.
     courier_partner: preserving(z.preprocess(courierCell, z.nativeEnum(CourierCode))),
+    transport_mode: preserving(z.preprocess(modeCell, z.nativeEnum(DeliveryMode))),
     epp_price: required(z.coerce.number({ error: MONEY_ERR }).nonnegative()),
     smart_epp_price: preserving(z.coerce.number().nonnegative()),
     stock_quantity: required(z.coerce.number({ error: 'Must be a whole number of units' }).int().nonnegative()).default(0),

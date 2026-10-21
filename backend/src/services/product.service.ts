@@ -108,6 +108,7 @@ export async function createProduct(input: CreateProductInput) {
       protectionPlanPct: DN(rest.protectionPlanPct) ?? null,
       frequentlyBoughtSkus: rest.frequentlyBoughtSkus ?? null,
       courierCode: rest.courierCode ?? null,
+      deliveryMode: rest.deliveryMode ?? null,
       familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null,
       optionColor: rest.optionColor ?? null,
       optionVariant: rest.optionVariant ?? null,
@@ -164,6 +165,7 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
           ? { frequentlyBoughtSkus: rest.frequentlyBoughtSkus }
           : {}),
         ...(rest.courierCode !== undefined ? { courierCode: rest.courierCode } : {}),
+        ...(rest.deliveryMode !== undefined ? { deliveryMode: rest.deliveryMode } : {}),
         ...(rest.familyKey !== undefined ? { familyKey: rest.familyKey ? slugishFamily(rest.familyKey) : null } : {}),
         ...(rest.optionColor !== undefined ? { optionColor: rest.optionColor } : {}),
         ...(rest.optionVariant !== undefined ? { optionVariant: rest.optionVariant } : {}),

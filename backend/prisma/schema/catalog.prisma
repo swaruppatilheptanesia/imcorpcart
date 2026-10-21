@@ -84,6 +84,11 @@ model Product {
   // product. A hint, never enforced — a courier may not serve the pincode.
   courierCode CourierCode? @map("courier_code")
 
+  // Preferred transport mode, alongside courierCode — air (APEX), domestic
+  // priority (DP) or ground (SURFACE). A dispatch hint, never enforced. Reuses
+  // the enum the pincode TAT master is keyed on, so the two read alike.
+  deliveryMode DeliveryMode? @map("delivery_mode")
+
   // Legacy single-seller FK. DEPRECATED by the marketplace ProductOffer model
   // (a product can have many resellers). Kept nullable for back-compat; new
   // products leave it null and derive sellers from `offers`.

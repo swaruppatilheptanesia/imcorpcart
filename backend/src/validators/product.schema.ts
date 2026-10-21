@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductStatus, CashbackType, CourierCode } from '@prisma/client';
+import { ProductStatus, CashbackType, CourierCode, DeliveryMode } from '@prisma/client';
 import { money } from './common.schema';
 
 // Frontend "group" filter maps to a top-level category slug (phones/accessories/bags).
@@ -78,8 +78,9 @@ export const createProductBody = z.object({
   protectionPlanPct: z.number().min(0).max(100).nullable().optional(),
   // Up to 4 SKUs for "Frequently bought together", resolved on read.
   frequentlyBoughtSkus: z.string().trim().max(400).nullable().optional(),
-  // Preferred courier, pre-selected at dispatch (never enforced).
+  // Preferred courier + transport mode, pre-selected at dispatch (never enforced).
   courierCode: z.nativeEnum(CourierCode).nullable().optional(),
+  deliveryMode: z.nativeEnum(DeliveryMode).nullable().optional(),
   // Amazon-style variant family (separate sibling SKUs share a familyKey).
   familyKey: z.string().trim().max(80).nullable().optional(),
   optionColor: z.string().trim().max(60).nullable().optional(),

@@ -1,4 +1,4 @@
-import { Prisma, ProductStatus, type CashbackType, type CourierCode } from '@prisma/client';
+import { Prisma, ProductStatus, type CashbackType, type CourierCode, type DeliveryMode } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { slugify } from '../utils/slug';
 import { buildSpecs, type Presentation } from './product-write';
@@ -75,6 +75,7 @@ export interface ImportedScalars {
   protectionPlanAvailable?: boolean;
   protectionPlanPct?: Prisma.Decimal | null;
   courierCode?: CourierCode | null;
+  deliveryMode?: DeliveryMode | null;
   cashbackValue?: Prisma.Decimal | null;
   hsnCode?: string | null;
   gstPercent?: Prisma.Decimal | null;
