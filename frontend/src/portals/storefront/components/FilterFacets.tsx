@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, Search } from 'lucide-react';
 import { Radio, Checkbox, Toggle } from '@/components';
 import { cn } from '@/lib/cn';
+import type { FilterState } from '@/data/store-types';
 import { useStore } from '../store-context';
 import { rankedDepartments, catLabel, brandCounts, subCategoryFacets } from '../data';
 import { PriceSlider } from './PriceSlider';
@@ -26,7 +28,7 @@ const VISIBLE_CATEGORIES = 8;
  * every gift card sets its brand to its own name.
  */
 export function FilterFacets() {
-  const { filters, setFilters, priceCeil } = useStore();
+  const { filters, setFilters, setScope, priceCeil } = useStore();
   const cats = rankedDepartments();
   const subs = subCategoryFacets(filters.category);
 
@@ -62,8 +64,21 @@ export function FilterFacets() {
 
   const hiddenCatCount = cats.length - Math.min(cats.length, VISIBLE_CATEGORIES + 1);
 
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  // Changing department, subcategory or brand is a scope change, so setScope
+  // clears the search term. The query has then gone, and staying on the search
+  // screen would leave the shopper looking at an empty search box — so send
+  // them to the catalog, exactly as the department bar does. Price and
+  // in-stock below stay on setFilters: those refine what was found.
+  const scopeTo = (patch: Partial<FilterState>) => {
+    setScope(patch);
+    if (pathname.startsWith('/shop/search')) navigate('/shop/home');
+  };
+
   const toggleBrand = (b: string) =>
-    setFilters({
+    scopeTo({
       brands: filters.brands.includes(b) ? filters.brands.filter((x) => x !== b) : [...filters.brands, b],
     });
 
@@ -75,7 +90,7 @@ export function FilterFacets() {
           <button
             key={c.key}
             className={styles.facetRow}
-            onClick={() => setFilters({ category: c.key, sub: null, brands: [] })}
+            onClick={() => scopeTo({ category: c.key, sub: null, brands: [] })}
           >
             <Radio checked={filters.category === c.key} />
             <span className={styles.facetLabel}>{c.label}</span>
@@ -93,12 +108,12 @@ export function FilterFacets() {
       {subs.length > 0 && (
         <section className={styles.section}>
           <div className={styles.overline}>Subcategory</div>
-          <button className={styles.facetRow} onClick={() => setFilters({ sub: null })}>
+          <button className={styles.facetRow} onClick={() => scopeTo({ sub: null })}>
             <Radio checked={filters.sub === null} />
             <span className={styles.facetLabel}>All {catLabel(filters.category)}</span>
           </button>
           {subs.map((sf) => (
-            <button key={sf.key} className={styles.facetRow} onClick={() => setFilters({ sub: sf.key })}>
+            <button key={sf.key} className={styles.facetRow} onClick={() => scopeTo({ sub: sf.key })}>
               <Radio checked={filters.sub === sf.key} />
               <span className={styles.facetLabel}>{sf.label}</span>
               <span className={styles.count}>{sf.count}</span>

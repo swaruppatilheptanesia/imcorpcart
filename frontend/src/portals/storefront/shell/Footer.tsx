@@ -13,10 +13,10 @@ const SHOP_LINKS: { label: string; category: StoreCategory }[] = [
 
 export function Footer() {
   const navigate = useNavigate();
-  const { setFilters } = useStore();
+  const { setScope } = useStore();
 
   const goCategory = (category: StoreCategory) => {
-    setFilters({ category, sub: null, brands: [] });
+    setScope({ category, sub: null, brands: [] });
     navigate('/shop/home');
   };
 

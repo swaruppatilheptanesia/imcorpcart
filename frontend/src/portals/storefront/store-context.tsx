@@ -64,6 +64,7 @@ interface StoreCtxValue {
   // filters + view (client-side)
   filters: FilterState;
   setFilters: (patch: Partial<FilterState>) => void;
+  setScope: (patch: Partial<FilterState>) => void;
   clearFilters: () => void;
   activeFilterCount: number;
   priceCeil: number; // price-slider max, auto-fitted to the catalog's priciest product
@@ -297,6 +298,19 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
   const setFilters = useCallback((patch: Partial<FilterState>) => {
     setFiltersState((prev) => ({ ...prev, ...patch }));
   }, []);
+  // A SCOPE change — a different department, subcategory or brand, i.e. a
+  // change to *what* the shopper is browsing. Resets the search term, because
+  // picking a department is a fresh start: carrying the term over left them on
+  // a page still filtered by a query typed against the old scope, which
+  // matchesFilters ANDs with the facets, so it usually read "No products
+  // match".
+  //
+  // Contrast setFilters above, which REFINES the current results — price,
+  // in-stock — and deliberately keeps the query.
+  const setScope = useCallback((patch: Partial<FilterState>) => {
+    setFiltersState((prev) => ({ ...prev, ...patch }));
+    setSearch('');
+  }, []);
   // Filters only — deliberately not the search term. This also backs the
   // "Clear all" button in the filter sidebar/panel, which sits next to a badge
   // counting filters alone, so wiping the visible search box from there would
@@ -326,7 +340,7 @@ export function StoreProvider({ authed, children }: { authed: boolean; children:
     notifs, notifsUnread, markNotifsSeen,
     wishlist, toggleWishlist, isWished,
     coupons, appliedCoupon, couponError, applyCoupon, removeCoupon, clearCouponError,
-    filters, setFilters, clearFilters, activeFilterCount, priceCeil,
+    filters, setFilters, setScope, clearFilters, activeFilterCount, priceCeil,
     sortBy, setSortBy, grid, setGrid, search, setSearch,
   };
 
