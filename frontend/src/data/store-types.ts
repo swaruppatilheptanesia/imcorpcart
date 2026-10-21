@@ -47,8 +47,9 @@ export interface FamilyMember {
 }
 
 export interface StoreProduct extends Product {
-  mrp: number; // struck-through list price; savings = mrp - price
-  mop: number; // market operating (public/pre-login) price
+  mrp: number; // maximum retail price — what a logged-OUT visitor is shown as `price`
+  mop: number; // what the public pays; the struck-through figure beside an employee's
+  //              EPP price, and the basis for `savings = mop - price`
   cashback: number; // ₹ earned per unit on purchase (credited to wallet on delivery); 0 = none
   // Tax + policy attributes (shown Amazon-style on the product page).
   hsnCode?: string | null;

@@ -104,8 +104,13 @@ export function ProductCard({ p, list = false }: { p: StoreProduct; list?: boole
           <>
             <div className={styles.priceRow}>
               <span className={styles.price}>{inr(p.price)}</span>
-              {p.mrp > p.price && <span className={styles.mrp}>{inr(p.mrp)}</span>}
-              <span className={styles.priceTag}>{authed ? 'EPP' : 'MOP'}</span>
+              {/* The struck figure is MOP — what the public pays — so an employee
+                  sees the corporate saving. Public visitors see MRP as the price
+                  itself, so there is nothing above it to strike. Only shown when
+                  MOP is genuinely higher: on 93% of priced products MOP equals the
+                  EPP price, and striking it would just print the same number twice. */}
+              {authed && p.mop > p.price && <span className={styles.mrp}>{inr(p.mop)}</span>}
+              <span className={styles.priceTag}>{authed ? 'EPP' : 'MRP'}</span>
             </div>
             {oos ? (
               <div className={styles.oosNote}>Currently unavailable</div>

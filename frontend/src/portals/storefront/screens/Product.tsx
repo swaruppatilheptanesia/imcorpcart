@@ -115,7 +115,9 @@ function Detail({ p }: { p: ProductDetail }) {
       ? voucherAmount != null
       : shadeStock > 0;
   const inStock = shadeStock > 0;
-  const savings = p.mrp - displayPrice;
+  // Measured against MOP, the same figure struck through beside the price, so the
+  // two can never disagree. Still only rendered when positive.
+  const savings = p.mop - displayPrice;
   const related = getRelated(p);
   const wished = isWished(p.id);
 
@@ -511,13 +513,15 @@ function Detail({ p }: { p: ProductDetail }) {
             <>
               <div className={styles.priceBlock}>
                 <span className={styles.price}>{inr(displayPrice)}</span>
-                {!isVoucher && p.mrp > displayPrice && <span className={styles.mrp}>{inr(p.mrp)}</span>}
+                {!isVoucher && authed && p.mop > displayPrice && (
+                  <span className={styles.mrp}>{inr(p.mop)}</span>
+                )}
                 {/* A discounted card costs less than it's worth — show both, or
                     the lower figure just looks like the wrong denomination. */}
                 {isVoucher && voucherAmount != null && voucherCharge !== voucherAmount && (
                   <span className={styles.mrp}>{inr(voucherAmount)}</span>
                 )}
-                <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MOP'}</span>
+                <span className={styles.priceKind}>{isVoucher ? 'Gift card' : authed ? 'EPP price' : 'MRP'}</span>
               </div>
               {isVoucher && voucherAmount != null && voucherCharge !== voucherAmount && (
                 <div className={styles.savings}>
@@ -530,7 +534,7 @@ function Detail({ p }: { p: ProductDetail }) {
                 <div className={styles.cashback}>Earn {inr(p.cashback)} cashback to your wallet</div>
               )}
               <div className={styles.priceCaption}>
-                {authed ? 'Inclusive of taxes · corporate rate' : 'Market operating price · inclusive of taxes'}
+                {authed ? 'Inclusive of taxes · corporate rate' : 'Maximum retail price · inclusive of taxes'}
               </div>
             </>
           )}

@@ -224,7 +224,11 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
   // They differ only when the product is out of stock, where `winner` is null and
   // `display` is the offer the product will be buyable at again.
   const display = pickDisplayOffer(p.offers);
-  // Public (pre-login) price = the admin-set MOP (falls back to MRP); EPP for employees.
+  // Public (pre-login) price = MRP; EPP for signed-in employees, with MOP as the
+  // struck-through figure beside it so what's shown is the corporate saving
+  // against what the public actually pays. MOP therefore no longer prices the
+  // public view — it is an employee-facing reference only, and falls back to MRP
+  // when unset so the struck figure is never a bare zero.
   const mop = p.mop != null ? toNumber(p.mop) : mrp;
   const epp = display ? toNumber(display.eppPrice) : mrp;
   return {
@@ -246,12 +250,12 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     group: p.category.slug,
     cat: p.subCategory ?? '',
     status: PRODUCT_STATUS_OUT[p.status],
-    // Anonymous visitors see MOP; authenticated employees see the EPP price.
-    price: opts.public ? mop : epp,
+    // Anonymous visitors see MRP; authenticated employees see the EPP price.
+    price: opts.public ? mrp : epp,
     mop,
     mrp,
     // Cashback (₹/unit) earned on purchase, at the price being shown.
-    cashback: cashbackPerUnit(p.cashbackType, p.cashbackValue, opts.public ? mop : epp),
+    cashback: cashbackPerUnit(p.cashbackType, p.cashbackValue, opts.public ? mrp : epp),
     // Tax + policy attributes (shown Amazon-style on the product page).
     hsnCode: p.hsnCode ?? null,
     gstPercent: p.gstPercent != null ? toNumber(p.gstPercent) : null,
@@ -269,7 +273,7 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
       p.protectionPlanAvailable && p.protectionPlanPct != null
         ? {
             pct: toNumber(p.protectionPlanPct),
-            amount: Math.round((opts.public ? mop : epp) * (toNumber(p.protectionPlanPct) / 100)),
+            amount: Math.round((opts.public ? mrp : epp) * (toNumber(p.protectionPlanPct) / 100)),
           }
         : null,
     stock: winner?.quantity ?? 0,
