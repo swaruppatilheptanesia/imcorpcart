@@ -20,6 +20,7 @@ import { serialize, toNumber } from '../models/serializers';
 import { notDeleted, orderFullInclude, shopOrderFullInclude } from '../models/selectors';
 import { resolveEmployee } from '../utils/scope';
 import { isLive as isCampaignLive } from './campaign.service';
+import { discountPctFor } from './inbound/vendor-source.service';
 import { listActiveBanners } from './banner.service';
 import { listApprovedReviews } from './review.service';
 import { kickoffVoucherFulfilments } from './voucher-fulfilment.service';
@@ -93,9 +94,22 @@ export function voucherSpecOf(p: ShopProductRow): VoucherSpec | null {
 // value goes to Hubble untouched via VoucherFulfilment.denomination. Never
 // apply this discount to the issued amount, or we short-fund the card.
 export function voucherChargeFor(p: ShopProductRow, denomination: number): number {
-  const pct = p.source?.discountPct == null ? 0 : Number(p.source.discountPct);
+  const pct = voucherPctFor(p);
   if (!(pct > 0)) return denomination;
   return Math.round(denomination * (1 - pct / 100));
+}
+
+/**
+ * The gift-card discount for this product — its own `vendorDiscountPct` when set,
+ * else its source's rate. Hubble's margin differs per brand, so a flat
+ * source-wide rate under-prices some and over-prices others.
+ *
+ * Takes `ShopProductRow`, so a caller that loaded the product without these
+ * fields is a compile error rather than a silent mispricing.
+ */
+function voucherPctFor(p: ShopProductRow): number {
+  if (p.source?.discountPct == null && p.vendorDiscountPct == null) return 0;
+  return discountPctFor(p.vendorDiscountPct, p.source?.discountPct ?? 0);
 }
 
 // Validate a chosen gift-card amount against the brand's Hubble acceptance rules —
@@ -305,8 +319,7 @@ export function toStoreProduct(p: ShopProductRow, opts: { public?: boolean; sepp
     // % off the face value the employee pays for this gift card. The storefront
     // needs it to show the real charge next to the denomination they picked —
     // a voucher's price is chosen at runtime, so it can't come from the offer.
-    voucherDiscountPct:
-      isVoucherProduct(p) && p.source?.discountPct != null ? Number(p.source.discountPct) : 0,
+    voucherDiscountPct: isVoucherProduct(p) ? voucherPctFor(p) : 0,
     // Smart-EPP lease figures (null when SEPP isn't offered to this shopper or the
     // product can't be leased). The storefront switches to these in SEPP mode.
     // Quoted off the display offer, like `price`, so an out-of-stock phone still

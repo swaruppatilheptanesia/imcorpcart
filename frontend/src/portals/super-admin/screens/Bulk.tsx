@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { UploadCloud, Info, FileSpreadsheet, Download, AlertTriangle } from 'lucide-react';
 import { Button, Card, Field, Input, Segmented, Select, useToast } from '@/components';
 import { mappingRows, bulkImport, bulkPriceUpdate, bulkCashbackUpdate, type BulkImportResult } from '@/data/api';
+import { parseCsvTable } from '@/lib/csv';
 import s from './screen.module.css';
 import styles from './Bulk.module.css';
 
@@ -16,47 +17,21 @@ const NUMERIC = new Set(['mrp', 'mop_price', 'cashback_value', 'epp_price', 'sma
 // Strip the sign here and let the server validate what's left.
 const PERCENT = new Set(['gst_percent', 'protection_plan_pct']);
 
-// Minimal CSV parser (handles quoted fields + commas). Returns row objects keyed
-// by the header row, with numeric columns coerced.
+// Row objects keyed by the header row, with numeric columns coerced.
 //
 // Every header becomes a key, INCLUDING one whose cell is empty, so the server
 // sees the sheet exactly as filled. Both a blank cell and an absent column mean
 // "leave this field alone"; only the literal CLEAR empties a field. (A blank cell
 // used to CLEAR the field, which is how a pricing-only upload deleted every
 // product gallery on 13 Oct 2026.)
-//
-// Known limitation: lines are split before quotes are honoured, so a newline
-// inside a quoted cell breaks the row. Multi-value cells are pipe-separated.
 function parseCsv(text: string): Record<string, unknown>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-  if (lines.length < 2) return [];
-  const split = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = '';
-    let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQ && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else inQ = !inQ;
-      } else if (ch === ',' && !inQ) {
-        out.push(cur);
-        cur = '';
-      } else cur += ch;
-    }
-    out.push(cur);
-    return out.map((c) => c.trim());
-  };
-  const headers = split(lines[0]);
-  return lines.slice(1).map((line) => {
-    const cells = split(line);
+  const { headers, rows } = parseCsvTable(text);
+  return rows.map((cells) => {
     const row: Record<string, unknown> = {};
     headers.forEach((h, i) => {
       if (!h) return; // trailing comma in the header row
       const v = cells[i] ?? '';
-      // Posted as '' so the server reads it as "clear this field".
+      // Kept as '' so the server can tell "present but blank" from absent.
       if (v === '') {
         row[h] = '';
         return;

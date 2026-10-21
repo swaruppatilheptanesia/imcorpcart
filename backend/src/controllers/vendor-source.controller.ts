@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { getParam, getQuery } from '../middleware/validate';
 import * as service from '../services/inbound/vendor-source.service';
-import type { RunsQuery } from '../validators/vendor-source.schema';
+import type { RunsQuery, ProductDiscountsInput } from '../validators/vendor-source.schema';
 
 export async function list(_req: Request, res: Response) {
   res.json(await service.listSources());
@@ -27,6 +27,12 @@ export async function sync(req: Request, res: Response) {
 export async function reprice(req: Request, res: Response) {
   // Re-applies the source's discount to every product already imported from it.
   res.json(await service.repriceSource(getParam(req, 'id'), req.user?.id));
+}
+
+export async function setProductDiscounts(req: Request, res: Response) {
+  // One endpoint for both the inline edit (a single row) and the CSV upload.
+  const { rows } = req.body as ProductDiscountsInput;
+  res.json(await service.setProductDiscounts(getParam(req, 'id'), rows, req.user?.id));
 }
 
 export async function runs(req: Request, res: Response) {

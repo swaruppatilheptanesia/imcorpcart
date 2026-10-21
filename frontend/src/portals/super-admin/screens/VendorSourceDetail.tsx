@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, RefreshCw, Download, Eye, EyeOff, Pencil } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, RefreshCw, Download, Eye, EyeOff, Pencil, Upload } from 'lucide-react';
 import { Card, Button, Field, Input, Modal, Toggle, StatusPill, DataTable, Row, EmptyState, Skeleton, useToast } from '@/components';
 import {
   getVendorSource,
@@ -11,6 +11,7 @@ import {
   syncVendorSource,
   repriceVendorSource,
   setProductHidden,
+  setVendorProductDiscounts,
   getVendorWalletBalance,
   type VendorImportRun,
 } from '@/data/api';
@@ -18,13 +19,14 @@ import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
 import { fmtDate } from '@/data/map';
 import { inr } from '@/lib/format';
+import { parseCsvTable, toCsv, downloadCsv } from '@/lib/csv';
 import type { SemanticTone } from '@/data/types';
 import { statusTone } from './Partners';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
 const RUN_COLS = '1.1fr 0.7fr 0.7fr 0.7fr 0.8fr 0.7fr 1.1fr';
-const PROD_COLS = 'minmax(0, 1.6fr) 0.9fr 0.9fr 0.6fr 0.8fr 150px';
+const PROD_COLS = 'minmax(0, 1.5fr) 0.85fr 0.85fr 0.9fr 0.55fr 0.7fr 128px';
 const PROD_PAGE_SIZE = 20;
 const runTone: Record<string, SemanticTone> = {
   SUCCESS: 'success',
@@ -212,7 +214,7 @@ export function VendorSourceDetail() {
           )}
         </Card>
 
-        <ConfigCard source={source} onSaved={reload} />
+        <ConfigCard source={source} onSaved={reload} onProductsChanged={reloadProducts} />
       </div>
 
       {source.adapter === 'hubble' && <WalletCard id={id} />}
@@ -226,7 +228,7 @@ export function VendorSourceDetail() {
         ) : (
           <DataTable
             cols={PROD_COLS}
-            headers={['Product', 'Vendor price', 'Our price', 'Stock', 'On storefront', '']}
+            headers={['Product', 'Vendor price', 'Our price', 'Discount %', 'Stock', 'On storefront', '']}
             footer={
               prodPageCount > 1 ? (
                 <>
@@ -265,6 +267,14 @@ export function VendorSourceDetail() {
                   )}
                 </div>
                 <div className={s.price}>{p.offers[0] ? inr(p.offers[0].eppPrice) : '—'}</div>
+                {/* Blank = inheriting the source's rate (shown as the placeholder). */}
+                <DiscountCell
+                  sourceId={id}
+                  sku={p.sku}
+                  value={p.vendorDiscountPct}
+                  inherited={source.discountPct}
+                  onSaved={reloadProducts}
+                />
                 <div className={s.muted}>{p.offers[0]?.quantity ?? 0}</div>
                 <div>
                   <StatusPill
@@ -319,6 +329,219 @@ export function VendorSourceDetail() {
         </p>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Bulk-set per-product discounts from a two-column CSV (`sku,discount_pct`).
+ *
+ * Deliberately NOT the 34-column product template: that sheet requires
+ * sku + name + category + mrp + epp_price + stock_quantity on every row, so a
+ * discount-only change through it means restating five columns nobody wants to
+ * touch. Cell meanings match that sheet's convention — a blank cell leaves the
+ * product alone, `CLEAR` puts it back on the vendor's rate.
+ */
+function DiscountCsv({
+  sourceId,
+  sourceSlug,
+  inherited,
+  onDone,
+}: {
+  sourceId: string;
+  sourceSlug: string;
+  inherited: number;
+  onDone: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ updated: number; errors: { sku: string; message: string }[] } | null>(null);
+  const { flash } = useToast();
+
+  /**
+   * Download the sheet to edit — the vendor's actual products, not a blank
+   * template. These SKUs are machine-generated (`hubble-01GN6QQJFZ…`), so nobody
+   * can type them; the only workable sheet is one we hand over pre-filled.
+   *
+   * `discount_pct` comes down holding each product's current override and blank
+   * where it inherits, which round-trips exactly: edit a few cells, upload the
+   * same file, and only those products change (a blank cell means "leave alone").
+   * The extra name/price columns are there to read by — the importer matches on
+   * header name and ignores the rest.
+   */
+  const download = async () => {
+    setBusy(true);
+    try {
+      const all: Awaited<ReturnType<typeof getVendorSourceProducts>>['items'] = [];
+      let page = 1;
+      let pageCount = 1;
+      do {
+        const r = await getVendorSourceProducts(sourceId, { page, pageSize: 100 });
+        all.push(...r.items);
+        pageCount = r.meta.pageCount || 1;
+        page += 1;
+      } while (page <= pageCount);
+
+      const csv = toCsv(
+        ['sku', 'name', 'vendor_price', 'our_price', 'discount_pct'],
+        all.map((p) => [
+          p.sku,
+          p.name,
+          p.mop ?? p.mrp,
+          p.offers[0]?.eppPrice ?? '',
+          // Blank where the product inherits, so re-uploading untouched rows is a no-op.
+          p.vendorDiscountPct ?? '',
+        ]),
+      );
+      downloadCsv(`${sourceSlug || 'vendor'}-discounts.csv`, csv);
+      flash(`Downloaded ${all.length} product${all.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not build the sheet');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // so re-picking the same file fires again
+    if (!file) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      // The SAME quote-aware parser the product sheet uses. A naive split broke
+      // on the quoted product names our own downloaded sheet contains, shifting
+      // every later column so the upload silently applied nothing.
+      const { headers: head, rows: cellRows } = parseCsvTable(await file.text());
+      const headers = head.map((h) => h.toLowerCase());
+      const iSku = headers.indexOf('sku');
+      const iPct = headers.findIndex((h) => h === 'discount_pct' || h === 'discount' || h === 'discount%');
+      if (iSku === -1 || iPct === -1) {
+        flash('Needs a header row with "sku" and "discount_pct"');
+        return;
+      }
+      const rows: { sku: string; discountPct: number | null }[] = [];
+      for (const cells of cellRows) {
+        const sku = cells[iSku];
+        const raw = (cells[iPct] ?? '').replace(/[%\s]/g, '');
+        if (!sku) continue;
+        if (raw === '') continue; // blank = leave this product alone
+        rows.push({ sku, discountPct: raw.toUpperCase() === 'CLEAR' ? null : Number(raw) });
+      }
+      if (!rows.length) {
+        flash('No rows to apply — every discount cell was blank');
+        return;
+      }
+      const r = await setVendorProductDiscounts(sourceId, rows);
+      setResult(r);
+      flash(`${r.updated} product${r.updated === 1 ? '' : 's'} updated${r.errors.length ? `, ${r.errors.length} problem${r.errors.length === 1 ? '' : 's'}` : ''}`);
+      onDone();
+    } catch (err) {
+      flash(err instanceof ApiError ? err.message : 'Could not apply the discounts');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Button variant="secondary" onClick={download} disabled={busy}>
+          <Download size={14} /> Download sheet
+        </Button>
+        <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+          <Upload size={14} /> {busy ? 'Working…' : 'Upload discounts'}
+        </Button>
+      </div>
+      <div className={s.muted} style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 8 }}>
+        Set a discount <strong>per product</strong>. The sheet comes pre-filled with this vendor&rsquo;s
+        products — edit the <span className={s.mono}>discount_pct</span> column and upload it back. A blank
+        cell leaves that product on the default {inherited}% below;{' '}
+        <span className={s.mono}>CLEAR</span> puts a product back on it.
+      </div>
+      {result && result.errors.length > 0 && (
+        <ul style={{ margin: '10px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {result.errors.slice(0, 8).map((er) => (
+            <li key={er.sku} className={s.muted} style={{ fontSize: 12.5 }}>
+              <span className={s.mono}>{er.sku}</span> — {er.message}
+            </li>
+          ))}
+          {result.errors.length > 8 && (
+            <li className={s.muted} style={{ fontSize: 12.5 }}>…and {result.errors.length - 8} more</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Per-product discount cell: type a % and it saves on blur / Enter.
+ *
+ * Empty means "inherit the source's rate" — shown as a quiet placeholder of the
+ * inherited number, so the admin can see what a product is actually on without
+ * the table looking like every row has been set. `0` is a real value and is
+ * shown as 0, because a product pinned to no discount is NOT the same as one
+ * following the source.
+ */
+function DiscountCell({
+  sourceId,
+  sku,
+  value,
+  inherited,
+  onSaved,
+}: {
+  sourceId: string;
+  sku: string;
+  value: number | null;
+  inherited: number;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(value == null ? '' : String(value));
+  const [busy, setBusy] = useState(false);
+  const { flash } = useToast();
+
+  // The row can be replaced underneath us by a reload or a page change.
+  useEffect(() => setText(value == null ? '' : String(value)), [value, sku]);
+
+  const commit = async () => {
+    const raw = text.trim().replace(/[%\s]/g, '');
+    const next = raw === '' ? null : Number(raw);
+    if (next !== null && (!Number.isFinite(next) || next < 0 || next > 100)) {
+      flash('Discount must be between 0 and 100');
+      setText(value == null ? '' : String(value));
+      return;
+    }
+    if (next === value) return; // nothing typed, or typed back to what it was
+    setBusy(true);
+    try {
+      const r = await setVendorProductDiscounts(sourceId, [{ sku, discountPct: next }]);
+      if (r.errors.length) flash(r.errors[0].message);
+      else flash(next === null ? `Back to the vendor rate (${inherited}%)` : `Set to ${next}%`);
+      onSaved();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the discount');
+      setText(value == null ? '' : String(value));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setText(value == null ? '' : String(value));
+      }}
+      disabled={busy}
+      inputMode="numeric"
+      placeholder={String(inherited)}
+      inputSize="sm"
+      aria-label={`Discount for ${sku}`}
+    />
   );
 }
 
@@ -377,7 +600,15 @@ function WalletCard({ id }: { id: string }) {
   );
 }
 
-function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSource; onSaved: () => void }) {
+function ConfigCard({
+  source,
+  onSaved,
+  onProductsChanged,
+}: {
+  source: import('@/data/api').VendorSource;
+  onSaved: () => void;
+  onProductsChanged: () => void;
+}) {
   const { flash } = useToast();
   const [discount, setDiscount] = useState(String(source.discountPct));
   const [busy, setBusy] = useState(false);
@@ -411,10 +642,13 @@ function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSo
     setBusy(true);
     try {
       const r = await repriceVendorSource(source.id);
+      // `skipped` are the products on their own rate — reporting them is the
+      // only signal that this action deliberately left some prices alone.
+      const kept = r.skipped ? ` · kept ${r.skipped} on their own discount` : '';
       flash(
         r.repriced === 0
-          ? `Already priced at vendor price − ${r.discountPct}% — nothing to change`
-          : `Repriced ${r.repriced} of ${r.considered} products to vendor price − ${r.discountPct}%`,
+          ? `Already priced at vendor price − ${r.discountPct}%${kept} — nothing to change`
+          : `Repriced ${r.repriced} of ${r.considered} products to vendor price − ${r.discountPct}%${kept}`,
       );
       setConfirmReprice(false);
       onSaved();
@@ -428,13 +662,23 @@ function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSo
   return (
     <Card pad="lg">
       <div className={styles.cardTitle}>Pricing</div>
-      <Field label="Our discount off the vendor's price (%)">
+      {/* Per-product discounts first: that is the routine job. The source-wide
+          rate below is the default new products land on. */}
+      <DiscountCsv
+        sourceId={source.id}
+        sourceSlug={source.slug}
+        inherited={source.discountPct}
+        onDone={onProductsChanged}
+      />
+      <Field label="Default discount off the vendor's price, for products without their own (%)">
         <Input value={discount} onChange={(e) => setDiscount(e.target.value)} inputMode="numeric" />
       </Field>
       <div className={s.muted} style={{ fontSize: 12.5, margin: '2px 0 8px' }}>
         We sell this vendor's products at the vendor's price minus this %. Where the feed sends both a list price
         (MRP) and a selling price, the <strong>selling price</strong> is the basis — that price is also what the
-        public pays, so the employee always pays less. The vendor connection is set up by the team.
+        public pays, so the employee always pays less. This is the <strong>default</strong>: any product given its
+        own discount below keeps it, and is left alone by &ldquo;Apply to existing&rdquo;. The vendor connection is
+        set up by the team.
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button variant="secondary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save pricing'}</Button>
@@ -461,12 +705,13 @@ function ConfigCard({ source, onSaved }: { source: import('@/data/api').VendorSo
         }
       >
         <p className={s.muted} style={{ marginTop: 0, lineHeight: 1.55 }}>
-          Sets all {productCount} products from <strong>{source.name}</strong> to{' '}
+          Sets products from <strong>{source.name}</strong> to{' '}
           <strong>vendor price − {source.discountPct}%</strong>.
         </p>
         <p className={s.muted} style={{ lineHeight: 1.55 }}>
-          Any price edited by hand on the Products screen will be replaced. Save the discount first if
-          you've just changed it.
+          Any price edited by hand on the Products screen will be replaced. Products given their own
+          discount are <strong>not</strong> touched — this only resets the ones following{' '}
+          {source.name}&rsquo;s rate. Save the discount first if you&rsquo;ve just changed it.
         </p>
       </Modal>
     </Card>

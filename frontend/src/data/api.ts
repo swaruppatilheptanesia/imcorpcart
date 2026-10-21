@@ -1219,6 +1219,9 @@ export interface VendorSourceProduct {
   /** The feed's selling price, when it sends one. This — not mrp — is the
    *  discount basis, and it is also the public storefront price. */
   mop: number | null;
+  /** Per-product discount override. null = inheriting the source's rate;
+   *  0 = deliberately no discount, which is a different thing. */
+  vendorDiscountPct: number | null;
   offers: { eppPrice: number; quantity: number }[];
 }
 
@@ -1246,7 +1249,9 @@ export function syncVendorSource(id: string): Promise<VendorImportRun> {
  * discount leaves the existing catalogue untouched until this is called.
  * Overwrites hand-edited house prices.
  */
-export function repriceVendorSource(id: string): Promise<{ repriced: number; considered: number; discountPct: number }> {
+export function repriceVendorSource(
+  id: string,
+): Promise<{ repriced: number; skipped: number; considered: number; discountPct: number }> {
   return apiFetch(`/vendor-sources/${id}/reprice`, { method: 'POST' });
 }
 
@@ -1421,6 +1426,20 @@ export async function getVendorSourceRuns(
 ): Promise<{ items: VendorImportRun[]; meta: PageMeta }> {
   const r = await apiFetch<Envelope<VendorImportRun[]>>(`/vendor-sources/${id}/runs`, { query });
   return { items: r.data, meta: r.meta };
+}
+
+/**
+ * Set or clear the per-product discount for products of one vendor source.
+ *
+ * One row for the inline edit, many for a CSV upload — the server applies each
+ * row independently, so a bad SKU is reported without failing the rest.
+ * `discountPct: null` clears the override and the product inherits the source.
+ */
+export function setVendorProductDiscounts(
+  id: string,
+  rows: { sku: string; discountPct: number | null }[],
+): Promise<{ updated: number; errors: { sku: string; message: string }[] }> {
+  return apiFetch(`/vendor-sources/${id}/product-discounts`, { method: 'POST', body: { rows } });
 }
 
 export async function getVendorSourceProducts(

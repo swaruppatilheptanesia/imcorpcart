@@ -120,6 +120,15 @@ model Product {
   source      VendorSource? @relation(fields: [sourceId], references: [id])
   externalRef String?       @map("external_ref")
 
+  // Per-product override of VendorSource.discountPct. NULL = inherit the source's
+  // rate; 0 = deliberately no discount, which is NOT the same thing (an inheriting
+  // product follows the source when it changes, a 0 one does not). Hubble's margin
+  // differs per gift-card brand, so one rate per source cannot be right for all of
+  // them. Where the rate LANDS differs by product type — baked into the house
+  // offer's eppPrice for physical goods, applied on read for vouchers (whose price
+  // is the denomination the buyer picks). See services/inbound/vendor-source.service.ts.
+  vendorDiscountPct Decimal? @map("vendor_discount_pct") @db.Decimal(5, 2)
+
   // Set when an import run took this product off sale because the vendor stopped
   // listing it; cleared (and the product put back on sale) if the vendor lists it
   // again. Distinguishes a sync-driven deactivation from an admin's own one, so a

@@ -114,6 +114,22 @@ export function eppFor(mrp: number, mop: number | null | undefined, discountPct:
   return round(basis * (1 - discountPct / 100));
 }
 
+/**
+ * The discount rate that applies to ONE product: its own override, else its
+ * source's rate.
+ *
+ * `null` on the product means "inherit", so it follows the source when that
+ * changes; an explicit `0` means "no discount" and deliberately does not. Every
+ * place that prices a vendor product goes through here — the importer, the
+ * reprice action, and the voucher read path in shop.service — because the two
+ * pricing mechanisms (stored eppPrice vs applied-on-read) must agree on which
+ * rate a product is on.
+ */
+export const discountPctFor = (
+  productPct: Prisma.Decimal | number | null | undefined,
+  sourcePct: Prisma.Decimal | number,
+): number => Number(productPct ?? sourcePct);
+
 // Map a vendor category name through the optional config.categoryMap.
 function mappedCategory(vendorCat: string, config: Prisma.JsonValue | null): string {
   const map = config && typeof config === 'object' && !Array.isArray(config) ? (config as Record<string, unknown>).categoryMap : null;
@@ -140,7 +156,9 @@ async function upsertVendorProduct(
   const sku = `${source.slug}-${row.externalRef}`;
   const existing = await prisma.product.findUnique({
     where: { sku },
-    select: { id: true, deactivatedBySyncAt: true },
+    // vendorDiscountPct decides whether this product's price is a standing rule
+    // (re-applied below as the vendor's price moves) or a hand-set figure to leave alone.
+    select: { id: true, deactivatedBySyncAt: true, vendorDiscountPct: true },
   });
   const specRows = row.specRows ?? [];
   const images = row.images ?? [];
@@ -207,14 +225,22 @@ async function upsertVendorProduct(
           : {}),
       },
     });
-    // House offer: refresh stock only (eppPrice + isActive/status are admin-owned,
+    // House offer: refresh stock (eppPrice + isActive/status are admin-owned,
     // except when reviving a product this importer had taken off sale).
+    //
+    // The ONE exception on price: a product carrying its own `vendorDiscountPct`
+    // has been put on a standing rule — "sell this brand at vendor price − x%" —
+    // so its EPP is re-derived here and tracks the vendor's price. A product
+    // without an override keeps whatever price it has, hand-set or not, exactly
+    // as before.
     const house = await tx.productOffer.findFirst({ where: { productId: existing.id, resellerId: null } });
     if (house) {
+      const ownPct = existing.vendorDiscountPct;
       await tx.productOffer.update({
         where: { id: house.id },
         data: {
           quantity: row.stock ?? house.quantity,
+          ...(ownPct != null ? { eppPrice: D(eppFor(row.mrp, row.mop, Number(ownPct))) } : {}),
           ...(revived ? { status: ProductStatus.ACTIVE, isActive: true } : {}),
         },
       });
@@ -460,16 +486,28 @@ export async function repriceSource(id: string, actorId?: string) {
   // product belongs to that reseller.
   const offers = await prisma.productOffer.findMany({
     where: { resellerId: null, product: { is: { sourceId: id, ...notDeleted } } },
-    select: { id: true, eppPrice: true, product: { select: { mrp: true, mop: true } } },
+    select: {
+      id: true,
+      eppPrice: true,
+      product: { select: { mrp: true, mop: true, vendorDiscountPct: true } },
+    },
   });
 
   let repriced = 0;
+  // Products carrying their own rate are already on a deliberate price — this
+  // action resets the catalogue to the SOURCE's rate, so flattening those would
+  // silently undo the per-product work it exists to complement.
+  let skipped = 0;
   // Chunked so a 500+ product catalogue doesn't open one enormous transaction.
   for (let i = 0; i < offers.length; i += 100) {
     const chunk = offers.slice(i, i + 100);
     await prisma.$transaction(
       chunk
         .map((o) => {
+          if (o.product.vendorDiscountPct != null) {
+            skipped += 1;
+            return null;
+          }
           const next = eppFor(Number(o.product.mrp), o.product.mop == null ? null : Number(o.product.mop), discountPct);
           if (next === Number(o.eppPrice)) return null; // already correct — skip the write
           repriced += 1;
@@ -485,10 +523,103 @@ export async function repriceSource(id: string, actorId?: string) {
       action: 'catalog.vendor_reprice',
       entityType: 'VendorSource',
       entityId: id,
-      after: { discountPct, repriced, considered: offers.length },
+      after: { discountPct, repriced, skipped, considered: offers.length },
     },
   });
-  return { repriced, considered: offers.length, discountPct };
+  return { repriced, skipped, considered: offers.length, discountPct };
+}
+
+/**
+ * Set (or clear) the per-product discount for products of ONE source.
+ *
+ * Serves both the inline edit on the admin table (a single row) and the CSV
+ * upload (many), so there is one implementation of the rule rather than two that
+ * can disagree. Keyed on `sku`, which the CSV carries and the table row has.
+ *
+ * `discountPct: null` clears the override and the product goes back to inheriting
+ * the source's rate. Rows are validated and applied individually — one bad SKU
+ * reports an error and the rest still apply, matching the bulk importer's
+ * behaviour.
+ *
+ * Where the number LANDS differs by product type, which is the whole subtlety:
+ *   • a voucher is priced on READ from this field, so writing it is enough;
+ *   • a physical product's price is STORED, so its house offer is recomputed here
+ *     — otherwise the storefront would keep quoting the old price until the next
+ *     sync.
+ */
+export async function setProductDiscounts(
+  sourceId: string,
+  rows: { sku: string; discountPct: number | null }[],
+  actorId?: string,
+) {
+  const source = await prisma.vendorSource.findFirst({
+    where: { id: sourceId, ...notDeleted },
+    select: { id: true, adapter: true, discountPct: true },
+  });
+  if (!source) throw AppError.notFound('Vendor source not found');
+  const isVoucherSource = source.adapter === HUBBLE_ADAPTER;
+
+  // One query for the whole file, scoped to this source — a SKU belonging to
+  // another vendor simply isn't found, so it can never be repriced from here.
+  const skus = [...new Set(rows.map((r) => r.sku))];
+  const products = await prisma.product.findMany({
+    where: { sku: { in: skus }, sourceId, ...notDeleted },
+    select: {
+      id: true,
+      sku: true,
+      mrp: true,
+      mop: true,
+      offers: { where: { resellerId: null }, select: { id: true } },
+    },
+  });
+  const bySku = new Map(products.map((p) => [p.sku, p]));
+
+  const errors: { sku: string; message: string }[] = [];
+  let updated = 0;
+
+  for (const row of rows) {
+    const p = bySku.get(row.sku);
+    if (!p) {
+      errors.push({ sku: row.sku, message: 'Not a product of this vendor source' });
+      continue;
+    }
+    const pct = row.discountPct;
+    if (pct !== null && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
+      errors.push({ sku: row.sku, message: 'Discount must be a percentage between 0 and 100' });
+      continue;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.product.update({
+        where: { id: p.id },
+        data: { vendorDiscountPct: pct === null ? null : D(pct) },
+      });
+      // A voucher has no stored price to correct — `voucherChargeFor` reads the
+      // field at request time. Everything else is priced from the offer, so it
+      // has to be re-derived now, at the effective rate (the override, or the
+      // source's once the override is cleared).
+      if (!isVoucherSource && p.offers[0]) {
+        const effective = discountPctFor(pct, source.discountPct);
+        await tx.productOffer.update({
+          where: { id: p.offers[0].id },
+          data: { eppPrice: D(eppFor(Number(p.mrp), p.mop == null ? null : Number(p.mop), effective)) },
+        });
+      }
+    });
+    updated += 1;
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: actorId ?? null,
+      action: 'catalog.vendor_product_discount',
+      entityType: 'VendorSource',
+      entityId: sourceId,
+      after: { updated, errors: errors.length, rows: rows.length },
+    },
+  });
+
+  return { updated, errors };
 }
 
 // Hubble client wallet balance (ops aid on the vendor-source page — the client
@@ -536,6 +667,7 @@ export async function listSourceProducts(sourceId: string, query: RunsQuery) {
         // derived FROM — the feed's selling price when it sends one, else MRP.
         mrp: true,
         mop: true,
+        vendorDiscountPct: true,
         offers: { where: { resellerId: null }, select: { eppPrice: true, quantity: true } },
       },
       orderBy: { updatedAt: 'desc' },

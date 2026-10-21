@@ -3,7 +3,7 @@ import * as ctrl from '../controllers/vendor-source.controller';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { idParam } from '../validators/common.schema';
-import { updateSourceBody, runsQuery, runParams } from '../validators/vendor-source.schema';
+import { updateSourceBody, runsQuery, runParams, productDiscountsBody } from '../validators/vendor-source.schema';
 
 // Super-Admin inbound vendor-source registry ("Vendor Sources" console): pull
 // external vendors' catalogs into ours. Sources are auto-provisioned per
@@ -20,6 +20,11 @@ router.post('/:id/reprice', validate({ params: idParam }), asyncHandler(ctrl.rep
 router.get('/:id/runs/:runId', validate({ params: runParams }), asyncHandler(ctrl.run));
 router.get('/:id/runs', validate({ params: idParam, query: runsQuery }), asyncHandler(ctrl.runs));
 router.get('/:id/products', validate({ params: idParam, query: runsQuery }), asyncHandler(ctrl.products));
+router.post(
+  '/:id/product-discounts',
+  validate({ params: idParam, body: productDiscountsBody }),
+  asyncHandler(ctrl.setProductDiscounts),
+);
 router.get('/:id/wallet', validate({ params: idParam }), asyncHandler(ctrl.wallet));
 
 export default router;
