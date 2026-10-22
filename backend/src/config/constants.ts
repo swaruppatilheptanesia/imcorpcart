@@ -8,6 +8,15 @@ export const PAGINATION = {
   maxPageSize: 100,
 } as const;
 
+// Reports deliberately bypass PAGINATION: an export of "everything in range"
+// cannot be expressed through a 100-row cap. `rowCap` is a refusal threshold,
+// not a truncation point — see services/report/runner.ts.
+export const REPORT = {
+  pageSize: 1_000,
+  rowCap: 50_000,
+  previewLimit: 50,
+} as const;
+
 // OtpToken.purpose values (the schema stores this as a free-text string).
 export const OTP_PURPOSE = {
   LOGIN_2FA: 'LOGIN_2FA',

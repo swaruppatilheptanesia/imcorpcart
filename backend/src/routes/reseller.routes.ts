@@ -2,6 +2,8 @@ import { Router } from 'express';
 import * as ctrl from '../controllers/reseller.controller';
 import * as uploadCtrl from '../controllers/upload.controller';
 import { imageUpload } from '../config/upload';
+import { documentUpload } from '../config/document-upload';
+import { epodBody } from '../validators/order.schema';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { idParam } from '../validators/common.schema';
@@ -52,6 +54,17 @@ router.patch(
   '/orders/:id/transit',
   validate({ params: idParam, body: transitUpdateBody }),
   asyncHandler(ctrl.updateTransit),
+);
+
+// Proof of delivery for an order this reseller fulfilled. Cannot live on
+// /orders/:id/epod — that router is mounted behind requireRole(SUPER_ADMIN).
+// The file lands in the same private store and is read back through the admin
+// download route, which is authed.
+router.post(
+  '/orders/:id/epod',
+  documentUpload.single('file'),
+  validate({ params: idParam, body: epodBody }),
+  asyncHandler(ctrl.uploadEpod),
 );
 
 export default router;

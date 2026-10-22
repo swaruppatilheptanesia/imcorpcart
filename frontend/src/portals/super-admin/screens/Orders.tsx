@@ -5,10 +5,11 @@ import { Chip, DataTable, EmptyState, Input, Row, Select, Skeleton, StatusPill }
 import { getOrders, orderStatusTone } from '@/data/api';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
+import { EpodCell } from './OrderFulfilment';
 import s from './screen.module.css';
 import styles from './Orders.module.css';
 
-const COLS = '1fr 0.9fr 0.9fr 1.5fr 1fr 1.2fr 0.9fr 0.9fr 44px';
+const COLS = '1fr 0.9fr 0.9fr 1.4fr 1fr 1.1fr 0.9fr 0.9fr 84px 44px';
 
 type Filter = 'all' | 'active' | 'delivered' | 'cancelled';
 
@@ -118,7 +119,7 @@ export function Orders() {
       {state === 'live' && shown.length > 0 && (
         <DataTable
           cols={COLS}
-          headers={['Order', 'Order date', 'Dispatch', 'Product', 'Vendor', 'Company', 'Status', 'Total', '']}
+          headers={['Order', 'Order date', 'Dispatch', 'Product', 'Vendor', 'Company', 'Status', 'Total', 'POD', '']}
         >
           {shown.map((o) => (
             <Row
@@ -142,6 +143,17 @@ export function Orders() {
                 <StatusPill label={o.status} tone={orderStatusTone[o.status]} />
               </div>
               <div className={s.price}>{inr(o.total)}</div>
+              {/* One-click proof of delivery, as the partner Orders tab has.
+                  `o.id` is display-formatted (#IMC-…) and the API does not match
+                  that, so the cell acts on the row's real cuid. */}
+              <div onClick={(e) => e.stopPropagation()}>
+                <EpodCell
+                  orderId={o.cuid ?? o.id.replace(/^#/, '')}
+                  delivered={o.status === 'Delivered'}
+                  epod={o.epod ?? null}
+                  onDone={reload}
+                />
+              </div>
               <button
                 className={s.iconBtn}
                 onClick={(e) => {

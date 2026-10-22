@@ -80,6 +80,11 @@ export interface OrderItem {
 
 export interface Order {
   id: string; // #IMC-#####
+  /** The real cuid. `id` is display-formatted with a leading #, which the API
+   *  does not match — any endpoint call from a list row must use this. */
+  cuid?: string;
+  /** Proof of delivery on this order, for the one-click list cell. */
+  epod?: { id: string; capturedAt: string | null; fileName: string | null; uploadedAt: string } | null;
   type?: 'EPP' | 'SMART_EPP' | string; // SMART_EPP = lease-financed (no payment row; paid via payroll)
   company: string;
   buyer: string;
@@ -176,12 +181,6 @@ export interface PayMethod {
   label: string;
   note: string;
   value: number; // surcharge %
-}
-export interface ReportDef {
-  id: string;
-  title: string;
-  desc: string;
-  range: string;
 }
 
 /* Shared semantic tone used by status pills. */

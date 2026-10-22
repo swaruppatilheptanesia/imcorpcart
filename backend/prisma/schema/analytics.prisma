@@ -1,7 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Analytics & reporting (spec §2 — P1 build, real data lands in P2).
-// Analytics are mostly aggregation queries over transactional tables; this table
-// tracks CSV/PDF exports (profitability, volume/value, partner performance, etc.).
+// Analytics are mostly aggregation queries over transactional tables.
+//
+// ReportExport is now purely an AUDIT TRAIL: reports are streamed straight to
+// the caller and never persisted, so fileUrl stays null. These exports carry
+// addresses and phone numbers, so the row answering "who pulled customer data,
+// with what filters, and how many rows" is the point of the table.
+//
+// ProductView backs the "most visited products" column of the User report.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ReportExport {
@@ -9,7 +15,8 @@ model ReportExport {
   reportType    String // "PROFITABILITY" | "VOLUME_VALUE" | "PARTNER_PERFORMANCE" | ...
   format        ReportFormat
   filters       Json? // date range and other filter params
-  fileUrl       String?
+  fileUrl       String? // always null: reports stream, they are never stored
+  rowCount      Int?
   generatedById String?
   generatedBy   User?        @relation(fields: [generatedById], references: [id])
 
@@ -17,5 +24,27 @@ model ReportExport {
 
   @@index([reportType])
   @@index([generatedById])
+  @@index([createdAt])
   @@map("report_exports")
+}
+
+// Per-employee product-page view counter. A running count, not an event log:
+// the report only asks "which products did this user look at most", and a
+// counter keeps the table bounded by (employees x products) instead of growing
+// without limit. Written fire-and-forget from the signed-in product page only —
+// anonymous catalogue views are deliberately not attributed to anyone.
+model ProductView {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  viewCount     Int      @default(1) @map("view_count")
+  firstViewedAt DateTime @default(now()) @map("first_viewed_at")
+  lastViewedAt  DateTime @default(now()) @updatedAt @map("last_viewed_at")
+
+  @@unique([employeeId, productId])
+  @@index([productId])
+  @@map("product_views")
 }

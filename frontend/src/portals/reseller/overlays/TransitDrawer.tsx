@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { MODE_OPTIONS } from '@/lib/courier';
 import { Drawer, Field, Input, Button, Chip, useToast } from '@/components';
 import { updateTransit, type TransitUpdateInput } from '@/data/reseller-api';
 import type { ResellerOrderRow } from '../data';
@@ -31,6 +32,7 @@ export function TransitDrawer({ open, order, onClose, onSaved }: Props) {
   const [status, setStatus] = useState<TransitUpdateInput['status']>('DISPATCHED');
   const [awb, setAwb] = useState('');
   const [courier, setCourier] = useState<TransitUpdateInput['courierCode'] | undefined>(undefined);
+  const [mode, setMode] = useState<TransitUpdateInput['deliveryMode'] | undefined>(undefined);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -40,6 +42,7 @@ export function TransitDrawer({ open, order, onClose, onSaved }: Props) {
     setAwb(order?.awb ?? '');
     // Pre-select the courier assigned to the product, still fully overridable.
     setCourier((order?.courierCode as TransitUpdateInput['courierCode']) ?? undefined);
+    setMode(undefined);
     setNote('');
   }, [open, order]);
 
@@ -51,6 +54,7 @@ export function TransitDrawer({ open, order, onClose, onSaved }: Props) {
         status,
         awbNumber: awb.trim() || undefined,
         courierCode: courier,
+        deliveryMode: mode,
         description: note.trim() || undefined,
       });
       flash(`Transit updated → ${STATUS_OPTIONS.find((o) => o.value === status)?.label}`);
@@ -93,6 +97,18 @@ export function TransitDrawer({ open, order, onClose, onSaved }: Props) {
               label={c.label}
               active={courier === c.value}
               onClick={() => setCourier((cur) => (cur === c.value ? undefined : c.value))}
+            />
+          ))}
+        </div>
+      </Field>
+      <Field label="Transport mode" hint="Leave blank to use the product's mode">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {MODE_OPTIONS.map((m) => (
+            <Chip
+              key={m.value}
+              label={m.label}
+              active={mode === m.value}
+              onClick={() => setMode((cur) => (cur === m.value ? undefined : m.value))}
             />
           ))}
         </div>

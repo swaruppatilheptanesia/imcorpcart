@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ShipmentStatus, CourierCode } from '@prisma/client';
+import { ShipmentStatus, CourierCode, DeliveryMode } from '@prisma/client';
 
 export const resellerListQuery = z.object({
   q: z.string().trim().optional(),
@@ -53,6 +53,9 @@ export const transitUpdateBody = z.object({
   status: z.nativeEnum(ShipmentStatus),
   awbNumber: z.string().trim().optional(),
   courierCode: z.nativeEnum(CourierCode).optional(),
+  // How the parcel travels. Left out, a dispatch defaults it from the line's
+  // product; the product field is only a preference, the shipment is the record.
+  deliveryMode: z.nativeEnum(DeliveryMode).optional(),
   description: z.string().trim().optional(),
 });
 

@@ -63,6 +63,10 @@ export async function getOrder(req: Request, res: Response) {
   res.json(await service.getOrder(userId(req), getParam(req, 'id')));
 }
 
+export async function uploadEpod(req: Request, res: Response) {
+  res.status(201).json(await service.attachEpod(userId(req), getParam(req, 'id'), req.file, req.body));
+}
+
 export async function updateTransit(req: Request, res: Response) {
   res.json(await service.updateTransit(userId(req), getParam(req, 'id'), req.body));
 }

@@ -125,6 +125,10 @@ model Order {
   @@index([status])
   @@index([type])
   @@index([exhibitionCampaignId])
+  // Date-filtered reports and the dashboard's rolling windows both scan on
+  // createdAt; the composite serves "window + realised statuses" in one index.
+  @@index([createdAt])
+  @@index([status, createdAt])
   @@map("orders")
 }
 

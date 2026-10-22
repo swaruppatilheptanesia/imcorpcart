@@ -155,6 +155,7 @@ model Product {
   orderItems     OrderItem[]
   wishlistItems  WishlistItem[]
   reviews        ProductReview[]
+  productViews   ProductView[]
   partnerEntries PartnerCatalogueEntry[]
 
   createdAt DateTime  @default(now())

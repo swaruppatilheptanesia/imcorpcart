@@ -2,32 +2,8 @@ import { OrderStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { toNumber } from '../models/serializers';
 import type { DashboardRange } from '../validators/dashboard.schema';
-
-// Resolve a range label to a [from, now] window. QTD/YTD are approximated from
-// the current time without Date.now-in-workflow constraints (this is app code).
-function rangeWindow(range: DashboardRange): { from: Date; now: Date } {
-  const now = new Date();
-  const from = new Date(now);
-  switch (range) {
-    case '7D':
-      from.setDate(now.getDate() - 7);
-      break;
-    case '30D':
-      from.setDate(now.getDate() - 30);
-      break;
-    case 'QTD': {
-      const q = Math.floor(now.getMonth() / 3) * 3;
-      from.setMonth(q, 1);
-      from.setHours(0, 0, 0, 0);
-      break;
-    }
-    case 'YTD':
-      from.setMonth(0, 1);
-      from.setHours(0, 0, 0, 0);
-      break;
-  }
-  return { from, now };
-}
+// Shared with the reports so the two agree on where a day starts (IST).
+import { rangeWindow } from '../utils/date-range';
 
 // Statuses that count toward realised GMV (exclude cancelled/returned).
 const REALISED: OrderStatus[] = [

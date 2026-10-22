@@ -1,0 +1,44 @@
+.bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.spacer {
+  flex: 1;
+}
+.filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.periodGroup {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.desc {
+  font-size: 13px;
+  color: var(--text2);
+  margin: 0 0 14px;
+}
+/* Reports are wide — Products has 22 columns — so the grid scrolls on its own
+   rather than squeezing every column into the viewport. */
+.tableScroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+}
+.overCap {
+  font-size: 13px;
+  color: var(--danger, #b4232c);
+  margin: 0 0 12px;
+}

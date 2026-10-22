@@ -1068,11 +1068,68 @@ export function updatePaymentConfig(body: {
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
-export function getReports(): Promise<{ type: string; title: string; description: string }[]> {
+export type ReportFormat = 'CSV' | 'XLSX';
+export type ReportFilterValues = Record<string, string | undefined>;
+
+export interface ReportFilterField {
+  kind: 'period' | 'select';
+  key: string;
+  label: string;
+  /** A period field's own default — see the server-side FilterFieldDef. */
+  defaultValue?: string;
+  options?: { value: string; label: string }[];
+  allLabel?: string;
+}
+
+export interface ReportDef {
+  id: string;
+  title: string;
+  description: string;
+  /** Filename stem, so the saved file matches the server's Content-Disposition. */
+  fileStem: string;
+  columns: { key: string; header: string; width: number | null }[];
+  filterFields: ReportFilterField[];
+}
+
+export interface ReportPreview {
+  columns: { key: string; header: string }[];
+  rows: (string | number | null)[][];
+  total: number;
+  cap: number;
+  overCap: boolean;
+}
+
+/** The catalogue drives the whole screen — ids, columns and filter controls. */
+export function getReportCatalogue(): Promise<ReportDef[]> {
   return apiFetch('/reports');
 }
-export function exportReport(type: string, format: 'CSV' | 'PDF'): Promise<{ id: string; reportType: string; format: string; fileUrl: string | null }> {
-  return apiFetch(`/reports/${type}/export`, { method: 'POST', query: { format }, body: {} });
+
+export function getReportPreview(type: string, filters: ReportFilterValues): Promise<ReportPreview> {
+  return apiFetch(`/reports/${type}/preview`, { query: filters });
+}
+
+/**
+ * Fetch a report as a file and hand it to the browser.
+ *
+ * The bytes need the bearer token, so a plain <a href> would 401 — same reason
+ * downloadOrderEpod fetches and opens a blob rather than linking.
+ */
+export async function downloadReport(
+  type: string,
+  format: ReportFormat,
+  filters: ReportFilterValues,
+  fileStem: string,
+): Promise<void> {
+  const blob = await apiBlob(`/reports/${type}/download`, { ...filters, format });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${fileStem}-${new Date().toISOString().slice(0, 10)}.${format === 'CSV' ? 'csv' : 'xlsx'}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke late: Safari aborts the download if the URL dies immediately.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 // ─── Bulk ────────────────────────────────────────────────────────────────────
@@ -1159,7 +1216,6 @@ export {
   addUserLabel,
   payConfig,
   gateways,
-  reportDefs,
   mappingRows,
   demoAccounts,
   DEMO_PASSWORD,
@@ -1297,9 +1353,10 @@ export function uploadOrderEpod(
   id: string,
   file: File,
   capturedAt?: string,
+  note?: string,
   onProgress?: (pct: number) => void,
 ): Promise<{ pushedToPartner: boolean }> {
-  return apiUpload(`/orders/${id}/epod`, file, onProgress, { capturedAt });
+  return apiUpload(`/orders/${id}/epod`, file, onProgress, { capturedAt, note });
 }
 
 /** Re-queue the ePOD push (for when the partner's endpoint was down). */
@@ -1332,7 +1389,7 @@ export async function downloadOrderEpod(id: string, fileName?: string | null): P
 /** Admin fulfilment: update the real shipment/transit status for any order. */
 export function updateOrderTransit(
   id: string,
-  input: { status: string; awbNumber?: string; courierCode?: string; description?: string },
+  input: { status: string; awbNumber?: string; courierCode?: string; deliveryMode?: string; description?: string },
 ): Promise<unknown> {
   return apiFetch(`/orders/${id}/transit`, { method: 'PATCH', body: input });
 }

@@ -1,26 +1,14 @@
 import { z } from 'zod';
-import { ReportFormat } from '@prisma/client';
+import { REPORT_IDS } from '../services/report/registry';
 
-export const REPORT_TYPES = [
-  'PROFITABILITY',
-  'VOLUME_VALUE',
-  'PARTNER_PERFORMANCE',
-  'COMPANY_SPEND',
-] as const;
+/**
+ * Only the report id and the output format are validated centrally — each
+ * report owns its own filter schema, which the controller applies after
+ * resolving the descriptor. That keeps a report's filters next to the query
+ * that consumes them rather than in a shared file nobody can safely change.
+ */
+export const reportTypeParams = z.object({ type: z.enum(REPORT_IDS) });
 
-export const exportReportParams = z.object({
-  type: z.enum(REPORT_TYPES),
-});
+export const reportDownloadQuery = z.object({ format: z.enum(['CSV', 'XLSX']).default('CSV') });
 
-export const exportReportQuery = z.object({
-  format: z.nativeEnum(ReportFormat).default('CSV'),
-});
-
-export const exportReportBody = z
-  .object({
-    from: z.coerce.date().optional(),
-    to: z.coerce.date().optional(),
-  })
-  .optional();
-
-export type ReportType = (typeof REPORT_TYPES)[number];
+export const reportPreviewQuery = z.object({});

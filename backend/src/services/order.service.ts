@@ -436,9 +436,14 @@ export async function swapItemColour(
 // order that came in through the partner API this also pushes the document to
 // the partner as base64, so there is no separate "now send it" step to forget.
 
-async function loadOrderForEpod(id: string) {
+async function loadOrderForEpod(id: string, resellerId?: string) {
   const order = await prisma.order.findFirst({
-    where: { OR: [{ id }, { orderNo: id }] },
+    where: {
+      OR: [{ id }, { orderNo: id }],
+      // Set by the reseller portal, so a reseller can only ever attach a proof
+      // to an order they actually fulfilled. Absent for the admin.
+      ...(resellerId ? { resellerId } : {}),
+    },
     include: {
       shipment: { select: { id: true, deliveredAt: true } },
       documents: { where: { docType: DocumentType.POD }, orderBy: { createdAt: 'desc' }, take: 1 },
@@ -453,9 +458,10 @@ export async function attachOrderEpod(
   file: Express.Multer.File | undefined,
   input: EpodInput,
   actorId: string,
+  opts: { resellerId?: string } = {},
 ) {
   if (!file) throw AppError.badRequest('No file provided (expected field "file")');
-  const order = await loadOrderForEpod(id);
+  const order = await loadOrderForEpod(id, opts.resellerId);
 
   // A proof of delivery before delivery is a mistake, not an edge case.
   if (order.status !== OrderStatus.DELIVERED) {
@@ -476,6 +482,9 @@ export async function attachOrderEpod(
       fileUrl: file.path,
       generatedAt: capturedAt,
       uploadedById: actorId,
+      // A reported field, so it gets a real column. It is mirrored into
+      // metadata for anything still reading the old JSON path.
+      issueNote: input.note ?? null,
       metadata: {
         fileName: file.originalname,
         mimeType: file.mimetype,

@@ -27,7 +27,7 @@ const SHIPMENT_STATUSES = [
   { value: 'DELIVERED', label: 'Delivered' },
   { value: 'RETURNED', label: 'Returned' },
 ];
-const COURIERS = ['BLUEDART', 'DELHIVERY', 'DTDC', 'EKART', 'INDIA_POST'];
+import { COURIER_OPTIONS, MODE_OPTIONS } from '@/lib/courier';
 
 // ─── Courier automation ──────────────────────────────────────────────────────
 // Sits above the manual transit form rather than replacing it: when the courier
@@ -135,6 +135,7 @@ export function EpodControl({
   const { flash } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [capturedAt, setCapturedAt] = useState('');
+  const [issueNote, setIssueNote] = useState('');
   const [busy, setBusy] = useState(false);
   const epod = info?.epod ?? null;
 
@@ -147,7 +148,12 @@ export function EpodControl({
     }
     setBusy(true);
     try {
-      const r = await uploadOrderEpod(orderId, file, capturedAt ? new Date(capturedAt).toISOString() : undefined);
+      const r = await uploadOrderEpod(
+        orderId,
+        file,
+        capturedAt ? new Date(capturedAt).toISOString() : undefined,
+        issueNote.trim() || undefined,
+      );
       flash(r.pushedToPartner ? 'Proof of delivery saved and sent to the partner' : 'Proof of delivery saved');
       onDone();
     } catch (e) {
@@ -205,6 +211,13 @@ export function EpodControl({
         <>
           <Field label="Captured on" hint="When the courier took the proof. Defaults to the delivery time.">
             <Input type="datetime-local" value={capturedAt} onChange={(e) => setCapturedAt(e.target.value)} />
+          </Field>
+          <Field label="Reason for issue" hint="Optional — why this proof is disputed or incomplete. Appears in the Orders report.">
+            <Input
+              value={issueNote}
+              onChange={(e) => setIssueNote(e.target.value)}
+              placeholder="e.g. Signature illegible, recipient name differs"
+            />
           </Field>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
@@ -308,6 +321,7 @@ export function TransitControl({
   orderId,
   cancelled,
   defaultCourier,
+  defaultMode,
   currentAwb,
   currentStatus,
   onDone,
@@ -316,6 +330,9 @@ export function TransitControl({
   cancelled: boolean;
   /** The product's assigned courier, pre-selected but freely overridable. */
   defaultCourier?: string;
+  /** The mode already on the shipment, else the product's preference. Left
+   *  blank, the server fills it from the product on the first dispatch. */
+  defaultMode?: string;
   /** The AWB already on the shipment, so re-saving doesn't blank it. */
   currentAwb?: string | null;
   /** The shipment's current status, where the caller knows it. Without this the
@@ -327,6 +344,7 @@ export function TransitControl({
   const [status, setStatus] = useState(currentStatus ?? 'DISPATCHED');
   const [awb, setAwb] = useState(currentAwb ?? '');
   const [courier, setCourier] = useState(defaultCourier ?? '');
+  const [mode, setMode] = useState(defaultMode ?? '');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -337,8 +355,9 @@ export function TransitControl({
     setStatus(currentStatus ?? 'DISPATCHED');
     setAwb(currentAwb ?? '');
     setCourier(defaultCourier ?? '');
+    setMode(defaultMode ?? '');
     setNote('');
-  }, [orderId, currentAwb, currentStatus, defaultCourier]);
+  }, [orderId, currentAwb, currentStatus, defaultCourier, defaultMode]);
 
   if (cancelled) {
     return <p className={s.muted} style={{ fontSize: 12.5 }}>This order is cancelled — fulfilment is closed.</p>;
@@ -351,6 +370,7 @@ export function TransitControl({
         status,
         awbNumber: awb.trim() || undefined,
         courierCode: courier || undefined,
+        deliveryMode: mode || undefined,
         description: note.trim() || undefined,
       });
       flash('Fulfilment status updated');
@@ -378,8 +398,8 @@ export function TransitControl({
         <Field label="Courier">
           <Select block value={courier} onChange={(e) => setCourier(e.target.value)}>
             <option value="">—</option>
-            {COURIERS.map((c) => (
-              <option key={c} value={c}>{c}</option>
+            {COURIER_OPTIONS.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </Select>
         </Field>
@@ -387,6 +407,14 @@ export function TransitControl({
           <Input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="Optional" />
         </Field>
       </div>
+      <Field label="Transport mode" hint="Left blank, this defaults to the product's mode on dispatch">
+        <Select block value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="">—</option>
+          {MODE_OPTIONS.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </Select>
+      </Field>
       <Field label="Note (optional)">
         <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Shown on the tracking event" />
       </Field>

@@ -306,7 +306,8 @@ enum NotificationStatus {
 // ── Analytics ────────────────────────────────────────────────────────────────
 enum ReportFormat {
   CSV
-  PDF
+  PDF // retained for historical ReportExport rows; the download endpoint no longer offers it
+  XLSX
 }
 
 // ── Cashback / wallet ────────────────────────────────────────────────────────

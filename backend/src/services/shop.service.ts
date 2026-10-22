@@ -179,7 +179,9 @@ export function pickBuyBox(offers: ShopOfferRow[]): ShopOfferRow | null {
 
 // The offer a card/detail page quotes. Normally the buy box; when nothing is in
 // stock, the cheapest listed offer — the price this product comes back at.
-function pickDisplayOffer(offers: ShopOfferRow[]): ShopOfferRow | null {
+// Exported so the Products report quotes exactly what the storefront quotes
+// rather than re-deriving a second, divergent pricing rule.
+export function pickDisplayOffer(offers: ShopOfferRow[]): ShopOfferRow | null {
   return pickBuyBox(offers) ?? cheapestByEpp(listableOffers(offers));
 }
 
@@ -449,12 +451,39 @@ export async function listProducts(userId?: string) {
   return { data: serialize(rows.map((r) => toStoreProduct(r, { sepp }))) };
 }
 
+/**
+ * Count a signed-in employee's visit to a product page.
+ *
+ * Fire-and-forget and swallowing every error on purpose: this is telemetry for
+ * one column of one report, and it must never be able to break a product page.
+ * It is also why there is no `await` — the shopper does not wait on it.
+ *
+ * Only called from the authed path. The public catalogue has no user, so
+ * anonymous browsing stays unattributed, which is the agreed behaviour.
+ */
+function recordProductView(productId: string, userId?: string): void {
+  if (!userId) return;
+  void (async () => {
+    const employee = await prisma.employee.findFirst({
+      where: { userId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!employee) return; // admins and other roles browsing the shop
+    await prisma.productView.upsert({
+      where: { employeeId_productId: { employeeId: employee.id, productId } },
+      create: { employeeId: employee.id, productId },
+      update: { viewCount: { increment: 1 } },
+    });
+  })().catch(() => undefined);
+}
+
 export async function getProduct(id: string, userId?: string) {
   const p = await prisma.product.findFirst({
     where: { id, ...notDeleted, ...STOREFRONT_SHOWABLE },
     include: shopProductInclude,
   });
   if (!p) throw AppError.notFound('Product not found');
+  recordProductView(p.id, userId);
   const sepp = await seppFor(userId);
   const product = toStoreProduct(p, { sepp });
   const family = await familyMembersOf(p, {});

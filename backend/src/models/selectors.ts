@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { DocumentType, Prisma } from '@prisma/client';
 
 // Soft-delete guard: models with a `deletedAt` column should exclude deleted
 // rows from list/get by default.
@@ -88,6 +88,14 @@ export const orderListSelect = {
         },
       },
     },
+  },
+  // Bounded POD branch so the Orders list can offer one-click proof upload
+  // without a request per row. Metadata carries the original file name.
+  documents: {
+    where: { docType: DocumentType.POD },
+    select: { id: true, generatedAt: true, createdAt: true, metadata: true },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
   },
   _count: { select: { items: true } },
 } satisfies Prisma.OrderSelect;

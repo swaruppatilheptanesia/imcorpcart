@@ -54,7 +54,7 @@ export interface HttpClient {
     onProgress?: (pct: number) => void,
     fields?: Record<string, string | undefined>,
   ): Promise<T>;
-  apiBlob(path: string): Promise<Blob>;
+  apiBlob(path: string, query?: RequestOpts['query']): Promise<Blob>;
 }
 
 export function createHttpClient(store: AuthStore): HttpClient {
@@ -94,11 +94,11 @@ export function createHttpClient(store: AuthStore): HttpClient {
 
   // Binary GET (a stored document). Kept separate from apiFetch because parse()
   // always JSON-parses the body, which a PDF is not.
-  async function apiBlob(path: string): Promise<Blob> {
+  async function apiBlob(path: string, query?: RequestOpts['query']): Promise<Blob> {
     const headers: Record<string, string> = {};
     const token = store.getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(buildUrl(path), { headers });
+    const res = await fetch(buildUrl(path, query), { headers });
     if (!res.ok) {
       if (res.status === 401) {
         store.clearAuth();

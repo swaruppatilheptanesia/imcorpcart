@@ -14,6 +14,8 @@ import { resolveResellerId } from '../utils/scope';
 import { ensureOwnedGift } from './product-write';
 import { creditWallet } from './shop.service';
 import { notifyPartnerOrderStatus } from './webhook.service';
+import { attachOrderEpod } from './order.service';
+import type { EpodInput } from '../validators/order.schema';
 import type {
   ResellerListQuery,
   TransitUpdateInput,
@@ -437,6 +439,23 @@ export async function getOrder(userId: string, id: string) {
   return serialize(order);
 }
 
+/**
+ * Attach a proof of delivery to one of this reseller's own delivered orders.
+ *
+ * The reseller is the party actually holding the POD — until now only a Super
+ * Admin could upload one, so it had to be emailed in first. Ownership is
+ * enforced by scoping the order lookup, not by a check after the fact.
+ */
+export async function attachEpod(
+  userId: string,
+  id: string,
+  file: Express.Multer.File | undefined,
+  input: EpodInput,
+) {
+  const resellerId = await resolveResellerId(userId);
+  return attachOrderEpod(id, file, input, userId, { resellerId });
+}
+
 export async function updateTransit(userId: string, id: string, input: TransitUpdateInput) {
   const resellerId = await resolveResellerId(userId);
   const order = await prisma.order.findFirst({
@@ -477,12 +496,28 @@ export async function applyTransit(order: OrderForTransit, input: TransitUpdateI
 
   const nextOrderStatus = ORDER_FOR_SHIPMENT[input.status];
 
+  // The mode actually shipped. An explicit choice always wins; otherwise, on
+  // the first dispatch, fall back to the preference authored on the product.
+  //
+  // Resolved with its own query rather than by widening OrderForTransit: that
+  // type has three callers, and the courier tracking poller spreads a
+  // differently-shaped order into it.
+  let deliveryMode = input.deliveryMode ?? null;
+  if (!deliveryMode && isDispatch && !order.shipment?.deliveryMode) {
+    const line = await prisma.orderItem.findFirst({
+      where: { orderId: order.id, product: { deliveryMode: { not: null } } },
+      select: { product: { select: { deliveryMode: true } } },
+    });
+    deliveryMode = line?.product?.deliveryMode ?? null;
+  }
+
   await prisma.$transaction(async (tx) => {
     // Upsert the shipment (partner optional — reseller self-fulfils).
     const shipmentData = {
       status: input.status,
       ...(input.awbNumber ? { awbNumber: input.awbNumber } : {}),
       ...(courierId ? { courierId } : {}),
+      ...(deliveryMode ? { deliveryMode } : {}),
       ...(isDispatch && !order.shipment?.dispatchedAt ? { dispatchedAt: now } : {}),
       ...(isDelivered ? { deliveredAt: now, trackingActive: false } : {}),
     };

@@ -1,4 +1,4 @@
-import type { PayMethod, ReportDef, UserDataset, UserTab } from '../types';
+import type { PayMethod, UserDataset, UserTab } from '../types';
 
 /** Users tables by tab — from dataSets. */
 export const userDatasets: Record<UserTab, UserDataset> = {
@@ -75,14 +75,6 @@ export const payConfig: PayMethod[] = [
 export const gateways = [
   { id: 'razorpay', name: 'Razorpay', note: 'Primary · UPI, cards, net banking' },
   { id: 'payu', name: 'PayU', note: 'Backup gateway' },
-];
-
-/** Reports — from reportDefs. */
-export const reportDefs: ReportDef[] = [
-  { id: 'profit', title: 'Profitability report', desc: 'Margin by category, vendor, and company.', range: 'Last 30 days' },
-  { id: 'volume', title: 'Volume & value', desc: 'Units and GMV across the catalog.', range: 'Last 30 days' },
-  { id: 'perf', title: 'Product & partner performance', desc: 'Best/worst sellers and partner SLAs.', range: 'Quarter to date' },
-  { id: 'company', title: 'Company intelligence', desc: 'Spend, headcount, and adoption per company.', range: 'Year to date' },
 ];
 
 /** Bulk import column mapping, shown to the client on the Bulk operations screen.

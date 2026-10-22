@@ -5,6 +5,7 @@ import type { StoreOrderStatus } from '@/data/store-types';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
 import { getResellerOrderDetail } from '../data';
+import { EpodUpload } from './EpodUpload';
 import styles from './OrderDetailDrawer.module.css';
 
 const tone: Record<StoreOrderStatus, SemanticTone> = {
@@ -23,7 +24,7 @@ export function OrderDetailDrawer({
   orderId: string | null;
   onClose: () => void;
 }) {
-  const { data, state, error } = useAsync(
+  const { data, state, error, reload } = useAsync(
     () => (orderId ? getResellerOrderDetail(orderId) : Promise.resolve(null)),
     [orderId],
   );
@@ -75,6 +76,16 @@ export function OrderDetailDrawer({
             <Line k="Courier" v={data.courier} />
             <Line k="AWB" v={data.awb} mono />
             <Line k="Ship to" v={data.address} />
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.label}>Proof of delivery</div>
+            <EpodUpload
+              orderNo={orderId ?? ''}
+              delivered={data.status === 'Delivered'}
+              hasPod={false}
+              onDone={reload}
+            />
           </div>
 
           <div className={styles.section}>

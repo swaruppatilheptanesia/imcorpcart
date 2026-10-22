@@ -242,8 +242,21 @@ export const ORDER_STATUS_OUT: Record<OrderStatus, string> = {
   Cancelled: 'CANCELLED',
 };
 
+interface ApiOrderDocument {
+  id: string;
+  docType: string;
+  // Optional: a POD's path is private (served only through the authed route), so
+  // the partner order rows leave it out entirely. Nothing reads it either way.
+  fileUrl?: string | null;
+  generatedAt: string | null;
+  createdAt: string;
+  metadata?: { fileName?: string | null } | null;
+}
+
 interface ApiOrderListRow {
+  id: string;
   orderNo: string;
+  documents?: ApiOrderDocument[];
   type?: string;
   status: string;
   total: number;
@@ -273,8 +286,18 @@ function orderVendor(o: ApiOrderListRow): string {
 }
 
 export function toOrderListRow(o: ApiOrderListRow): Order {
+  const pod = o.documents?.[0] ?? null;
   return {
     id: `#${o.orderNo}`,
+    cuid: o.id,
+    epod: pod
+      ? {
+          id: pod.id,
+          capturedAt: pod.generatedAt ?? null,
+          fileName: pod.metadata?.fileName ?? null,
+          uploadedAt: pod.createdAt,
+        }
+      : null,
     type: o.type,
     company: o.company?.name ?? '—',
     buyer: o.employee?.user?.fullName ?? '—',
@@ -308,16 +331,6 @@ interface ApiOrderItem {
     courierCode?: string | null;
     source?: { name: string } | null;
   };
-}
-interface ApiOrderDocument {
-  id: string;
-  docType: string;
-  // Optional: a POD's path is private (served only through the authed route), so
-  // the partner order rows leave it out entirely. Nothing reads it either way.
-  fileUrl?: string | null;
-  generatedAt: string | null;
-  createdAt: string;
-  metadata?: { fileName?: string | null } | null;
 }
 interface ApiOrderFull extends ApiOrderListRow {
   id: string;

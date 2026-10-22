@@ -49,6 +49,10 @@ model Shipment {
   dispatchedAt   DateTime?
   deliveredAt    DateTime?
   podUrl         String? // proof of delivery upload
+  // How the parcel actually travelled, captured at dispatch and defaulted from
+  // the line's Product.deliveryMode. The product field is only a preference;
+  // this is the record of what was used.
+  deliveryMode   DeliveryMode? @map("delivery_mode")
 
   // Courier-aggregator (H.K. Data Services) state. `labelUrl` is the shipping
   // label PDF returned at AWB generation — printed before dispatch, NOT a proof
@@ -103,6 +107,10 @@ model OrderDocument {
   generatedAt  DateTime?
   uploadedById String?
   uploadedBy   User?          @relation("DocUploader", fields: [uploadedById], references: [id])
+  // Why this proof is disputed or incomplete — operator-entered at upload.
+  // A real column rather than metadata JSON: it is a reported field, and the
+  // old metadata.note path was never written by any UI.
+  issueNote    String?        @map("issue_note")
   metadata     Json?
 
   createdAt DateTime @default(now())

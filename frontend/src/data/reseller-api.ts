@@ -95,6 +95,8 @@ export interface TransitUpdateInput {
   status: 'PENDING' | 'DISPATCHED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'RETURNED';
   awbNumber?: string;
   courierCode?: 'BLUEDART' | 'DELHIVERY' | 'DTDC' | 'EKART' | 'INDIA_POST';
+  /** Blank lets the server default it from the product on the first dispatch. */
+  deliveryMode?: 'APEX' | 'DP' | 'SURFACE';
   description?: string;
 }
 
@@ -172,6 +174,22 @@ export function getOrders(bucket?: string): Promise<{ data: ResellerOrderApi[] }
 
 export function getOrder(id: string): Promise<ResellerOrderFullApi> {
   return client.apiFetch(`/reseller/orders/${id}`);
+}
+
+/**
+ * Attach a proof of delivery to one of this reseller's delivered orders.
+ *
+ * The reseller is the party holding the POD; until now only a Super Admin
+ * could upload one, so it had to be emailed in first. The server scopes the
+ * lookup by reseller, so this can only ever touch their own orders.
+ */
+export function uploadResellerEpod(
+  orderNo: string,
+  file: File,
+  note?: string,
+  onProgress?: (pct: number) => void,
+): Promise<{ pushedToPartner: boolean }> {
+  return client.apiUpload(`/reseller/orders/${orderNo}/epod`, file, onProgress, { note });
 }
 
 export function updateTransit(orderNo: string, input: TransitUpdateInput): Promise<unknown> {

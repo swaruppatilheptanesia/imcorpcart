@@ -48,6 +48,8 @@ export type ColourSwapInput = z.infer<typeof colourSwapBody>;
 // and defaults server-side to the delivery time.
 export const epodBody = z.object({
   capturedAt: z.coerce.date().optional(),
+  // Why the proof is disputed or incomplete. Surfaced in the Orders report as
+  // "POD note"; previously accepted here but never sent by any UI.
   note: z.string().trim().max(500).optional(),
 });
 export type EpodInput = z.infer<typeof epodBody>;

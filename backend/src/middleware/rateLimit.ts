@@ -10,6 +10,26 @@ export const authLimiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts, try again later' } },
 });
 
+// Throughput guard for report downloads, keyed per admin user.
+//
+// Generating a 50k-row xlsx is zip compression on a single-threaded process, so
+// a burst of exports visibly slows every other request. A job queue is the real
+// answer; this is the cheap one.
+//
+// The budget has to clear a legitimate session comfortably: five reports in two
+// formats is ten downloads on its own, so a limit near that number locks out
+// ordinary use. This is an abuse brake, not a quota.
+export const reportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
+  message: {
+    error: { code: 'RATE_LIMITED', message: 'Too many report downloads, try again in a few minutes' },
+  },
+});
+
 // Throughput guard for the partner integration API, keyed per partner token.
 //
 // This used to read an `x-api-key` header the partner API never sends — it
