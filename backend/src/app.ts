@@ -40,8 +40,10 @@ export function createApp(): Application {
 
   app.use(API_PREFIX, routes);
 
-  // Machine-to-machine partner integration API (separate front door, its own
-  // key + bearer-secret auth — a sibling to /api, not under it).
+  // Machine-to-machine partner integration API. The canonical mount is UNDER
+  // /api (routes/index.ts → /api/partner-api/v1), because production's reverse
+  // proxy forwards only /api; this bare mount is a local convenience and is not
+  // the URL handed to partners.
   app.use('/partner-api/v1', partnerRoutes);
 
   // 404 + centralised error handling (must be last).

@@ -11,7 +11,7 @@ export const partnerOpenApiSpec = {
       'The **Imcorpcart Partner API** lets approved integration partners browse their catalogue, ' +
       'check delivery serviceability, place orders, and follow those orders all the way to a signed ' +
       'proof of delivery — machine-to-machine.\n\n' +
-      '**Base URL.** `https://imcorp.heptanesia.com/partner-api/v1` — every path below is relative ' +
+      '**Base URL.** `https://imcorp.heptanesia.com/api/partner-api/v1` — every path below is relative ' +
       'to it.\n\n' +
       '**Authentication.** Every request carries a single bearer token issued to you:\n\n' +
       '```\nAuthorization: Bearer <your-token>\n```\n\n' +
@@ -56,8 +56,8 @@ export const partnerOpenApiSpec = {
       '`RateLimit-*` headers. A minute-by-minute poll of `GET /orders?updatedSince=` costs one.',
   },
   servers: [
-    { url: 'https://imcorp.heptanesia.com/partner-api/v1', description: 'Production' },
-    { url: 'http://localhost:4000/partner-api/v1', description: 'Local dev' },
+    { url: 'https://imcorp.heptanesia.com/api/partner-api/v1', description: 'Production' },
+    { url: 'http://localhost:4000/api/partner-api/v1', description: 'Local dev' },
   ],
   tags: [
     { name: 'Catalogue', description: 'Products enabled for you, at your configured price' },
