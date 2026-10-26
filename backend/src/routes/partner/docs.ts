@@ -5,11 +5,9 @@ import { swaggerCustomCss, swaggerFavicon } from '../../docs/swagger-theme';
 
 // Public partner-API reference — the raw OpenAPI spec (`/openapi.json`) + branded
 // Swagger UI (`/docs`). No auth: read-only (no Authorize box, "Try it out"
-// disabled), so it's safe to share with vendors. Extracted into its own router so
-// it can be mounted BOTH at `/partner-api/v1` (the canonical path) AND under the
-// `/api` prefix (`/api/partner-api/v1/docs`) — the latter rides the reverse proxy
-// that already forwards `/api` to the backend, so the docs open in production even
-// when `/partner-api` itself isn't proxied.
+// disabled), so it's safe to share with vendors. Served by the partner router,
+// which is mounted under `/api` (canonical: `/api/partner-api/v1/docs`) and at
+// the bare `/partner-api/v1` for local use.
 const spec = partnerOpenApiSpec as unknown as Record<string, unknown>;
 
 export const partnerDocsRouter = Router();
