@@ -3,7 +3,7 @@
   "info": {
     "title": "Imcorpcart Partner API",
     "version": "1.0.0",
-    "description": "The **Imcorpcart Partner API** lets approved integration partners browse their catalogue, check delivery serviceability, place orders, and follow those orders all the way to a signed proof of delivery \u2014 machine-to-machine.\n\n**Base URL.** `https://imcorp.heptanesia.com/api/partner-api/v1` \u2014 every path below is relative to it.\n\n**Authentication.** Every request carries a single bearer token issued to you:\n\n```\nAuthorization: Bearer <your-token>\n```\n\nAll traffic is over HTTPS. Prices shown are *your* price (a per-product offer price set by imcorpcart, or the configured basis, plus commission %); the catalogue is a snapshot, so availability and price are re-validated at order time with structured error codes. This reference is read-only.\n\n## How an integration works\n\n1. **Browse** \u2014 `GET /catalogue` for what you may sell, `GET /delivery` to check a pincode.\n2. **Order** \u2014 `POST /orders` with your own `externalRef`. It is the dedup key, so retries are safe.\n3. **Follow** \u2014 poll `GET /orders?updatedSince=` to see dispatch, every courier scan, and delivery.\n4. **Collect the proof** \u2014 `GET /orders/{ref}/epod` once an order is delivered.\n\n## Following an order\n\nThere is nothing to subscribe to and no endpoint for you to host: everything we know about your orders is readable here, and you decide how often to look.\n\n**Polling recipe.** Call `GET /orders?updatedSince=<the previous response\u2019s `meta.syncedAt`>` and keep the new `syncedAt` for the next call. The window deliberately overlaps \u2014 reads are idempotent, so seeing a row twice is harmless and nothing is ever missed. A first sync omits `updatedSince` and pages through everything.\n\n`updatedSince` catches every change that matters, including the ones that do not change the order itself: a courier scan (`In Transit` \u2192 `Out for Delivery`) and a proof of delivery being attached both bring the order back on your next poll.\n\nNothing expires. An order stays readable, and its proof of delivery stays downloadable, for as long as the order exists \u2014 so a gap in your polling costs you nothing.\n\n## Order status\n\nEvery order carries both `statusCode` (stable, switch on this) and `status` (the label, show this). Status reflects the **shipment** where there is one, so In Transit and Out for Delivery are distinct states and not folded into Dispatched.\n\n| `statusCode` | `status` | Meaning |\n|---|---|---|\n| `CONFIRMED` | Confirmed | Accepted, nothing shipped yet |\n| `DISPATCHED` | Dispatched | Handed to the courier |\n| `IN_TRANSIT` | In Transit | Moving through the network |\n| `OUT_FOR_DELIVERY` | Out for Delivery | On the delivery run |\n| `DELIVERED` | Delivered | Received \u2014 a proof of delivery usually follows |\n| `CANCELLED` | Cancelled | Cancelled by you or by us (`remarks` says why) |\n| `RETURNED` | Returned | Returned to origin |\n| `FAILED` | Failed | A delivery attempt failed |\n\n## Rate limit\n\n**120 requests per minute per token**, reported on every response in the standard `RateLimit-*` headers. A minute-by-minute poll of `GET /orders?updatedSince=` costs one."
+    "description": "The **Imcorpcart Partner API** lets approved integration partners browse their catalogue, check delivery serviceability, place orders, and follow those orders all the way to a signed proof of delivery \u2014 machine-to-machine.\n\n**Base URL.** `https://imcorp.heptanesia.com/api/partner-api/v1` \u2014 every path below is relative to it.\n\n**Authentication.** Every request carries a single bearer token issued to you:\n\n```\nAuthorization: Bearer <your-token>\n```\n\nAll traffic is over HTTPS. Prices shown are *your* price: set by imcorpcart for each product, commission included; the catalogue is a snapshot, so availability and price are re-validated at order time with structured error codes. This reference is read-only.\n\n## How an integration works\n\n1. **Browse** \u2014 `GET /catalogue` for what you may sell, `GET /delivery` to check a pincode.\n2. **Order** \u2014 `POST /orders` with your own `externalRef`. It is the dedup key, so retries are safe.\n3. **Follow** \u2014 poll `GET /orders?updatedSince=` to see dispatch, every courier scan, and delivery.\n4. **Collect the proof** \u2014 `GET /orders/{ref}/epod` once an order is delivered.\n\n## Following an order\n\nThere is nothing to subscribe to and no endpoint for you to host: everything we know about your orders is readable here, and you decide how often to look.\n\n**Polling recipe.** Call `GET /orders?updatedSince=<the previous response\u2019s `meta.syncedAt`>` and keep the new `syncedAt` for the next call. The window deliberately overlaps \u2014 reads are idempotent, so seeing a row twice is harmless and nothing is ever missed. A first sync omits `updatedSince` and pages through everything.\n\n`updatedSince` catches every change that matters, including the ones that do not change the order itself: a courier scan (`In Transit` \u2192 `Out for Delivery`) and a proof of delivery being attached both bring the order back on your next poll.\n\nNothing expires. An order stays readable, and its proof of delivery stays downloadable, for as long as the order exists \u2014 so a gap in your polling costs you nothing.\n\n## Order status\n\nEvery order carries both `statusCode` (stable, switch on this) and `status` (the label, show this). Status reflects the **shipment** where there is one, so In Transit and Out for Delivery are distinct states and not folded into Dispatched.\n\n| `statusCode` | `status` | Meaning |\n|---|---|---|\n| `CONFIRMED` | Confirmed | Accepted, nothing shipped yet |\n| `DISPATCHED` | Dispatched | Handed to the courier |\n| `IN_TRANSIT` | In Transit | Moving through the network |\n| `OUT_FOR_DELIVERY` | Out for Delivery | On the delivery run |\n| `DELIVERED` | Delivered | Received \u2014 a proof of delivery usually follows |\n| `CANCELLED` | Cancelled | Cancelled by you or by us (`remarks` says why) |\n| `RETURNED` | Returned | Returned to origin |\n| `FAILED` | Failed | A delivery attempt failed |\n\n## Rate limit\n\n**120 requests per minute per token**, reported on every response in the standard `RateLimit-*` headers. A minute-by-minute poll of `GET /orders?updatedSince=` costs one."
   },
   "servers": [
     {
@@ -64,7 +64,7 @@
           "Catalogue"
         ],
         "summary": "List your catalogue (paginated snapshot)",
-        "description": "Only products imcorpcart has enabled for you. `price` is your price (a per-product offer price set by imcorpcart, or the configured basis, plus commission %). Not live inventory \u2014 validate at order time.",
+        "description": "Only products imcorpcart has enabled for you. `price` is your price for the product, set by imcorpcart with commission included; `mrp` is the list price. Not live inventory \u2014 validate at order time.",
         "parameters": [
           {
             "name": "page",
@@ -623,25 +623,11 @@
           },
           "price": {
             "type": "number",
-            "description": "Your price = (offer price set by imcorpcart for the product, else base(basis)) \u00d7 (1 + commission%)"
-          },
-          "discountPercent": {
-            "type": "integer",
-            "description": "MRP vs your price"
-          },
-          "priceBasis": {
-            "type": "string",
-            "enum": [
-              "MRP",
-              "MOP",
-              "EPP"
-            ]
-          },
-          "commissionPct": {
-            "type": "number"
+            "description": "Your price for this product, set by imcorpcart with commission included. This is what you are charged; send it as `price` on POST /orders."
           },
           "mrp": {
-            "type": "number"
+            "type": "number",
+            "description": "Maximum retail price (list price), as-is"
           },
           "gstPercent": {
             "type": "number",
@@ -657,6 +643,23 @@
           "description": {
             "type": "string",
             "nullable": true
+          },
+          "specs": {
+            "type": "array",
+            "description": "Specification rows as label/value pairs, e.g. {\"k\": \"Display\", \"v\": \"6.7-inch OLED, 120Hz\"}. Often empty.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "k": {
+                  "type": "string",
+                  "description": "Label"
+                },
+                "v": {
+                  "type": "string",
+                  "description": "Value"
+                }
+              }
+            }
           },
           "images": {
             "type": "array",

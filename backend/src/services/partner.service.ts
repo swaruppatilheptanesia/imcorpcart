@@ -373,14 +373,12 @@ type CatalogueEntryWithProduct = Prisma.PartnerCatalogueEntryGetPayload<{
 
 function toPartnerCatalogueProduct(entry: CatalogueEntryWithProduct) {
   const sp = toStoreProduct(entry.product, { public: true });
-  const price = entryPrice(entry);
-  const mrp = toNumber(entry.product.mrp);
+  // The partner sees two figures only: `mrp` (list price, as-is) and `price` —
+  // what we charge them, i.e. the admin-set offer price or basis price with the
+  // commission already added. How it was derived (basis, commission %) is ours.
   return {
     ...toPartnerProduct(sp),
-    price,
-    discountPercent: mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0,
-    priceBasis: entry.priceBasis,
-    commissionPct: entry.commissionPct != null ? toNumber(entry.commissionPct) : 0,
+    price: entryPrice(entry),
   };
 }
 

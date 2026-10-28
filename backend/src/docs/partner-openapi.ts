@@ -15,7 +15,7 @@ export const partnerOpenApiSpec = {
       'to it.\n\n' +
       '**Authentication.** Every request carries a single bearer token issued to you:\n\n' +
       '```\nAuthorization: Bearer <your-token>\n```\n\n' +
-      'All traffic is over HTTPS. Prices shown are *your* price (a per-product offer price set by imcorpcart, or the configured basis, plus commission %); the catalogue ' +
+      'All traffic is over HTTPS. Prices shown are *your* price: set by imcorpcart for each product, commission included; the catalogue ' +
       'is a snapshot, so availability and price are re-validated at order time with structured error ' +
       'codes. This reference is read-only.\n\n' +
       '## How an integration works\n\n' +
@@ -80,7 +80,7 @@ export const partnerOpenApiSpec = {
       get: {
         tags: ['Catalogue'],
         summary: 'List your catalogue (paginated snapshot)',
-        description: 'Only products imcorpcart has enabled for you. `price` is your price (a per-product offer price set by imcorpcart, or the configured basis, plus commission %). Not live inventory — validate at order time.',
+        description: 'Only products imcorpcart has enabled for you. `price` is your price for the product, set by imcorpcart with commission included; `mrp` is the list price. Not live inventory — validate at order time.',
         parameters: [
           { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } },
           { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
@@ -264,15 +264,17 @@ export const partnerOpenApiSpec = {
           brand: { type: 'string', nullable: true },
           category: { type: 'string' },
           subCategory: { type: 'string' },
-          price: { type: 'number', description: 'Your price = (offer price set by imcorpcart for the product, else base(basis)) × (1 + commission%)' },
-          discountPercent: { type: 'integer', description: 'MRP vs your price' },
-          priceBasis: { type: 'string', enum: ['MRP', 'MOP', 'EPP'] },
-          commissionPct: { type: 'number' },
-          mrp: { type: 'number' },
+          price: { type: 'number', description: 'Your price for this product, set by imcorpcart with commission included. This is what you are charged; send it as `price` on POST /orders.' },
+          mrp: { type: 'number', description: 'Maximum retail price (list price), as-is' },
           gstPercent: { type: 'number', nullable: true },
           hsnCode: { type: 'string', nullable: true },
           stock: { type: 'integer' },
           description: { type: 'string', nullable: true },
+          specs: {
+            type: 'array',
+            description: 'Specification rows as label/value pairs, e.g. {"k": "Display", "v": "6.7-inch OLED, 120Hz"}. Often empty.',
+            items: { type: 'object', properties: { k: { type: 'string', description: 'Label' }, v: { type: 'string', description: 'Value' } } },
+          },
           images: { type: 'array', items: { type: 'string' } },
           warrantyText: { type: 'string', nullable: true },
           termsText: { type: 'string', nullable: true },
