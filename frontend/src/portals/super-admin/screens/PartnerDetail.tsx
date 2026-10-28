@@ -336,7 +336,7 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
   return (
     <Card pad="lg">
       <div className={styles.cardTitle}>Commercials</div>
-      <p className={styles.cardHint}>Defaults applied when adding products in the Catalogue tab (each product can be overridden there).</p>
+      <p className={styles.cardHint}>Defaults applied when adding products in the Catalogue tab (each product can be overridden there). A manual Offer price on a product replaces the basis; commission still applies on top.</p>
       <div className={s.formRow2}>
         <Field label="Default price basis">
           <Select block value={basis} onChange={(e) => setBasis(e.target.value as PartnerPriceBasis)}>

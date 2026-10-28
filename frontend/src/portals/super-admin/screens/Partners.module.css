@@ -391,8 +391,23 @@
   font-variant-numeric: tabular-nums;
 }
 .entryVendor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+/* Flags a partner price derived from the manual offer price rather than the basis. */
+.manualTag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .entryProductBtn {
   display: flex;

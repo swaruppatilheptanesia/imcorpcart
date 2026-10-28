@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Trash2, PackagePlus, AlertTriangle, Eye } from 'lucide-react';
+import { Search, Plus, Trash2, PackagePlus, AlertTriangle, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button, Checkbox, DataTable, Drawer, EmptyState, Input, ProductThumb, Row, Select, Skeleton, StatusPill, useToast } from '@/components';
 import {
   getCategories,
@@ -22,44 +22,134 @@ import s from './screen.module.css';
 import styles from './Partners.module.css';
 
 const BASES: PartnerPriceBasis[] = ['MRP', 'MOP', 'EPP'];
-const ENTRY_COLS = '1.9fr 0.8fr 1.1fr 1.1fr 0.7fr 0.8fr 0.9fr 72px';
+// Product · Category · MRP/MOP/EPP · Basis · Offer price · Commission · Partner price · actions
+const ENTRY_COLS = '2fr 1fr 1.1fr 0.75fr 1fr 0.8fr 1.15fr 72px';
+// The list is server-paged (the API caps a page at 100 — asking for more silently
+// truncates, which is how the tab used to show "100 products" for a 671-row catalogue).
+const PAGE_SIZE = 50;
+// The candidates picker can only ever see one page; past that the admin narrows the search.
+const CANDIDATE_PAGE = 100;
 
-// Local recompute for instant feedback (mirrors the backend resolver).
+// Local recompute for instant feedback (mirrors the backend `entryPrice`): the
+// manual offer price, when set, replaces the basis-derived base; commission on top.
 function baseFor(row: { mrp: number; mop: number; epp: number | null }, basis: PartnerPriceBasis): number {
   if (basis === 'MRP') return row.mrp;
   if (basis === 'MOP') return row.mop;
   return row.epp ?? row.mrp;
 }
-function vendorPrice(base: number, commissionPct: number): number {
+function partnerPrice(row: { mrp: number; mop: number; epp: number | null }, basis: PartnerPriceBasis, offerPrice: number | null, commissionPct: number): number {
+  const base = offerPrice ?? baseFor(row, basis);
   return Math.round(base * (1 + (commissionPct || 0) / 100));
 }
 
 export function PartnerCatalogue({ partnerId, defaultBasis, defaultCommission }: { partnerId: string; defaultBasis: PartnerPriceBasis; defaultCommission: number }) {
   const { flash } = useToast();
-  const { data: catData, state, error, reload } = useAsync(() => getPartnerCatalogue(partnerId, { pageSize: 500 }), [partnerId]);
+  const [categories, setCategories] = useState<AdminCategory[]>([]);
+  useEffect(() => {
+    getCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  // Server-side search / filter / paging (the backend `listCatalogue` already supports all of it).
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [subCategory, setSubCategory] = useState('');
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [qInput]);
+  useEffect(() => setPage(1), [q, categoryId, subCategory]);
+
+  const { data: catData, state, error, reload } = useAsync(
+    () =>
+      getPartnerCatalogue(partnerId, {
+        q: q || undefined,
+        categoryId: categoryId || undefined,
+        subCategory: subCategory || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
+    [partnerId, q, categoryId, subCategory, page],
+    (d) => d.items.length === 0,
+  );
   const [rows, setRows] = useState<CatalogueEntry[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   useEffect(() => {
     if (catData) setRows(catData.items);
   }, [catData]);
 
+  const meta = catData?.meta;
+  const total = meta?.total ?? 0;
+  const pageCount = Math.max(1, meta?.pageCount ?? 1);
+  const start = (page - 1) * PAGE_SIZE;
+  const filtered = Boolean(q) || Boolean(categoryId);
+  // Removing the last row of the last page leaves `page` past the end — snap back.
+  useEffect(() => {
+    if (meta && page > pageCount) setPage(pageCount);
+  }, [meta, page, pageCount]);
+
+  const subOptions = useMemo(() => categories.find((c) => c.id === categoryId)?.children ?? [], [categories, categoryId]);
+
   return (
     <div className={styles.catWrap}>
-      <PickerCard partnerId={partnerId} defaultBasis={defaultBasis} defaultCommission={defaultCommission} inCatalogueIds={rows.map((r) => r.productId)} onAdded={reload} />
+      <PickerCard partnerId={partnerId} categories={categories} defaultBasis={defaultBasis} defaultCommission={defaultCommission} onAdded={reload} />
 
       <div className={styles.cardTitle} style={{ marginTop: 24 }}>
-        Catalogue{rows.length ? ` · ${rows.length} product${rows.length === 1 ? '' : 's'}` : ''}
+        Catalogue{total ? ` · ${total.toLocaleString('en-IN')} product${total === 1 ? '' : 's'}` : ''}
+      </div>
+      <div className={styles.cardHint}>
+        Set a manual <strong>Offer price</strong> to override the basis for one product; commission is always added on top of whichever applies.
       </div>
 
-      {state === 'loading' && <Skeleton h={160} />}
+      <div className={s.toolbar}>
+        <div className={s.search}>
+          <Input icon={<Search size={16} />} placeholder="Search name or SKU" value={qInput} onChange={(e) => setQInput(e.target.value)} aria-label="Search catalogue" />
+        </div>
+        <Select
+          value={categoryId}
+          onChange={(e) => {
+            setCategoryId(e.target.value);
+            setSubCategory('');
+          }}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+        <Select value={subCategory} onChange={(e) => setSubCategory(e.target.value)} disabled={!subOptions.length} aria-label="Filter by sub-category">
+          <option value="">{subOptions.length ? 'All sub-categories' : 'No sub-categories'}</option>
+          {subOptions.map((sub) => (
+            <option key={sub.id} value={sub.name}>{sub.name}</option>
+          ))}
+        </Select>
+        {filtered && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setQInput('');
+              setCategoryId('');
+              setSubCategory('');
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </div>
+
+      {state === 'loading' && rows.length === 0 && <Skeleton h={160} />}
       {state === 'error' && (
         <EmptyState tone="error" icon={<AlertTriangle size={22} />} title="Couldn't load catalogue" body={error ?? ''} action={{ label: 'Retry', onClick: reload }} />
       )}
       {(state === 'live' || state === 'empty') && rows.length === 0 && (
-        <div className={s.muted} style={{ padding: '10px 0' }}>No products yet — add some above.</div>
+        <div className={s.muted} style={{ padding: '10px 0' }}>
+          {filtered ? 'No products in the catalogue match these filters.' : 'No products yet — add some above.'}
+        </div>
       )}
       {rows.length > 0 && (
-        <DataTable cols={ENTRY_COLS} headers={['Product', 'Brand', 'Category', 'MRP / MOP / EPP', 'Basis', 'Commission', 'Vendor price', '']}>
+        <DataTable cols={ENTRY_COLS} headers={['Product', 'Category', 'MRP / MOP / EPP', 'Basis', 'Offer price', 'Commission', 'Partner price', '']}>
           {rows.map((r) => (
             <EntryRow
               key={r.id}
@@ -67,17 +157,41 @@ export function PartnerCatalogue({ partnerId, defaultBasis, defaultCommission }:
               row={r}
               onView={() => setDetailId(r.productId)}
               onChange={(next) => setRows((rs) => rs.map((x) => (x.id === next.id ? next : x)))}
-              onRemoved={() => setRows((rs) => rs.filter((x) => x.id !== r.id))}
+              onRemoved={() => {
+                setRows((rs) => rs.filter((x) => x.id !== r.id));
+                reload();
+              }}
               flash={flash}
             />
           ))}
         </DataTable>
       )}
 
+      {rows.length > 0 && meta && (
+        <div className={s.pager}>
+          <div className={s.pagerInfo}>
+            Showing {(start + 1).toLocaleString('en-IN')}–{Math.min(start + rows.length, total).toLocaleString('en-IN')} of {total.toLocaleString('en-IN')}
+          </div>
+          <div className={s.pagerControls}>
+            <button className={s.pageBtn} onClick={() => setPage((n) => Math.max(1, n - 1))} disabled={page <= 1} aria-label="Previous page">
+              <ChevronLeft size={16} />
+            </button>
+            <span className={s.pageNum}>
+              Page {page} of {pageCount}
+            </span>
+            <button className={s.pageBtn} onClick={() => setPage((n) => Math.min(pageCount, n + 1))} disabled={page >= pageCount} aria-label="Next page">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {detailId && <ProductDetailDrawer productId={detailId} onClose={() => setDetailId(null)} />}
     </div>
   );
 }
+
+type EntryPatch = { priceBasis?: PartnerPriceBasis; commissionPct?: number; offerPrice?: number | null };
 
 function EntryRow({
   partnerId,
@@ -95,18 +209,50 @@ function EntryRow({
   flash: (m: string) => void;
 }) {
   const [commission, setCommission] = useState(String(row.commissionPct));
+  const [offer, setOffer] = useState(row.offerPrice != null ? String(row.offerPrice) : '');
+  // Keep the inputs in step with the row when the server answer (or a rollback) changes it.
+  useEffect(() => setCommission(String(row.commissionPct)), [row.commissionPct]);
+  useEffect(() => setOffer(row.offerPrice != null ? String(row.offerPrice) : ''), [row.offerPrice]);
 
-  const patch = async (body: { priceBasis?: PartnerPriceBasis; commissionPct?: number }) => {
-    // optimistic
+  const patch = async (body: EntryPatch) => {
+    const prev = row;
     const nextBasis = body.priceBasis ?? row.priceBasis;
     const nextComm = body.commissionPct ?? row.commissionPct;
-    onChange({ ...row, priceBasis: nextBasis, commissionPct: nextComm, vendorPrice: vendorPrice(baseFor(row, nextBasis), nextComm) });
+    const nextOffer = body.offerPrice !== undefined ? body.offerPrice : row.offerPrice;
+    // optimistic — rolled back below if the save fails
+    onChange({ ...row, priceBasis: nextBasis, commissionPct: nextComm, offerPrice: nextOffer, vendorPrice: partnerPrice(row, nextBasis, nextOffer, nextComm) });
     try {
       const updated = await updateCatalogueEntry(partnerId, row.id, body);
       onChange(updated);
     } catch (e) {
+      onChange(prev);
       flash(e instanceof ApiError ? e.message : 'Could not update');
     }
+  };
+
+  const commitCommission = () => {
+    const v = Number(commission);
+    if (Number.isNaN(v) || v < 0 || v > 100) {
+      flash('Commission must be between 0 and 100');
+      setCommission(String(row.commissionPct));
+      return;
+    }
+    if (v !== row.commissionPct) patch({ commissionPct: v });
+  };
+
+  const commitOffer = () => {
+    const raw = offer.trim();
+    if (raw === '') {
+      if (row.offerPrice != null) patch({ offerPrice: null });
+      return;
+    }
+    const v = Number(raw);
+    if (Number.isNaN(v) || v <= 0) {
+      flash('Offer price must be a positive amount');
+      setOffer(row.offerPrice != null ? String(row.offerPrice) : '');
+      return;
+    }
+    if (v !== row.offerPrice) patch({ offerPrice: v });
   };
 
   const remove = async () => {
@@ -118,16 +264,19 @@ function EntryRow({
     }
   };
 
+  const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') e.currentTarget.blur();
+  };
+
   return (
     <Row cols={ENTRY_COLS}>
       <button type="button" className={styles.entryProductBtn} onClick={onView} title="View product detail">
         <ProductThumb g1={row.image ?? '#dfe3ea'} g2="#b3b9c4" w={34} h={42} />
         <div className={styles.entryName}>
           <span>{row.name}</span>
-          <span className={s.mono}>{row.sku}</span>
+          <span className={s.mono}>{row.sku}{row.brand ? ` · ${row.brand}` : ''}</span>
         </div>
       </button>
-      <div className={s.muted}>{row.brand || '—'}</div>
       <div className={styles.entryCat}>
         <span>{row.category}</span>
         {row.subCategory && <span className={s.muted}>{row.subCategory}</span>}
@@ -136,7 +285,13 @@ function EntryRow({
         {inr(row.mrp)} / {inr(row.mop)} / {row.epp != null ? inr(row.epp) : '—'}
       </div>
       <div>
-        <Select selectSize="sm" value={row.priceBasis} onChange={(e) => patch({ priceBasis: e.target.value as PartnerPriceBasis })}>
+        <Select
+          selectSize="sm"
+          value={row.priceBasis}
+          onChange={(e) => patch({ priceBasis: e.target.value as PartnerPriceBasis })}
+          title={row.offerPrice != null ? 'Ignored while a manual offer price is set' : 'Base price the partner price is derived from'}
+          aria-label="Price basis"
+        >
           {BASES.map((b) => (
             <option key={b} value={b}>{b}</option>
           ))}
@@ -144,17 +299,34 @@ function EntryRow({
       </div>
       <div>
         <Input
-          value={commission}
-          prefix="%"
-          inputMode="numeric"
-          onChange={(e) => setCommission(e.target.value)}
-          onBlur={() => {
-            const v = Number(commission);
-            if (!Number.isNaN(v) && v !== row.commissionPct) patch({ commissionPct: v });
-          }}
+          inputSize="sm"
+          value={offer}
+          prefix="₹"
+          inputMode="decimal"
+          placeholder="—"
+          title="Manual offer price (blank = use basis)"
+          aria-label="Offer price"
+          onChange={(e) => setOffer(e.target.value)}
+          onBlur={commitOffer}
+          onKeyDown={blurOnEnter}
         />
       </div>
-      <div className={styles.entryVendor}>{inr(row.vendorPrice)}</div>
+      <div>
+        <Input
+          inputSize="sm"
+          value={commission}
+          prefix="%"
+          inputMode="decimal"
+          aria-label="Commission percent"
+          onChange={(e) => setCommission(e.target.value)}
+          onBlur={commitCommission}
+          onKeyDown={blurOnEnter}
+        />
+      </div>
+      <div className={styles.entryVendor}>
+        {inr(row.vendorPrice)}
+        {row.offerPrice != null && <span className={styles.manualTag} title="Priced from the manual offer price">manual</span>}
+      </div>
       <div className={styles.entryActions}>
         <button className={s.iconBtn} onClick={onView} aria-label="View detail"><Eye size={15} /></button>
         <button className={s.iconBtn} onClick={remove} aria-label="Remove"><Trash2 size={15} /></button>
@@ -263,24 +435,24 @@ function ProductDetailDrawer({ productId, onClose }: { productId: string; onClos
 
 function PickerCard({
   partnerId,
+  categories,
   defaultBasis,
   defaultCommission,
-  inCatalogueIds,
   onAdded,
 }: {
   partnerId: string;
+  categories: AdminCategory[];
   defaultBasis: PartnerPriceBasis;
   defaultCommission: number;
-  inCatalogueIds: string[];
   onAdded: () => void;
 }) {
   const { flash } = useToast();
-  const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [subCategory, setSubCategory] = useState('');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [candidates, setCandidates] = useState<CatalogueCandidate[]>([]);
+  const [candidateTotal, setCandidateTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [basis, setBasis] = useState<PartnerPriceBasis>(defaultBasis);
@@ -288,15 +460,11 @@ function PickerCard({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getCategories().then(setCategories).catch(() => setCategories([]));
-  }, []);
-  useEffect(() => {
     const t = setTimeout(() => setQ(qInput.trim()), 300);
     return () => clearTimeout(t);
   }, [qInput]);
 
   const subOptions = useMemo(() => categories.find((c) => c.id === categoryId)?.children ?? [], [categories, categoryId]);
-  const inSet = useMemo(() => new Set(inCatalogueIds), [inCatalogueIds]);
 
   // Load candidates when a category is chosen (or search typed).
   useEffect(() => {
@@ -306,8 +474,12 @@ function PickerCard({
     }
     let cancelled = false;
     setLoading(true);
-    getCatalogueCandidates(partnerId, { categoryId: categoryId || undefined, subCategory: subCategory || undefined, q: q || undefined, pageSize: 200 })
-      .then((r) => !cancelled && setCandidates(r.items))
+    getCatalogueCandidates(partnerId, { categoryId: categoryId || undefined, subCategory: subCategory || undefined, q: q || undefined, pageSize: CANDIDATE_PAGE })
+      .then((r) => {
+        if (cancelled) return;
+        setCandidates(r.items);
+        setCandidateTotal(r.meta.total);
+      })
       .catch(() => !cancelled && setCandidates([]))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -315,8 +487,10 @@ function PickerCard({
     };
   }, [partnerId, categoryId, subCategory, q]);
 
-  // Candidate availability reflects live catalogue membership (inSet ∪ server flag).
-  const addable = candidates.filter((c) => !c.inCatalogue && !inSet.has(c.productId));
+  // The server flags what's already in the catalogue (the list itself is paged,
+  // so a client-side id set would only know about the visible page).
+  const addable = candidates.filter((c) => !c.inCatalogue);
+  const truncated = candidateTotal > candidates.length;
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -339,8 +513,9 @@ function PickerCard({
       onAdded();
       // refresh candidate flags
       if (categoryId || q) {
-        const r = await getCatalogueCandidates(partnerId, { categoryId: categoryId || undefined, subCategory: subCategory || undefined, q: q || undefined, pageSize: 200 });
+        const r = await getCatalogueCandidates(partnerId, { categoryId: categoryId || undefined, subCategory: subCategory || undefined, q: q || undefined, pageSize: CANDIDATE_PAGE });
         setCandidates(r.items);
+        setCandidateTotal(r.meta.total);
       }
     } catch (e) {
       flash(e instanceof ApiError ? e.message : `Could not ${label}`);
@@ -410,6 +585,11 @@ function PickerCard({
         <div className={s.muted} style={{ padding: '8px 0' }}>No products to add here (all already in the catalogue).</div>
       ) : (
         <>
+          {truncated && (
+            <div className={s.muted} style={{ padding: '4px 0 8px' }}>
+              Showing the first {candidates.length} of {candidateTotal.toLocaleString('en-IN')} matches — narrow the search, or use “Add all in category”.
+            </div>
+          )}
           <div className={styles.pickerListHead}>
             <button className={styles.linkBtn} onClick={() => setSelected(new Set(addable.map((c) => c.productId)))}>Select all ({addable.length})</button>
             {selected.size > 0 && <button className={styles.linkBtn} onClick={() => setSelected(new Set())}>Clear</button>}

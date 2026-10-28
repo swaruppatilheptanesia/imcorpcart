@@ -7,7 +7,7 @@ import { serialize, toNumber } from '../models/serializers';
 import { notDeleted } from '../models/selectors';
 import { pickBuyBox, shopProductInclude } from './shop.service';
 import { ORDER_FOR_SHIPMENT } from './reseller.service';
-import { resolveBasePrice, vendorPrice } from './partner.service';
+import { entryPrice } from './partner.service';
 import { estimateDelivery } from './delivery.service';
 import { enqueueWebhook, notifyPartnerOrderStatus } from './webhook.service';
 import { parsePagination, pageMeta } from '../utils/pagination';
@@ -60,7 +60,8 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
   }
 
   // 2. Validate + price each line against the partner's catalogue entry (the
-  // configured basis + commission), and check availability.
+  // manual offer price or configured basis, + commission — `entryPrice`, the same
+  // function the catalogue advertises with), and check availability.
   const lines: PricedLine[] = [];
   const rejections: Rejection[] = [];
   for (const item of input.items) {
@@ -78,7 +79,7 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
       rejections.push({ code: 'OUT_OF_STOCK', sku: item.sku, message: `Out of stock: ${item.sku}` });
       continue;
     }
-    const unitPrice = vendorPrice(resolveBasePrice(product, entry.priceBasis), entry.commissionPct);
+    const unitPrice = entryPrice(entry);
     if (item.price !== undefined && Math.abs(item.price - unitPrice) > PRICE_TOLERANCE) {
       rejections.push({ code: 'PRICE_MISMATCH', sku: item.sku, message: `Price mismatch for ${item.sku}`, expected: unitPrice, got: item.price });
       continue;
