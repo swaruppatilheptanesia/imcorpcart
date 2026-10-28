@@ -54,6 +54,8 @@ export const addCatalogueBody = z
 export const updateCatalogueEntryBody = z.object({
   priceBasis: priceBasis.optional(),
   commissionPct: z.number().min(0).max(100).optional(),
+  // Manual per-product base price (₹). `null` clears it; omitted leaves it alone.
+  offerPrice: z.number().positive().max(9_999_999).nullable().optional(),
 });
 
 // `bucket` deliberately reuses the admin order-list vocabulary (orderListQuery)

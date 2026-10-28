@@ -41,6 +41,18 @@ export function vendorPrice(base: number, commissionPct: Prisma.Decimal | number
   return Math.round(base * (1 + pct / 100));
 }
 
+// The base a catalogue entry is priced from: the admin's manual offer price when
+// one is set, else the basis-derived figure. Commission applies on top either way.
+type PricedEntry = { offerPrice: Prisma.Decimal | null; priceBasis: PartnerPriceBasis; commissionPct: Prisma.Decimal | null; product: ProductWithOffers };
+export function entryBasePrice(entry: PricedEntry): number {
+  return entry.offerPrice != null ? toNumber(entry.offerPrice) : resolveBasePrice(entry.product, entry.priceBasis);
+}
+// The single partner-facing price for an entry — what the catalogue advertises
+// AND what order acceptance validates against, so the two can never disagree.
+export function entryPrice(entry: PricedEntry): number {
+  return vendorPrice(entryBasePrice(entry), entry.commissionPct);
+}
+
 // ── Registry CRUD (Super Admin) ──────────────────────────────────────────────
 
 export async function listPartners() {
@@ -302,8 +314,7 @@ type CatalogueEntryWithProduct = Prisma.PartnerCatalogueEntryGetPayload<{
 
 function toPartnerCatalogueProduct(entry: CatalogueEntryWithProduct) {
   const sp = toStoreProduct(entry.product, { public: true });
-  const base = resolveBasePrice(entry.product, entry.priceBasis);
-  const price = vendorPrice(base, entry.commissionPct);
+  const price = entryPrice(entry);
   const mrp = toNumber(entry.product.mrp);
   return {
     ...toPartnerProduct(sp),
@@ -384,10 +395,9 @@ function basePrices(product: ProductWithOffers) {
 }
 
 // The admin's view of one catalogue entry: product summary + all base prices +
-// the resolved vendor price.
+// the manual offer price (if any) + the resolved vendor price.
 function toAdminCatalogueRow(entry: CatalogueEntryWithProduct) {
   const prices = basePrices(entry.product);
-  const base = resolveBasePrice(entry.product, entry.priceBasis);
   const commissionPct = entry.commissionPct != null ? toNumber(entry.commissionPct) : 0;
   return {
     id: entry.id,
@@ -402,7 +412,8 @@ function toAdminCatalogueRow(entry: CatalogueEntryWithProduct) {
     ...prices,
     priceBasis: entry.priceBasis,
     commissionPct,
-    vendorPrice: vendorPrice(base, entry.commissionPct),
+    offerPrice: entry.offerPrice != null ? toNumber(entry.offerPrice) : null,
+    vendorPrice: entryPrice(entry),
   };
 }
 
@@ -490,6 +501,8 @@ export async function updateCatalogueEntry(partnerId: string, entryId: string, i
     data: {
       ...(input.priceBasis !== undefined ? { priceBasis: input.priceBasis as PartnerPriceBasis } : {}),
       ...(input.commissionPct !== undefined ? { commissionPct: D(input.commissionPct) } : {}),
+      // null clears the manual price (back to the basis); undefined leaves it alone.
+      ...(input.offerPrice !== undefined ? { offerPrice: input.offerPrice === null ? null : D(input.offerPrice) } : {}),
     },
     include: catalogueEntryInclude,
   });

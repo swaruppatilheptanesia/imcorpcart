@@ -714,6 +714,9 @@ export interface CatalogueEntry {
   epp: number | null;
   priceBasis: PartnerPriceBasis;
   commissionPct: number;
+  /** Manual per-product base price (₹); null = derive from `priceBasis`. */
+  offerPrice: number | null;
+  /** What the partner is quoted: (offerPrice ?? base) × (1 + commission%). */
   vendorPrice: number;
 }
 export interface CatalogueCandidate {
@@ -756,7 +759,11 @@ export async function getCatalogueCandidates(id: string, query: CatalogueQuery =
 export function addPartnerCatalogue(id: string, body: AddCatalogueBody): Promise<{ added: number }> {
   return apiFetch(`/partners/${id}/catalogue`, { method: 'POST', body });
 }
-export function updateCatalogueEntry(id: string, entryId: string, body: { priceBasis?: PartnerPriceBasis; commissionPct?: number }): Promise<CatalogueEntry> {
+export function updateCatalogueEntry(
+  id: string,
+  entryId: string,
+  body: { priceBasis?: PartnerPriceBasis; commissionPct?: number; offerPrice?: number | null },
+): Promise<CatalogueEntry> {
   return apiFetch(`/partners/${id}/catalogue/${entryId}`, { method: 'PATCH', body });
 }
 export function removeCatalogueEntry(id: string, entryId: string): Promise<{ ok: boolean }> {

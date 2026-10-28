@@ -67,7 +67,9 @@ model WebhookDelivery {
 
 // A single product exposed to a partner (curated by the admin), with the price
 // basis the vendor pays and a commission % added on top. The vendor price =
-// base(priceBasis) × (1 + commissionPct/100). One row per (partner × product).
+// (offerPrice ?? base(priceBasis)) × (1 + commissionPct/100): a manual
+// `offerPrice`, when set, replaces the basis-derived base (the basis is kept but
+// ignored); commission is always applied on top. One row per (partner × product).
 model PartnerCatalogueEntry {
   id            String            @id @default(cuid())
   partnerId     String
@@ -76,6 +78,7 @@ model PartnerCatalogueEntry {
   product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   priceBasis    PartnerPriceBasis @default(MOP) @map("price_basis")
   commissionPct Decimal?          @default(0) @map("commission_pct") @db.Decimal(5, 2)
+  offerPrice    Decimal?          @map("offer_price") @db.Decimal(12, 2) // manual override of the base (null = use priceBasis)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
