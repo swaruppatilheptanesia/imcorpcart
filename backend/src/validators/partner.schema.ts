@@ -60,6 +60,16 @@ export const updateCatalogueEntryBody = z.object({
 
 // `bucket` deliberately reuses the admin order-list vocabulary (orderListQuery)
 // rather than inventing a second one for the same chips.
+// Admin: a partner's activity log (Overview tab). `event` narrows to one audit
+// action; `period` is resolved to an IST day boundary server-side.
+export const partnerActivityQuery = z.object({
+  q: z.string().trim().optional(),
+  event: z.enum(['all', 'order', 'auth_fail']).optional(),
+  period: z.enum(['all', 'today', '7d', '30d']).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+
 export const partnerOrdersQuery = z.object({
   q: z.string().trim().optional(),
   bucket: z.enum(['all', 'active', 'delivered', 'cancelled']).optional(),
@@ -143,5 +153,6 @@ export type CatalogueCandidatesQuery = z.infer<typeof catalogueCandidatesQuery>;
 export type AddCatalogueInput = z.infer<typeof addCatalogueBody>;
 export type UpdateCatalogueEntryInput = z.infer<typeof updateCatalogueEntryBody>;
 export type PartnerOrdersQuery = z.infer<typeof partnerOrdersQuery>;
+export type PartnerActivityQuery = z.infer<typeof partnerActivityQuery>;
 export type PartnerOrderListQuery = z.infer<typeof partnerOrderListQuery>;
 export type EpodQuery = z.infer<typeof epodQuery>;

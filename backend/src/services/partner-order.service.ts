@@ -49,7 +49,7 @@ interface Rejection {
 // success) create one Order per fulfilling seller. Deduplicated on the partner's
 // own order id (externalRef) — re-posting the same id returns the existing order
 // instead of creating a duplicate, so posts are safe to retry.
-export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderInput) {
+export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderInput, ip?: string) {
   // 1. Dedup by the partner's own order id — a retry returns the existing order.
   const existing = await prisma.order.findFirst({
     where: { partnerId: partner.id, externalRef: input.externalRef },
@@ -163,7 +163,7 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
 
   // Best-effort audit (actorId is a User FK, so the partner id goes in entityId).
   prisma.auditLog
-    .create({ data: { action: 'partner.order.accept', entityType: 'Partner', entityId: partner.id, after: { externalRef: input.externalRef, orderNos: result.body.orderNos, checkoutGroup } } })
+    .create({ data: { action: 'partner.order.accept', entityType: 'Partner', entityId: partner.id, ipAddress: ip || null, after: { externalRef: input.externalRef, orderNos: result.body.orderNos, checkoutGroup } } })
     .catch(() => undefined);
   await enqueueWebhook(partner.id, 'order.accepted', { externalRef: input.externalRef, orderNo: result.body.orderNo, checkoutGroup, status: 'PLACED', at: new Date().toISOString() });
   return result;

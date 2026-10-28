@@ -10,6 +10,7 @@ import {
   listPartnerOrders,
 } from '../services/partner-order.service';
 import type { PartnerCatalogueQuery, DeliveryQuery, EpodQuery, PartnerOrderListQuery } from '../validators/partner.schema';
+import { normalizeIp } from '../middleware/partnerAuth';
 
 function partner(req: Request) {
   if (!req.partner) throw AppError.unauthorized();
@@ -34,7 +35,7 @@ export async function delivery(req: Request, res: Response) {
 }
 
 export async function createOrder(req: Request, res: Response) {
-  const result = await acceptOrder(partner(req), req.body);
+  const result = await acceptOrder(partner(req), req.body, normalizeIp(req.ip));
   res.status(result.statusCode).json(result.body);
 }
 

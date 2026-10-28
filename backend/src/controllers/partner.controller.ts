@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { getParam, getQuery } from '../middleware/validate';
 import * as service from '../services/partner.service';
 import { resendDelivery, sendTestWebhook } from '../services/webhook.service';
-import type { CatalogueCandidatesQuery, PartnerOrdersQuery } from '../validators/partner.schema';
+import type { CatalogueCandidatesQuery, PartnerOrdersQuery, PartnerActivityQuery } from '../validators/partner.schema';
 
 export async function list(_req: Request, res: Response) {
   res.json(await service.listPartners());
@@ -37,7 +37,7 @@ export async function webhooks(req: Request, res: Response) {
 }
 
 export async function activity(req: Request, res: Response) {
-  res.json(await service.listPartnerActivity(getParam(req, 'id')));
+  res.json(await service.listPartnerActivity(getParam(req, 'id'), getQuery<PartnerActivityQuery>(req)));
 }
 
 export async function orders(req: Request, res: Response) {

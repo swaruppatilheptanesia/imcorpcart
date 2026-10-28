@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, RefreshCw, Send, RotateCw, Trash2, Webhook } from 'lucide-react';
-import { Button, Card, EmptyState, Field, Input, Segmented, Select, Skeleton, StatusPill, useToast } from '@/components';
+import { ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, Search, Send, RotateCw, Trash2, Webhook } from 'lucide-react';
+import { Button, Card, Chip, DataTable, EmptyState, Field, Input, Row, Segmented, Select, Skeleton, StatusPill, useToast } from '@/components';
 import { PartnerCatalogue } from './PartnerCatalogue';
 import { PartnerOrders } from './PartnerOrders';
 import {
@@ -17,36 +17,43 @@ import {
   type AdminPartner,
   type WebhookDeliveryRow,
   type PartnerActivityRow,
+  type PartnerActivityQuery,
   type PartnerStatus,
+  orderStatusTone,
   type PartnerPriceBasis,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
+import { inr } from '@/lib/format';
 import type { SemanticTone } from '@/data/types';
 import { CopyRow } from './Partners';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
-const BASE_URL = `${window.location.origin}/partner-api/v1`;
-// Docs are served under the /api prefix too, so the Swagger link works in
-// production via the reverse proxy that already forwards /api to the backend
-// (the bare /partner-api path may not be proxied).
-const DOCS_URL = `${window.location.origin}/api/partner-api/v1/docs`;
+// The URL handed to partners. The whole partner router is mounted under /api
+// because production's reverse proxy forwards only /api to the backend.
+const BASE_URL = `${window.location.origin}/api/partner-api/v1`;
+const DOCS_URL = `${BASE_URL}/docs`;
 const webhookTone: Record<string, SemanticTone> = { DELIVERED: 'success', PENDING: 'warning', FAILED: 'error' };
 
-// The Access card is where a partner's webhook URL and IP allowlist are set, and
-// where the delivery log is read — set both to false to hide it again.
-const SHOW_ACCESS_CARD = true;
-
-// "Webhook secret ending ••…" + Regenerate, in the Integration card.
-const SHOW_WEBHOOK_SECRET = true;
+// Hidden, not deleted: flip any flag back to true to show the card again.
+// Access = IP allowlist, webhook URL + delivery log. Webhooks are not part of
+// the partner contract (it is pull-only), so nothing here is in use.
+const SHOW_ACCESS_CARD = false;
+// "Webhook secret ending ••…" + Regenerate, in the Integration card (same reason).
+const SHOW_WEBHOOK_SECRET = false;
+// Default basis + commission. Pricing is set per product on the Catalogue tab
+// (basis, commission and the manual offer price), so the defaults are unused.
+const SHOW_COMMERCIALS_CARD = false;
 
 export function PartnerDetail() {
   const navigate = useNavigate();
   const { id = '' } = useParams();
   const { flash } = useToast();
+  // The delivery log is only fetched while the Access card is shown; Activity
+  // fetches its own paged data.
   const { data, state, error, reload } = useAsync(
-    () => Promise.all([getPartner(id), getPartnerActivity(id), getPartnerWebhooks(id)]),
+    () => Promise.all([getPartner(id), SHOW_ACCESS_CARD ? getPartnerWebhooks(id) : Promise.resolve([] as WebhookDeliveryRow[])]),
     [id],
   );
   const [rotated, setRotated] = useState<{ label: string; value: string } | null>(null);
@@ -72,7 +79,7 @@ export function PartnerDetail() {
     );
   }
 
-  const [partner, activity, webhooks] = data;
+  const [partner, webhooks] = data;
 
   // Status is the single control: Active enables the partner (auth gate needs
   // active && status === ACTIVE), Onboarding/Suspended disable it. We keep the
@@ -163,8 +170,8 @@ export function PartnerDetail() {
         <div className={styles.detailGrid}>
           <IntegrationCard partner={partner} onRotateToken={rotateToken} onRotateWebhook={rotateWebhook} />
           {SHOW_ACCESS_CARD && <AccessCard partner={partner} webhooks={webhooks} onSaved={reload} onReloadWebhooks={reload} />}
-          <CommercialsCard partner={partner} onSaved={reload} />
-          <ActivityCard activity={activity} />
+          {SHOW_COMMERCIALS_CARD && <CommercialsCard partner={partner} onSaved={reload} />}
+          <ActivityCard partnerId={id} />
         </div>
       )}
       {tab === 'catalogue' && (
@@ -358,23 +365,149 @@ function CommercialsCard({ partner, onSaved }: { partner: AdminPartner; onSaved:
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 
-function ActivityCard({ activity }: { activity: PartnerActivityRow[] }) {
-  const rows = activity;
+const ACTIVITY_PAGE = 25;
+const EVENT_CHIPS: { value: NonNullable<PartnerActivityQuery['event']>; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'order', label: 'Orders accepted' },
+  { value: 'auth_fail', label: 'Auth failures' },
+];
+const PERIODS: { value: NonNullable<PartnerActivityQuery['period']>; label: string }[] = [
+  { value: 'all', label: 'All time' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+];
+// Date and time · Event · Partner ref · Our order · Status · Items · Value.
+// Fixed pixel widths sized to their content (the DataTable grid adds an 18px
+// gap between columns), so a cell can never spill into its neighbour; only
+// Partner ref flexes, and truncates with an ellipsis when it runs out of room.
+const ACT_COLS = '140px 120px minmax(120px, 1fr) 140px 100px 48px 96px';
+
+const fmtWhen = (iso: string) =>
+  new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+
+function ActivityCard({ partnerId }: { partnerId: string }) {
+  const navigate = useNavigate();
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const [event, setEvent] = useState<NonNullable<PartnerActivityQuery['event']>>('all');
+  const [period, setPeriod] = useState<NonNullable<PartnerActivityQuery['period']>>('all');
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [qInput]);
+  useEffect(() => setPage(1), [q, event, period]);
+
+  const { data, state, error, reload } = useAsync(
+    () => getPartnerActivity(partnerId, { q: q || undefined, event, period, page, pageSize: ACTIVITY_PAGE }),
+    [partnerId, q, event, period, page],
+    (d) => d.items.length === 0,
+  );
+  const rows: PartnerActivityRow[] = data?.items ?? [];
+  const meta = data?.meta;
+  const total = meta?.total ?? 0;
+  const pageCount = Math.max(1, meta?.pageCount ?? 1);
+  const start = (page - 1) * ACTIVITY_PAGE;
+  const filtered = Boolean(q) || event !== 'all' || period !== 'all';
+
   return (
     <Card pad="lg">
-      <div className={styles.cardTitle}>Activity</div>
-      {rows.length === 0 ? (
-        <div className={s.muted} style={{ padding: '8px 0' }}>No recorded activity yet.</div>
-      ) : (
-        <ul className={styles.actList}>
-          {rows.slice(0, 12).map((a) => (
-            <li key={a.id} className={styles.actItem}>
-              <span className={styles.actAction}>{a.action.replace('partner.', '')}</span>
-              <span className={s.muted}>{new Date(a.createdAt).toLocaleString()}</span>
-              {a.ipAddress && <span className={styles.actIp}>{a.ipAddress}</span>}
-            </li>
+      <div className={styles.actHead}>
+        <div className={styles.cardTitle}>Activity{total ? ` · ${total.toLocaleString('en-IN')}` : ''}</div>
+        <button className={styles.refreshBtn} onClick={reload} aria-label="Refresh activity"><RefreshCw size={14} /></button>
+      </div>
+      <p className={styles.cardHint}>Orders this partner placed through the API, and requests we refused at authentication.</p>
+
+      <div className={s.toolbar}>
+        <div className={s.search}>
+          <Input icon={<Search size={16} />} placeholder="Partner ref or order no" value={qInput} onChange={(e) => setQInput(e.target.value)} aria-label="Search activity" />
+        </div>
+        {EVENT_CHIPS.map((c) => (
+          <Chip key={c.value} label={c.label} active={event === c.value} onClick={() => setEvent(c.value)} />
+        ))}
+        <Select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)} aria-label="Period">
+          {PERIODS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
           ))}
-        </ul>
+        </Select>
+      </div>
+
+      {state === 'loading' && rows.length === 0 && <Skeleton h={140} />}
+      {state === 'error' && (
+        <EmptyState tone="error" icon={<AlertTriangle size={22} />} title="Couldn't load activity" body={error ?? ''} action={{ label: 'Retry', onClick: reload }} />
+      )}
+      {(state === 'live' || state === 'empty') && rows.length === 0 && (
+        <div className={s.muted} style={{ padding: '8px 0' }}>{filtered ? 'No activity matches these filters.' : 'No recorded activity yet.'}</div>
+      )}
+
+      {rows.length > 0 && (
+        <div className={styles.actScroll}>
+        <DataTable cols={ACT_COLS} headers={['Date and time', 'Event', 'Partner ref', 'Our order', 'Status', 'Items', 'Value']}>
+          {rows.map((a) => {
+            const value = a.orders.reduce((sum, o) => sum + (o.total ?? 0), 0);
+            const items = a.orders.reduce((sum, o) => sum + (o.items ?? 0), 0);
+            const known = a.orders.some((o) => o.total != null);
+            return (
+              <Row key={a.id} cols={ACT_COLS}>
+                <div className={styles.actWhen}>{fmtWhen(a.createdAt)}</div>
+                <div>
+                  {a.event === 'auth_fail' ? (
+                    <span title={a.reason ?? undefined}>
+                      <StatusPill label="Auth failed" tone="error" />
+                    </span>
+                  ) : a.event === 'order' ? (
+                    <StatusPill label="Order accepted" tone="success" />
+                  ) : (
+                    <span className={s.mono}>{a.event}</span>
+                  )}
+                </div>
+                <div className={styles.actMono} title={a.externalRef ?? undefined}>{a.externalRef ?? '—'}</div>
+                <div className={styles.actOrders}>
+                  {a.orders.length === 0
+                    ? '—'
+                    : a.orders.map((o) =>
+                        o.id ? (
+                          <button key={o.orderNo} className={styles.actOrderLink} onClick={() => navigate(`/super-admin/orderDetail/${o.id}`)}>
+                            {o.orderNo}
+                          </button>
+                        ) : (
+                          <span key={o.orderNo} className={styles.actMono} title="This order no longer exists">{o.orderNo}</span>
+                        ),
+                      )}
+                </div>
+                {/* One status per order, aligned with the order numbers beside it. */}
+                <div className={styles.actOrders}>
+                  {a.orders.some((o) => o.status)
+                    ? a.orders.map((o) =>
+                        o.status ? <StatusPill key={o.orderNo} label={o.status} tone={orderStatusTone[o.status]} /> : <span key={o.orderNo} className={s.muted}>—</span>,
+                      )
+                    : <span className={s.muted}>—</span>}
+                </div>
+                <div className={styles.actNum}>{known ? items : '—'}</div>
+                <div className={styles.actNum}>{known ? inr(value) : '—'}</div>
+              </Row>
+            );
+          })}
+        </DataTable>
+        </div>
+      )}
+
+      {rows.length > 0 && meta && (
+        <div className={s.pager}>
+          <div className={s.pagerInfo}>
+            Showing {(start + 1).toLocaleString('en-IN')}–{Math.min(start + rows.length, total).toLocaleString('en-IN')} of {total.toLocaleString('en-IN')}
+          </div>
+          <div className={s.pagerControls}>
+            <button className={s.pageBtn} onClick={() => setPage((n) => Math.max(1, n - 1))} disabled={page <= 1} aria-label="Previous page">
+              <ChevronLeft size={16} />
+            </button>
+            <span className={s.pageNum}>Page {page} of {pageCount}</span>
+            <button className={s.pageBtn} onClick={() => setPage((n) => Math.min(pageCount, n + 1))} disabled={page >= pageCount} aria-label="Next page">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       )}
     </Card>
   );

@@ -10,6 +10,7 @@ import {
   addCatalogueBody,
   updateCatalogueEntryBody,
   partnerOrdersQuery,
+  partnerActivityQuery,
 } from '../validators/partner.schema';
 
 // Super-Admin partner registry (the "Partners" console). Auth applied by the
@@ -26,7 +27,7 @@ router.post('/:id/rotate-webhook-secret', validate({ params: idParam }), asyncHa
 router.get('/:id/webhooks', validate({ params: idParam }), asyncHandler(ctrl.webhooks));
 router.post('/:id/webhooks/test', validate({ params: idParam }), asyncHandler(ctrl.testWebhook));
 router.post('/:id/webhooks/:deliveryId/resend', asyncHandler(ctrl.resendWebhook));
-router.get('/:id/activity', validate({ params: idParam }), asyncHandler(ctrl.activity));
+router.get('/:id/activity', validate({ params: idParam, query: partnerActivityQuery }), asyncHandler(ctrl.activity));
 router.get('/:id/orders', validate({ params: idParam, query: partnerOrdersQuery }), asyncHandler(ctrl.orders));
 
 // Catalogue management.

@@ -14,7 +14,8 @@ import {
   partnerOrderListQuery,
 } from '../../validators/partner.schema';
 
-// Machine-to-machine partner API, mounted at /partner-api/v1. Every route is
+// Machine-to-machine partner API, mounted at /api/partner-api/v1 (routes/index.ts;
+// the bare /partner-api/v1 mount in app.ts is local-only). Every route is
 // bearer-token + IP authenticated and rate-limited per partner.
 const router = Router();
 

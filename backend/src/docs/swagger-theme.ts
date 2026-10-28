@@ -1,4 +1,4 @@
-// Branded Swagger UI theme for the partner API docs (/partner-api/v1/docs).
+// Branded Swagger UI theme for the partner API docs (/api/partner-api/v1/docs).
 // Passed to swaggerUi.setup() as customCss/customfavIcon. Colors + fonts come
 // verbatim from the platform design tokens (frontend/src/styles/tokens.css):
 // accent #0a5bd6, Apple-like system font stack, light/dark neutrals. The docs

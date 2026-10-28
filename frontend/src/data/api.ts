@@ -858,12 +858,31 @@ export interface WebhookDeliveryRow {
   lastAttemptAt: string | null;
 }
 
+export type PartnerActivityEvent = 'order' | 'auth_fail';
+export interface PartnerActivityOrder {
+  orderNo: string;
+  /** null when the order row no longer exists (the log outlives it). */
+  id: string | null;
+  status: OrderStatus | null;
+  total: number | null;
+  items: number | null;
+}
 export interface PartnerActivityRow {
   id: string;
-  action: string;
-  ipAddress: string | null;
-  after: unknown;
+  event: PartnerActivityEvent | string;
   createdAt: string;
+  ipAddress: string | null;
+  externalRef: string | null;
+  checkoutGroup: string | null;
+  reason: string | null;
+  orders: PartnerActivityOrder[];
+}
+export interface PartnerActivityQuery {
+  q?: string;
+  event?: 'all' | PartnerActivityEvent;
+  period?: 'all' | 'today' | '7d' | '30d';
+  page?: number;
+  pageSize?: number;
 }
 
 export async function getPartners(): Promise<AdminPartner[]> {
@@ -898,9 +917,16 @@ export function testPartnerWebhook(id: string): Promise<WebhookDeliveryRow> {
 export function resendPartnerWebhook(id: string, deliveryId: string): Promise<WebhookDeliveryRow> {
   return apiFetch(`/partners/${id}/webhooks/${deliveryId}/resend`, { method: 'POST', body: {} });
 }
-export async function getPartnerActivity(id: string): Promise<PartnerActivityRow[]> {
-  const r = await apiFetch<{ data: PartnerActivityRow[] }>(`/partners/${id}/activity`);
-  return r.data;
+export async function getPartnerActivity(id: string, query: PartnerActivityQuery = {}): Promise<{ items: PartnerActivityRow[]; meta: PageMeta }> {
+  type ApiRow = Omit<PartnerActivityRow, 'orders'> & { orders: (Omit<PartnerActivityOrder, 'status'> & { status: string | null })[] };
+  const r = await apiFetch<Envelope<ApiRow[]>>(`/partners/${id}/activity`, {
+    query: { q: query.q, event: query.event, period: query.period, page: query.page, pageSize: query.pageSize },
+  });
+  const items = r.data.map((row) => ({
+    ...row,
+    orders: row.orders.map((o) => ({ ...o, status: o.status ? (ORDER_STATUS_IN[o.status] ?? 'Processing') : null })),
+  }));
+  return { items, meta: r.meta };
 }
 
 // ─── QR exhibition campaigns ─────────────────────────────────────────────────

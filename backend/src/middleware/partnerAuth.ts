@@ -6,7 +6,7 @@ import { AppError } from '../utils/AppError';
 import { hashToken } from '../utils/secretbox';
 
 // Normalise an IPv6-mapped IPv4 (::ffff:127.0.0.1 → 127.0.0.1) for allowlist match.
-function normalizeIp(ip: string | undefined): string {
+export function normalizeIp(ip: string | undefined): string {
   if (!ip) return '';
   return ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip;
 }

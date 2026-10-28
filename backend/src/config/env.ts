@@ -49,7 +49,7 @@ const schema = z.object({
   RAZORPAY_CHECKOUT_CONFIG_ID_CARD: z.string().optional(),
   RAZORPAY_CHECKOUT_CONFIG_ID_NETBANKING: z.string().optional(),
 
-  // Partner integration API (/partner-api/v1). Master switch parsed as a literal
+  // Partner integration API (/api/partner-api/v1). Master switch parsed as a literal
   // string (same reason as CHECKOUT_ENABLED). PARTNER_SECRET_ENC_KEY is the master
   // key used to AES-encrypt each partner's signing secret at rest; optional so the
   // app boots without it, but creating/rotating a partner secret errors clearly

@@ -9,6 +9,7 @@ import { encryptSecret, generateApiToken, generateWebhookSecret, hashToken } fro
 import { toStoreProduct, shopProductInclude, pickBuyBox } from './shop.service';
 import { estimateDelivery } from './delivery.service';
 import { BUCKET_STATUSES } from './order.service';
+import { startOfDayIst } from '../utils/date-range';
 import type {
   CreatePartnerInput,
   UpdatePartnerInput,
@@ -17,6 +18,7 @@ import type {
   UpdateCatalogueEntryInput,
   CatalogueCandidatesQuery,
   PartnerOrdersQuery,
+  PartnerActivityQuery,
 } from '../validators/partner.schema';
 import type { PartnerPrincipal } from '../types/express';
 
@@ -170,13 +172,70 @@ export async function listPartnerWebhooks(id: string) {
   return { data: serialize(rows) };
 }
 
-export async function listPartnerActivity(id: string) {
-  const rows = await prisma.auditLog.findMany({
-    where: { entityType: 'Partner', entityId: id },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
+// The partner's activity log: the two audited partner-API events, paged and
+// filterable, each order row enriched with the orders it created (one query per
+// page). The row shape is flat so the admin UI never parses the audit `after` blob.
+const ACTIVITY_ACTIONS = { order: 'partner.order.accept', auth_fail: 'partner.auth.fail' } as const;
+const ACTIVITY_PERIOD_DAYS = { today: 0, '7d': 6, '30d': 29 } as const;
+
+export async function listPartnerActivity(id: string, query: PartnerActivityQuery) {
+  const p = parsePagination(query);
+  const where: Prisma.AuditLogWhereInput = { entityType: 'Partner', entityId: id };
+  if (query.event && query.event !== 'all') where.action = ACTIVITY_ACTIONS[query.event];
+  if (query.period && query.period !== 'all') {
+    // "Last 7 days" = today plus the six IST days before it.
+    const days = ACTIVITY_PERIOD_DAYS[query.period];
+    where.createdAt = { gte: startOfDayIst(new Date(Date.now() - days * 86_400_000)) };
+  }
+  const q = query.q?.trim();
+  if (q) {
+    // JSON string filters have no case-insensitive mode; partner refs and our
+    // order numbers are upper-case, so matching both spellings covers real input.
+    const variants = [...new Set([q, q.toUpperCase()])];
+    where.OR = [
+      ...variants.map((v) => ({ after: { path: ['externalRef'], string_contains: v } })),
+      { after: { path: ['orderNos'], array_contains: [q.toUpperCase()] } },
+      { ipAddress: { contains: q } },
+    ];
+  }
+
+  const [rows, total] = await prisma.$transaction([
+    prisma.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip: p.skip, take: p.take }),
+    prisma.auditLog.count({ where }),
+  ]);
+
+  const afterOf = (r: (typeof rows)[number]) => (r.after && typeof r.after === 'object' && !Array.isArray(r.after) ? (r.after as Record<string, unknown>) : {});
+  const orderNosOf = (r: (typeof rows)[number]) => {
+    const v = afterOf(r).orderNos;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  };
+  const allNos = [...new Set(rows.flatMap(orderNosOf))];
+  const orders = allNos.length
+    ? await prisma.order.findMany({
+        where: { orderNo: { in: allNos } },
+        select: { id: true, orderNo: true, status: true, total: true, _count: { select: { items: true } } },
+      })
+    : [];
+  const byNo = new Map(orders.map((o) => [o.orderNo, o]));
+
+  const data = rows.map((r) => {
+    const after = afterOf(r);
+    return {
+      id: r.id,
+      event: r.action === ACTIVITY_ACTIONS.auth_fail ? 'auth_fail' : r.action === ACTIVITY_ACTIONS.order ? 'order' : r.action,
+      createdAt: r.createdAt.toISOString(),
+      ipAddress: r.ipAddress,
+      externalRef: typeof after.externalRef === 'string' ? after.externalRef : null,
+      checkoutGroup: typeof after.checkoutGroup === 'string' ? after.checkoutGroup : null,
+      reason: typeof after.reason === 'string' ? after.reason : null,
+      // An order number whose row has since been deleted still shows, with no detail.
+      orders: orderNosOf(r).map((no) => {
+        const o = byNo.get(no);
+        return { orderNo: no, id: o?.id ?? null, status: o?.status ?? null, total: o ? toNumber(o.total) : null, items: o?._count.items ?? null };
+      }),
+    };
   });
-  return { data: serialize(rows) };
+  return { data, meta: pageMeta(total, p) };
 }
 
 // ── Orders received from a partner ───────────────────────────────────────────
