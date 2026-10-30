@@ -38,7 +38,7 @@ const PAGE_SIZE = 25;
 // squeezing cells into each other). Update has to fit 'Out for delivery' + chevron.
 // The order date sits under the order number to keep ten columns inside a laptop width.
 const COLS =
-  'minmax(124px,1.1fr) minmax(112px,1fr) 88px minmax(110px,1.3fr) 104px minmax(84px,0.8fr) 140px 46px 84px 66px';
+  'minmax(124px,1.1fr) minmax(112px,1fr) 88px minmax(110px,1.3fr) 104px minmax(84px,0.8fr) 140px 46px 84px 86px';
 
 // The exact order status — not the display label, which folds Placed and
 // Confirmed together. Same values the Orders report's Status filter takes, so
@@ -236,6 +236,7 @@ export function PartnerOrders({ partnerId, partnerName }: { partnerId: string; p
         <>
           <div className={styles.ordScroll}>
           <DataTable
+            className={styles.ordTable}
             cols={COLS}
             headers={['Order', 'Buyer', 'Dealer', 'Product', 'Status', 'Invoice', 'Update', 'ePOD', 'Total', '']}
           >

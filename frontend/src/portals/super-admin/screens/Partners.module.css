@@ -565,18 +565,35 @@
   font-variant-numeric: tabular-nums;
 }
 /* Orders tab: fixed column floors, so below the table's natural width it
-   scrolls sideways inside the tab instead of cells overlapping. */
-.ordScroll {
+   scrolls sideways instead of cells overlapping. The CARD is the scroller (not
+   a wrapper around it): the card clips its overflow, and a sticky cell only
+   sticks to its nearest scrolling ancestor. Two classes so these win over
+   DataTable's own .card / .header / .row. */
+.ordScroll .ordTable {
   overflow-x: auto;
 }
-.ordScroll > * {
-  min-width: 1110px;
-}
-/* Ten columns: a tighter gutter than the shared table's 18px. Two classes so
-   these win over DataTable's own .header / .row. */
-.ordScroll > * > :first-child,
+.ordScroll .ordTable > :first-child,
 .ordScroll .ordRow {
+  min-width: 1110px;
+  /* Ten columns: a tighter gutter than the shared table's 18px. */
   column-gap: 12px;
+  /* The row's right padding moves into the pinned cell below, so that cell
+     sits flush with the edge whether or not the table is scrolled. */
+  padding-right: 0;
+}
+/* The view / expand buttons stay pinned to the right edge while the other
+   columns scroll under them, so the drawer is always one click away. */
+.ordScroll .ordTable > :first-child > :last-child,
+.ordScroll .ordRow > :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  padding-right: 20px;
+  background: var(--surface);
+  box-shadow: -12px 0 12px -12px color-mix(in srgb, var(--text) 30%, transparent);
+}
+.ordScroll .ordTable > :first-child > :last-child {
+  background: var(--surface2);
 }
 .ordProduct {
   font-size: 13px;

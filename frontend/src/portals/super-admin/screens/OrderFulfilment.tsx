@@ -40,6 +40,11 @@ import { COURIER_OPTIONS, MODE_OPTIONS } from '@/lib/courier';
 // aggregator is switched off or a call fails, the reason is shown here and staff
 // carry on with the form below exactly as before.
 
+// AWBs are entered by hand in the fulfilment form, so the DTDC booking button is
+// hidden. The endpoint (POST /orders/:id/awb) and the client stay — flip this
+// to bring the button back.
+const SHOW_GENERATE_AWB = false;
+
 const MAX_EPOD_BYTES = 2 * 1024 * 1024;
 const EPOD_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
 const EPOD_ACCEPT = EPOD_TYPES.join(',');
@@ -97,9 +102,11 @@ export function CourierAutomation({
   return (
     <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button variant="secondary" size="sm" disabled={busy !== null || hasAwb} onClick={() => run('awb')}>
-          <Package size={14} /> {busy === 'awb' ? 'Booking…' : 'Generate AWB (DTDC)'}
-        </Button>
+        {SHOW_GENERATE_AWB && (
+          <Button variant="secondary" size="sm" disabled={busy !== null || hasAwb} onClick={() => run('awb')}>
+            <Package size={14} /> {busy === 'awb' ? 'Booking…' : 'Generate AWB (DTDC)'}
+          </Button>
+        )}
         <Button variant="secondary" size="sm" disabled={busy !== null || !hasAwb} onClick={() => run('track')}>
           <RefreshCw size={14} /> {busy === 'track' ? 'Checking…' : 'Refresh tracking'}
         </Button>
@@ -109,7 +116,9 @@ export function CourierAutomation({
           ? info?.lastTrackedAt
             ? `Last checked with the courier ${fmtDate(info.lastTrackedAt)}.`
             : 'Not yet checked with the courier.'
-          : 'No AWB yet — book one, or enter it manually below.'}
+          : SHOW_GENERATE_AWB
+            ? 'No AWB yet — book one, or enter it manually below.'
+            : 'No AWB yet — enter the courier and AWB below; tracking starts automatically.'}
       </p>
       {info?.labelUrl && (
         <a href={info.labelUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>

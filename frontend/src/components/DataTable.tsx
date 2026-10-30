@@ -8,12 +8,14 @@ interface TableProps {
   headers: ReactNode[];
   children: ReactNode; // <Row> elements
   footer?: ReactNode;
+  /** Extra class on the card, e.g. to make a wide table scroll inside it. */
+  className?: string;
 }
 
 /** Card-wrapped grid table: uppercase header row + hairline body rows. */
-export function DataTable({ cols, headers, children, footer }: TableProps) {
+export function DataTable({ cols, headers, children, footer, className }: TableProps) {
   return (
-    <Card pad="none" className={styles.card}>
+    <Card pad="none" className={cn(styles.card, className)}>
       <div className={styles.header} style={{ gridTemplateColumns: cols }}>
         {headers.map((h, i) => (
           <div key={i}>{h}</div>
