@@ -11,7 +11,7 @@ import { shopProductInclude, toStoreProduct, pickBuyBox } from './shop.service';
 import { retryVoucherFulfilment, resendVoucherEmail } from './voucher-fulfilment.service';
 import { notifyPartnerOrderStatus, notifyPartnerEpod } from './webhook.service';
 import { PRIVATE_UPLOAD_DIR } from '../config/document-upload';
-import type { OrderListQuery, OverrideStatusInput, ColourSwapInput, EpodInput } from '../validators/order.schema';
+import type { OrderListQuery, OverrideStatusInput, ColourSwapInput, EpodInput, InvoiceNumberInput } from '../validators/order.schema';
 import type { TransitUpdateInput } from '../validators/reseller.schema';
 
 // The coarse buckets the Orders screen filters by. Exported so the partner
@@ -97,6 +97,37 @@ export async function updateTransit(id: string, input: TransitUpdateInput, actor
   });
   if (!order) throw AppError.notFound('Order not found');
   await applyTransit(order, input, actorId);
+  return getOrder(order.id);
+}
+
+// Admin action: record (or clear) the seller's GST invoice number on an order.
+// Free text by design — the seller raises the invoice, we only file its number.
+export async function setInvoiceNumber(id: string, input: InvoiceNumberInput, actorId: string) {
+  const order = await prisma.order.findFirst({
+    where: { OR: [{ id }, { orderNo: id }] },
+    select: { id: true, status: true, invoiceNumber: true },
+  });
+  if (!order) throw AppError.notFound('Order not found');
+  if (order.status === OrderStatus.CANCELLED) {
+    throw AppError.badRequest('A cancelled order cannot carry an invoice number');
+  }
+  const next = input.invoiceNumber;
+  if (next !== order.invoiceNumber) {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { invoiceNumber: next, invoiceNumberAt: next ? new Date() : null },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId,
+        action: 'order.invoice_number',
+        entityType: 'Order',
+        entityId: order.id,
+        before: { invoiceNumber: order.invoiceNumber },
+        after: { invoiceNumber: next },
+      },
+    });
+  }
   return getOrder(order.id);
 }
 
@@ -470,33 +501,63 @@ export async function attachOrderEpod(
     throw AppError.badRequest(`Proof of delivery can only be attached to a delivered order (this one is ${order.status}).`);
   }
 
-  // When the courier captured the proof — not when we uploaded it. Defaults to
-  // the recorded delivery time, which is the closest thing we know.
-  const capturedAt = input.capturedAt ?? order.shipment?.deliveredAt ?? new Date();
+  return recordPod(order, {
+    filePath: file.path,
+    fileName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+    // When the courier captured the proof — not when we uploaded it. Defaults to
+    // the recorded delivery time, which is the closest thing we know.
+    capturedAt: input.capturedAt ?? order.shipment?.deliveredAt ?? new Date(),
+    source: DocumentSource.UPLOADED,
+    actorId,
+    note: input.note ?? null,
+  });
+}
 
+export interface PodFile {
+  filePath: string; // already written under PRIVATE_UPLOAD_DIR
+  fileName: string;
+  mimeType: string;
+  size: number;
+  capturedAt: Date;
+  source: DocumentSource;
+  actorId: string | null; // null = fetched by the courier poller
+  note?: string | null;
+  /** Extra metadata, e.g. which courier it was fetched from. */
+  meta?: Record<string, string>;
+}
+
+/**
+ * File a proof of delivery against an order: the document row, the shipment's
+ * pointer, and the partner push. Shared by staff upload and the courier fetch
+ * so the two can never have different side effects.
+ */
+export async function recordPod(order: { id: string; shipment: { id: string } | null }, pod: PodFile) {
   const doc = await prisma.orderDocument.create({
     data: {
       orderId: order.id,
       docType: DocumentType.POD,
-      source: DocumentSource.UPLOADED,
-      fileUrl: file.path,
-      generatedAt: capturedAt,
-      uploadedById: actorId,
+      source: pod.source,
+      fileUrl: pod.filePath,
+      generatedAt: pod.capturedAt,
+      uploadedById: pod.actorId,
       // A reported field, so it gets a real column. It is mirrored into
       // metadata for anything still reading the old JSON path.
-      issueNote: input.note ?? null,
+      issueNote: pod.note ?? null,
       metadata: {
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        ...(input.note ? { note: input.note } : {}),
+        fileName: pod.fileName,
+        mimeType: pod.mimeType,
+        size: pod.size,
+        ...(pod.note ? { note: pod.note } : {}),
+        ...(pod.meta ?? {}),
       },
     },
   });
 
   // Convenience pointer for the fulfilment views; OrderDocument is the record.
   if (order.shipment) {
-    await prisma.shipment.update({ where: { id: order.shipment.id }, data: { podUrl: file.path } });
+    await prisma.shipment.update({ where: { id: order.shipment.id }, data: { podUrl: pod.filePath } });
   }
 
   // Post-commit, and a no-op for internal orders.

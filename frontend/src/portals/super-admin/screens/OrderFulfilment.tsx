@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Truck, Upload, Send, Package, FileText, Download } from 'lucide-react';
+import { RefreshCw, Truck, Upload, Send, Package, FileText, Download, Receipt, CloudDownload } from 'lucide-react';
 import { Button, Field, Input, Select, useToast } from '@/components';
 import {
   updateOrderTransit,
@@ -8,6 +8,9 @@ import {
   uploadOrderEpod,
   resendOrderEpod,
   downloadOrderEpod,
+  fetchCourierEpod,
+  downloadLrCopy,
+  setOrderInvoiceNumber,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
 import type { OrderFulfilmentInfo } from '@/data/types';
@@ -25,6 +28,9 @@ const SHIPMENT_STATUSES = [
   { value: 'IN_TRANSIT', label: 'In transit' },
   { value: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
   { value: 'DELIVERED', label: 'Delivered' },
+  // The courier matcher's "Issue" column (attempted, held, refused, lost…).
+  // The order stays Dispatched; the next scan moves the shipment on again.
+  { value: 'FAILED', label: 'Delivery issue' },
   { value: 'RETURNED', label: 'Returned' },
 ];
 import { COURIER_OPTIONS, MODE_OPTIONS } from '@/lib/courier';
@@ -110,11 +116,107 @@ export function CourierAutomation({
           Shipping label (PDF) ↗
         </a>
       )}
+      {info?.lrCopy && hasAwb && (
+        // Fetched live from Delhivery each time — the LR copy is a booking
+        // document, so it is never filed as the proof of delivery.
+        <button
+          type="button"
+          className={styles.linkBtn}
+          onClick={() =>
+            downloadLrCopy(orderId).catch((e) => setNote(e instanceof ApiError ? e.message : 'Could not fetch the LR copy.'))
+          }
+        >
+          LR copy (Delhivery B2B) ↗
+        </button>
+      )}
       {note && (
         <p style={{ fontSize: 12, margin: 0, color: 'var(--warn, var(--text2))' }}>
           {note} You can still update fulfilment manually below.
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Invoice number ──────────────────────────────────────────────────────────
+// The seller raises the GST invoice; staff file its number here. Free text, no
+// sequence. It feeds the "Our Invoice Number" column of the Orders report.
+
+const INVOICE_RE = /^[A-Za-z0-9/_.-]+$/;
+
+export function InvoiceNumberControl({
+  orderId,
+  cancelled,
+  invoiceNumber,
+  invoiceNumberAt,
+  onDone,
+}: {
+  orderId: string;
+  cancelled: boolean;
+  invoiceNumber: string | null | undefined;
+  invoiceNumberAt: string | null | undefined;
+  onDone: () => void;
+}) {
+  const { flash } = useToast();
+  const [value, setValue] = useState(invoiceNumber ?? '');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setValue(invoiceNumber ?? ''), [invoiceNumber]);
+
+  const trimmed = value.trim();
+  const invalid = trimmed !== '' && (trimmed.length > 60 || !INVOICE_RE.test(trimmed));
+  const unchanged = trimmed === (invoiceNumber ?? '');
+
+  const save = async (next: string | null) => {
+    setBusy(true);
+    try {
+      await setOrderInvoiceNumber(orderId, next);
+      flash(next ? 'Invoice number saved' : 'Invoice number cleared');
+      onDone();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the invoice number');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (cancelled) {
+    return (
+      <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
+        {invoiceNumber ? `Invoice ${invoiceNumber} (order cancelled).` : 'Not applicable — the order is cancelled.'}
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <Field
+        label="Invoice number"
+        hint={invalid ? undefined : 'The seller\u2019s GST invoice number. Shown in the Orders report.'}
+        error={invalid ? 'Up to 60 characters: letters, digits and / - _ . only' : undefined}
+      >
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. INV/26-27/0451"
+          aria-label="Invoice number"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && trimmed && !invalid && !unchanged && !busy) save(trimmed);
+          }}
+        />
+      </Field>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Button variant="secondary" size="sm" disabled={busy || !trimmed || invalid || unchanged} onClick={() => save(trimmed)}>
+          <Receipt size={14} /> {busy ? 'Saving…' : invoiceNumber ? 'Update' : 'Save'}
+        </Button>
+        {invoiceNumber && (
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => save(null)}>
+            Clear
+          </Button>
+        )}
+        {invoiceNumber && invoiceNumberAt && (
+          <span className={s.muted} style={{ fontSize: 12 }}>Entered {fmtDate(invoiceNumberAt)}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -164,6 +266,24 @@ export function EpodControl({
     }
   };
 
+  const fetchFromCourier = async () => {
+    setBusy(true);
+    try {
+      const r = await fetchCourierEpod(orderId);
+      if (r.ok) {
+        flash(r.pushedToPartner ? 'Proof of delivery fetched and sent to the partner' : 'Proof of delivery fetched from the courier');
+        onDone();
+      } else {
+        flash(r.message ?? 'The courier has no proof of delivery yet');
+        onDone(); // picks up the recorded reason
+      }
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not reach the courier');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resend = async () => {
     setBusy(true);
     try {
@@ -196,15 +316,27 @@ export function EpodControl({
             <Download size={16} />
           </button>
           <p className={s.muted} style={{ fontSize: 12, margin: 0 }}>
-            Captured {epod.capturedAt ? fmtDate(epod.capturedAt) : '—'} · uploaded {fmtDate(epod.uploadedAt)}
+            Captured {epod.capturedAt ? fmtDate(epod.capturedAt) : '—'} ·{' '}
+            {epod.fetchedFrom
+              ? `fetched from ${epod.fetchedFrom} automatically ${fmtDate(epod.uploadedAt)}`
+              : `uploaded ${fmtDate(epod.uploadedAt)}`}
           </p>
         </div>
       ) : (
-        <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
-          {delivered
-            ? 'Upload the courier\u2019s delivery proof (PDF or image, up to 2 MB).'
-            : 'Available once the order is delivered.'}
-        </p>
+        <div style={{ display: 'grid', gap: 4 }}>
+          <p className={s.muted} style={{ fontSize: 12.5, margin: 0 }}>
+            {!delivered
+              ? info?.podAuto
+                ? 'Fetched from the courier automatically once the order is delivered.'
+                : 'Available once the order is delivered.'
+              : info?.podAuto
+                ? 'Fetched from the courier automatically \u2014 or upload it yourself (PDF or image, up to 2 MB).'
+                : 'Upload the courier\u2019s delivery proof (PDF or image, up to 2 MB).'}
+          </p>
+          {delivered && info?.podFetchError && (
+            <p style={{ fontSize: 12, margin: 0, color: 'var(--warn, var(--text2))' }}>{info.podFetchError}</p>
+          )}
+        </div>
       )}
 
       {delivered && (
@@ -220,6 +352,11 @@ export function EpodControl({
             />
           </Field>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!epod && info?.podAuto && (
+              <Button variant="secondary" size="sm" disabled={busy} onClick={fetchFromCourier}>
+                <CloudDownload size={14} /> {busy ? 'Working…' : 'Fetch from courier'}
+              </Button>
+            )}
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
               <Upload size={14} /> {busy ? 'Working…' : epod ? 'Replace document' : 'Upload document'}
             </Button>
@@ -299,7 +436,7 @@ export function EpodCell({
 
   if (epod) {
     return (
-      <button className={s.iconBtn} onClick={download} title={`Proof of delivery · captured ${epod.capturedAt ? fmtDate(epod.capturedAt) : '—'}`} aria-label="Download proof of delivery">
+      <button className={s.iconBtn} onClick={download} title={`Proof of delivery · captured ${epod.capturedAt ? fmtDate(epod.capturedAt) : '—'}${epod.fetchedFrom ? ` · fetched from ${epod.fetchedFrom}` : ''}`} aria-label="Download proof of delivery">
         <FileText size={15} />
       </button>
     );

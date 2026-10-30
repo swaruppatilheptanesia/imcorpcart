@@ -9,7 +9,8 @@ import { encryptSecret, generateApiToken, generateWebhookSecret, hashToken } fro
 import { toStoreProduct, shopProductInclude, pickBuyBox } from './shop.service';
 import { estimateDelivery } from './delivery.service';
 import { BUCKET_STATUSES } from './order.service';
-import { startOfDayIst } from '../utils/date-range';
+import { startOfDayIst, dateWhere, resolvePeriod } from '../utils/date-range';
+import { flattenAddress, orderSearchWhere } from './report/reports/orders-common';
 import type {
   CreatePartnerInput,
   UpdatePartnerInput,
@@ -240,6 +241,16 @@ export async function listPartnerActivity(id: string, query: PartnerActivityQuer
 
 // ── Orders received from a partner ───────────────────────────────────────────
 
+const partnerAddressSelect = {
+  contactName: true,
+  contactPhone: true,
+  line1: true,
+  line2: true,
+  city: true,
+  state: true,
+  pincode: true,
+} satisfies Prisma.AddressSelect;
+
 const partnerOrderSelect = {
   id: true,
   orderNo: true,
@@ -248,8 +259,17 @@ const partnerOrderSelect = {
   status: true,
   subtotal: true,
   total: true,
+  invoiceNumber: true,
+  invoiceNumberAt: true,
+  dealerCode: true,
+  dealerName: true,
+  dealerMobile: true,
+  deliveryInstructions: true,
   createdAt: true,
   reseller: { select: { name: true } }, // null = first-party / house fulfilment
+  address: { select: partnerAddressSelect },
+  // Null = same as shipping, which is always so for partner orders today.
+  billingAddress: { select: partnerAddressSelect },
   // Courier + ePOD state is carried on the row itself: the Orders tab updates
   // fulfilment inline, and fetching the full order per row would be one request
   // per visible order.
@@ -262,6 +282,8 @@ const partnerOrderSelect = {
       labelUrl: true,
       lastTrackedAt: true,
       trackingError: true,
+      podFetchError: true,
+      deliveryMode: true,
       courier: { select: { name: true, code: true } },
     },
   },
@@ -270,11 +292,26 @@ const partnerOrderSelect = {
     // docType is selected even though the `where` already pins it: the frontend
     // runs these rows through the same `toFulfilmentInfo` mapper as the full
     // order, and that filters on docType itself.
-    select: { id: true, docType: true, generatedAt: true, metadata: true, createdAt: true },
+    select: { id: true, docType: true, source: true, generatedAt: true, metadata: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   },
   items: {
-    select: { quantity: true, unitPrice: true, lineTotal: true, product: { select: { name: true, sku: true, images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 } } } },
+    select: {
+      quantity: true,
+      unitPrice: true,
+      lineTotal: true,
+      shade: true,
+      product: {
+        select: {
+          name: true,
+          sku: true,
+          hsnCode: true,
+          optionColor: true,
+          optionVariant: true,
+          images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
+        },
+      },
+    },
   },
 } satisfies Prisma.OrderSelect;
 
@@ -290,7 +327,20 @@ function toPartnerOrderRow(o: PartnerOrderPayload) {
     reseller: o.reseller?.name ?? 'First-party',
     subtotal: o.subtotal,
     total: o.total,
+    invoiceNumber: o.invoiceNumber,
+    invoiceNumberAt: o.invoiceNumberAt,
     createdAt: o.createdAt,
+    // Same buyer rule as the Orders report: the shipping contact, else the dealer.
+    buyer: {
+      name: o.address?.contactName || o.dealerName || null,
+      phone: o.address?.contactPhone || o.dealerMobile || null,
+    },
+    dealer: { code: o.dealerCode, name: o.dealerName, mobile: o.dealerMobile },
+    deliveryInstructions: o.deliveryInstructions,
+    shippingAddress: flattenAddress(o.address, true),
+    // null = "same as shipping", left for the UI to say so rather than repeating it.
+    billingAddress: o.billingAddress ? flattenAddress(o.billingAddress, true) : null,
+    deliveryMode: o.shipment?.deliveryMode ?? null,
     dispatchedAt: o.shipment?.dispatchedAt ?? null,
     deliveredAt: o.shipment?.deliveredAt ?? null,
     awb: o.shipment?.awbNumber ?? null,
@@ -303,11 +353,15 @@ function toPartnerOrderRow(o: PartnerOrderPayload) {
     labelUrl: o.shipment?.labelUrl ?? null,
     lastTrackedAt: o.shipment?.lastTrackedAt ?? null,
     trackingError: o.shipment?.trackingError ?? null,
+    podFetchError: o.shipment?.podFetchError ?? null,
     documents: o.documents,
     itemCount: o.items.length,
     items: o.items.map((i) => ({
       name: i.product.name,
       sku: i.product.sku,
+      hsnCode: i.product.hsnCode,
+      // The colour actually ordered first, else the SKU's own variant options.
+      variant: i.shade || [i.product.optionColor, i.product.optionVariant].filter(Boolean).join(' / ') || null,
       image: i.product.images[0]?.url ?? null,
       qty: i.quantity,
       unitPrice: i.unitPrice,
@@ -320,19 +374,19 @@ export async function listPartnerOrders(partnerId: string, query: PartnerOrdersQ
   const p = parsePagination(query);
   const where: Prisma.OrderWhereInput = { partnerId, source: OrderSource.PARTNER };
 
-  if (query.bucket && query.bucket !== 'all') {
+  // An exact status wins; the bucket is the older chip vocabulary.
+  if (query.status && query.status !== 'all') {
+    where.status = query.status;
+  } else if (query.bucket && query.bucket !== 'all') {
     where.status = { in: BUCKET_STATUSES[query.bucket] };
   }
-  // Our number, the partner's own reference, or anything in the box. partnerId
-  // and source stay top-level, so they AND with this OR group.
-  if (query.q) {
-    const contains = { contains: query.q, mode: Prisma.QueryMode.insensitive };
-    where.OR = [
-      { orderNo: contains },
-      { externalRef: contains },
-      { items: { some: { product: { OR: [{ name: contains }, { sku: contains }] } } } },
-    ];
-  }
+  // Resolved exactly as the Orders report resolves it (IST day boundaries), so
+  // the tab's Download — that report scoped to this partner — holds these orders.
+  const created = dateWhere(resolvePeriod(query.period, { from: query.from, to: query.to }));
+  if (created) where.createdAt = created;
+  // The same clause the report's hidden `q` filter builds. partnerId and source
+  // stay top-level, so they AND with its OR group.
+  if (query.q) Object.assign(where, orderSearchWhere(query.q));
 
   const [rows, total] = await prisma.$transaction([
     prisma.order.findMany({ where, select: partnerOrderSelect, orderBy: { createdAt: 'desc' }, skip: p.skip, take: p.take }),

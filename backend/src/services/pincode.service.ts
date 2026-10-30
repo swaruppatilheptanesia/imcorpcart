@@ -17,6 +17,11 @@ export const COURIER_LABELS: Record<CourierCode, string> = {
   DTDC: 'DTDC',
   EKART: 'Ekart',
   INDIA_POST: 'India Post',
+  GATI: 'Gati',
+  CRITICALLOG: 'CriticalLog',
+  JAYDEEP: 'Jaydeep',
+  MOVIN: 'Movin',
+  DELHIVERY_B2B: 'Delhivery B2B',
 };
 
 export const MODE_LABELS: Record<DeliveryMode, string> = {

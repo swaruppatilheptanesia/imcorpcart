@@ -447,6 +447,15 @@ export async function getOrders(query: OrderQuery = {}): Promise<{ items: Order[
 }
 
 export type OrderWithCuid = Order & { cuid: string };
+/** Record (or, with null, clear) the seller's GST invoice number on an order. */
+export async function setOrderInvoiceNumber(idOrNo: string, invoiceNumber: string | null): Promise<OrderWithCuid> {
+  const raw = await apiFetch<Parameters<typeof toOrderFull>[0]>(`/orders/${idOrNo.replace(/^#/, '')}/invoice`, {
+    method: 'PATCH',
+    body: { invoiceNumber },
+  });
+  return toOrderFull(raw);
+}
+
 export async function getOrder(orderNo: string): Promise<OrderWithCuid> {
   // The API accepts either the cuid or the orderNo (with or without '#').
   const clean = orderNo.replace(/^#/, '');
@@ -571,7 +580,17 @@ export function deleteCategory(id: string): Promise<{ ok: boolean }> {
 
 // ─── Pincode / delivery-TAT master ───────────────────────────────────────────
 
-export type CourierCode = 'BLUEDART' | 'DELHIVERY' | 'DTDC' | 'EKART' | 'INDIA_POST';
+export type CourierCode =
+  | 'BLUEDART'
+  | 'DELHIVERY'
+  | 'DTDC'
+  | 'EKART'
+  | 'INDIA_POST'
+  | 'GATI'
+  | 'CRITICALLOG'
+  | 'JAYDEEP'
+  | 'MOVIN'
+  | 'DELHIVERY_B2B';
 export type DeliveryMode = 'APEX' | 'DP' | 'SURFACE';
 
 export interface AdminPincode {
@@ -781,6 +800,9 @@ export interface PartnerOrderItem {
   qty: number;
   unitPrice: number;
   lineTotal: number;
+  hsnCode: string | null;
+  /** The ordered colour, else the SKU's colour / storage options. */
+  variant: string | null;
 }
 export interface PartnerOrderRow {
   id: string;
@@ -791,6 +813,17 @@ export interface PartnerOrderRow {
   reseller: string; // fulfilling reseller, or 'First-party' for house orders
   subtotal: number;
   total: number;
+  /** The seller's GST invoice number, admin-entered; null until set. */
+  invoiceNumber: string | null;
+  invoiceNumberAt: string | null;
+  /** The shipping contact (else the dealer) — the same buyer the Orders report shows. */
+  buyer: { name: string | null; phone: string | null };
+  dealer: { code: string | null; name: string | null; mobile: string | null };
+  deliveryInstructions: string | null;
+  shippingAddress: string;
+  /** null = same as shipping. */
+  billingAddress: string | null;
+  deliveryMode: string | null;
   itemCount: number;
   items: PartnerOrderItem[];
   createdAt: string;
@@ -811,7 +844,15 @@ interface ApiPartnerOrderRow extends Omit<PartnerOrderRow, 'status' | 'fulfilmen
   labelUrl: string | null;
   lastTrackedAt: string | null;
   trackingError: string | null;
-  documents: { id: string; docType: string; generatedAt: string | null; createdAt: string; metadata?: { fileName?: string | null } | null }[];
+  podFetchError: string | null;
+  documents: {
+    id: string;
+    docType: string;
+    source?: string;
+    generatedAt: string | null;
+    createdAt: string;
+    metadata?: { fileName?: string | null; fetchedFrom?: string | null } | null;
+  }[];
 }
 
 export interface PartnerOrdersQuery {
@@ -819,11 +860,26 @@ export interface PartnerOrdersQuery {
   pageSize?: number;
   q?: string;
   bucket?: 'all' | 'active' | 'delivered' | 'cancelled';
+  /** Exact backend status enum (PLACED, DELIVERED…), or 'all'. Wins over `bucket`. */
+  status?: string;
+  /** The Orders report's period vocabulary: DAY · WEEK · MONTH · QUARTER · YEAR · CUSTOM · ALL. */
+  period?: string;
+  from?: string; // yyyy-mm-dd, CUSTOM only
+  to?: string;
 }
 
 export async function getPartnerOrders(id: string, query: PartnerOrdersQuery = {}): Promise<{ items: PartnerOrderRow[]; meta: PageMeta }> {
   const r = await apiFetch<Envelope<ApiPartnerOrderRow[]>>(`/partners/${id}/orders`, {
-    query: { page: query.page, pageSize: query.pageSize, q: query.q, bucket: query.bucket },
+    query: {
+      page: query.page,
+      pageSize: query.pageSize,
+      q: query.q,
+      bucket: query.bucket,
+      status: query.status,
+      period: query.period,
+      from: query.from,
+      to: query.to,
+    },
   });
   const items = r.data.map((o) => ({
     ...o,
@@ -832,7 +888,13 @@ export async function getPartnerOrders(id: string, query: PartnerOrdersQuery = {
     // mapper anyway so "newest wins" and the field names stay in one place.
     fulfilment: toFulfilmentInfo({
       source: 'PARTNER', // every row on this screen is a partner order by definition
-      shipment: { labelUrl: o.labelUrl, lastTrackedAt: o.lastTrackedAt, trackingError: o.trackingError },
+      shipment: {
+        labelUrl: o.labelUrl,
+        lastTrackedAt: o.lastTrackedAt,
+        trackingError: o.trackingError,
+        podFetchError: o.podFetchError,
+        courier: o.courierCode ? { code: o.courierCode } : null,
+      },
       documents: o.documents,
     }),
   }));
@@ -1381,6 +1443,16 @@ export function refreshOrderTracking(id: string): Promise<CourierActionResult> {
   return apiFetch(`/orders/${id}/tracking/refresh`, { method: 'POST' });
 }
 
+/** Ask the courier (DTDC / BlueDart) for the proof of delivery now, instead of waiting for the poller. */
+export function fetchCourierEpod(id: string): Promise<{ ok: boolean; message?: string; fileName?: string; pushedToPartner?: boolean }> {
+  return apiFetch(`/orders/${id}/epod/fetch`, { method: 'POST' });
+}
+
+/** Delhivery B2B LR copy, fetched live from the courier and opened in a new tab. */
+export async function downloadLrCopy(id: string): Promise<void> {
+  openBlob(await apiBlob(`/orders/${id}/lr-copy`));
+}
+
 /** Upload the proof of delivery. Also pushes it to the partner for partner orders. */
 export function uploadOrderEpod(
   id: string,
@@ -1405,7 +1477,10 @@ export function resendOrderEpod(id: string): Promise<{ queued: boolean }> {
  * request, which means fetching the bytes and opening them as a blob.
  */
 export async function downloadOrderEpod(id: string, fileName?: string | null): Promise<void> {
-  const blob = await apiBlob(`/orders/${id}/epod/file`);
+  openBlob(await apiBlob(`/orders/${id}/epod/file`), fileName);
+}
+
+function openBlob(blob: Blob, fileName?: string | null): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

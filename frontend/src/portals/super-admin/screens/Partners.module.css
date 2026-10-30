@@ -542,6 +542,42 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ordCell {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ordId > span + span {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ordStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* Orders tab: fixed column floors, so below the table's natural width it
+   scrolls sideways inside the tab instead of cells overlapping. */
+.ordScroll {
+  overflow-x: auto;
+}
+.ordScroll > * {
+  min-width: 1110px;
+}
+/* Ten columns: a tighter gutter than the shared table's 18px. Two classes so
+   these win over DataTable's own .header / .row. */
+.ordScroll > * > :first-child,
+.ordScroll .ordRow {
+  column-gap: 12px;
+}
 .ordProduct {
   font-size: 13px;
   overflow: hidden;

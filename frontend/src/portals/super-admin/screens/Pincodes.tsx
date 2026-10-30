@@ -19,20 +19,14 @@ import {
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
 import { parseCsv, toCsv, downloadCsv } from '@/lib/csv';
+import { COURIER_LABEL, COURIER_OPTIONS } from '@/lib/courier';
 import s from './screen.module.css';
 import styles from './Pincodes.module.css';
 
 const PAGE_SIZE = 25;
 const COLS = '0.9fr 1fr 0.8fr 0.7fr 1fr 0.9fr 84px';
 
-const COURIERS: { value: CourierCode; label: string }[] = [
-  { value: 'BLUEDART', label: 'Blue Dart' },
-  { value: 'DELHIVERY', label: 'Delhivery' },
-  { value: 'DTDC', label: 'DTDC' },
-  { value: 'EKART', label: 'Ekart' },
-  { value: 'INDIA_POST', label: 'India Post' },
-];
-const COURIER_LABEL: Record<string, string> = Object.fromEntries(COURIERS.map((c) => [c.value, c.label]));
+const COURIERS = COURIER_OPTIONS;
 const MODES: { value: DeliveryMode; label: string }[] = [
   { value: 'APEX', label: 'Apex' },
   { value: 'DP', label: 'DP' },

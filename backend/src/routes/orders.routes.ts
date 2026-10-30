@@ -10,6 +10,7 @@ import {
   orderItemParams,
   colourSwapBody,
   epodBody,
+  invoiceNumberBody,
 } from '../validators/order.schema';
 import { documentUpload } from '../config/document-upload';
 import { transitUpdateBody } from '../validators/reseller.schema';
@@ -21,6 +22,8 @@ router.get('/:id', validate({ params: idParam }), asyncHandler(ctrl.get));
 router.patch('/:id/status', validate({ params: idParam, body: overrideStatusBody }), asyncHandler(ctrl.overrideStatus));
 router.patch('/:id/transit', validate({ params: idParam, body: transitUpdateBody }), asyncHandler(ctrl.updateTransit));
 router.post('/:id/cancel', validate({ params: idParam, body: cancelOrderBody }), asyncHandler(ctrl.cancel));
+// The seller's GST invoice number, entered by hand once the invoice is raised.
+router.patch('/:id/invoice', validate({ params: idParam, body: invoiceNumberBody }), asyncHandler(ctrl.setInvoiceNumber));
 router.post(
   '/:id/items/:itemId/retry-voucher',
   validate({ params: orderItemParams }),
@@ -47,6 +50,10 @@ router.patch(
 // the aggregator is off or fails, staff enter the AWB and drive transit by hand.
 router.post('/:id/awb', validate({ params: idParam }), asyncHandler(ctrl.generateAwb));
 router.post('/:id/tracking/refresh', validate({ params: idParam }), asyncHandler(ctrl.refreshTracking));
+// Carrier documents: the proof of delivery for DTDC / BlueDart (also fetched
+// automatically by the poller) and the Delhivery B2B LR copy, streamed, not stored.
+router.post('/:id/epod/fetch', validate({ params: idParam }), asyncHandler(ctrl.fetchCourierEpod));
+router.get('/:id/lr-copy', validate({ params: idParam }), asyncHandler(ctrl.downloadLrCopy));
 
 // Proof of delivery. Upload stores the document AND pushes it to the origin
 // partner in one call, so it can never sit uploaded-but-unsent. The file is kept

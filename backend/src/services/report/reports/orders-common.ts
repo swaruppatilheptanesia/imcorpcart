@@ -1,8 +1,9 @@
-import { Prisma, DocumentType } from '@prisma/client';
+import { Prisma, DocumentType, OrderSource } from '@prisma/client';
 import { prisma } from '../../../config/prisma';
 import { MODE_LABELS } from '../../pincode.service';
 import { dateWhere, resolvePeriod, type ReportPeriod } from '../../../utils/date-range';
 import { pageAll, keyset } from '../chunk';
+import { toNumber } from '../../../models/serializers';
 
 /**
  * Shared row-building for both Orders reports.
@@ -27,6 +28,11 @@ export const orderReportInclude = {
   address: {
     select: { contactName: true, contactPhone: true, line1: true, line2: true, city: true, state: true, pincode: true },
   },
+  // Null = "same as the shipping address" (the schema's own rule) — which is
+  // always the case for partner orders, since the partner API sends no billing.
+  billingAddress: {
+    select: { line1: true, line2: true, city: true, state: true, pincode: true },
+  },
   shipment: {
     select: {
       awbNumber: true,
@@ -47,7 +53,11 @@ export const orderReportInclude = {
     select: {
       id: true,
       quantity: true,
-      product: { select: { name: true, sku: true, deliveryMode: true } },
+      unitPrice: true,
+      shade: true,
+      product: {
+        select: { name: true, sku: true, deliveryMode: true, hsnCode: true, optionColor: true, optionVariant: true },
+      },
     },
   },
 } satisfies Prisma.OrderInclude;
@@ -75,6 +85,16 @@ export interface OrderLineRow {
   awb: string;
   hasPod: boolean;
   podNote: string;
+  // Line + buyer detail for the admin Orders report. `orderTotal` is the whole
+  // order's total, so it repeats down a multi-line order like every order-level field.
+  sku: string;
+  hsnCode: string;
+  variant: string;
+  unitPrice: number;
+  orderTotal: number;
+  dealerCode: string;
+  invoiceNumber: string;
+  billingAddress: string;
 }
 
 export interface OrderFilters {
@@ -83,6 +103,22 @@ export interface OrderFilters {
   to?: Date;
   status?: string;
   resellerId?: string;
+  // Not on the Reports screen: the admin Partner → Orders tab downloads this
+  // report scoped to one partner, with the tab's own search box.
+  partnerId?: string;
+  q?: string;
+}
+
+/** Our order no, the partner's own reference, or a product name / SKU on the order. */
+export function orderSearchWhere(q: string): Prisma.OrderWhereInput {
+  const contains = { contains: q, mode: Prisma.QueryMode.insensitive };
+  return {
+    OR: [
+      { orderNo: contains },
+      { externalRef: contains },
+      { items: { some: { product: { OR: [{ name: contains }, { sku: contains }] } } } },
+    ],
+  };
 }
 
 export function orderWhere(f: OrderFilters): Prisma.OrderWhereInput {
@@ -91,6 +127,8 @@ export function orderWhere(f: OrderFilters): Prisma.OrderWhereInput {
     ...(created ? { createdAt: created } : {}),
     ...(f.status && f.status !== 'all' ? { status: f.status as Prisma.OrderWhereInput['status'] } : {}),
     ...(f.resellerId && f.resellerId !== 'all' ? { resellerId: f.resellerId } : {}),
+    ...(f.partnerId ? { partnerId: f.partnerId, source: OrderSource.PARTNER } : {}),
+    ...(f.q ? orderSearchWhere(f.q) : {}),
   };
 }
 
@@ -99,9 +137,10 @@ export function countOrderLines(f: OrderFilters): Promise<number> {
   return prisma.orderItem.count({ where: { order: orderWhere(f) } });
 }
 
-function flattenAddress(a: OrderRow['address']): string {
+type AddressParts = { line1: string; line2: string | null; city: string; state: string; pincode?: string } | null;
+export function flattenAddress(a: AddressParts, withPincode = false): string {
   if (!a) return '';
-  return [a.line1, a.line2, a.city, a.state].filter((x) => x && String(x).trim()).join(', ');
+  return [a.line1, a.line2, a.city, a.state, withPincode ? a.pincode : null].filter((x) => x && String(x).trim()).join(', ');
 }
 
 function toLines(o: OrderRow): OrderLineRow[] {
@@ -119,6 +158,7 @@ function toLines(o: OrderRow): OrderLineRow[] {
   // it is the buyer of record.
   const buyerName = o.employee?.user.fullName ?? o.address?.contactName ?? o.dealerName ?? '';
   const buyerPhone = o.address?.contactPhone ?? o.employee?.user.phone ?? o.dealerMobile ?? '';
+  const billingAddress = flattenAddress(o.billingAddress ?? o.address, true);
 
   return o.items.map((it) => ({
     id: it.id,
@@ -142,6 +182,15 @@ function toLines(o: OrderRow): OrderLineRow[] {
     awb: o.shipment?.awbNumber ?? '',
     hasPod: !!pod,
     podNote,
+    sku: it.product?.sku ?? '',
+    hsnCode: it.product?.hsnCode ?? '',
+    // The colour actually ordered first; else the SKU's own variant options.
+    variant: it.shade || [it.product?.optionColor, it.product?.optionVariant].filter(Boolean).join(' / '),
+    unitPrice: toNumber(it.unitPrice),
+    orderTotal: toNumber(o.total),
+    dealerCode: o.dealerCode ?? '',
+    invoiceNumber: o.invoiceNumber ?? '',
+    billingAddress,
   }));
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MODE_OPTIONS } from '@/lib/courier';
+import { COURIER_OPTIONS, MODE_OPTIONS } from '@/lib/courier';
 import { Drawer, Field, Input, Button, Chip, useToast } from '@/components';
 import { updateTransit, type TransitUpdateInput } from '@/data/reseller-api';
 import type { ResellerOrderRow } from '../data';
@@ -12,13 +12,8 @@ const STATUS_OPTIONS: { label: string; value: TransitUpdateInput['status'] }[] =
   { label: 'Delivered', value: 'DELIVERED' },
 ];
 
-const COURIERS: { label: string; value: TransitUpdateInput['courierCode'] }[] = [
-  { label: 'BlueDart', value: 'BLUEDART' },
-  { label: 'Delhivery', value: 'DELHIVERY' },
-  { label: 'DTDC', value: 'DTDC' },
-  { label: 'Ekart', value: 'EKART' },
-  { label: 'India Post', value: 'INDIA_POST' },
-];
+// The shared list, so the reseller sees every courier the admin can pick.
+const COURIERS = COURIER_OPTIONS;
 
 interface Props {
   open: boolean;

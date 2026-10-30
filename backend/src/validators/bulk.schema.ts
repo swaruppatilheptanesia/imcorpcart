@@ -96,6 +96,13 @@ const COURIER_ALIASES: Record<string, CourierCode> = {
   INDIA_POST: CourierCode.INDIA_POST,
   INDIAPOST: CourierCode.INDIA_POST,
   SPEED_POST: CourierCode.INDIA_POST,
+  GATI: CourierCode.GATI,
+  CRITICALLOG: CourierCode.CRITICALLOG,
+  CRITICAL_LOG: CourierCode.CRITICALLOG,
+  JAYDEEP: CourierCode.JAYDEEP,
+  MOVIN: CourierCode.MOVIN,
+  DELHIVERY_B2B: CourierCode.DELHIVERY_B2B,
+  DELHIVERYB2B: CourierCode.DELHIVERY_B2B,
 };
 
 /** "Blue Dart" / "blue-dart" / "BLUEDART" → BLUEDART. */

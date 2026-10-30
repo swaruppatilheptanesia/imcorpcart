@@ -53,3 +53,15 @@ export const epodBody = z.object({
   note: z.string().trim().max(500).optional(),
 });
 export type EpodInput = z.infer<typeof epodBody>;
+
+// Admin-entered invoice number. null clears it.
+export const invoiceNumberBody = z.object({
+  invoiceNumber: z
+    .string()
+    .trim()
+    .min(1, 'Invoice number is required (send null to clear it)')
+    .max(60, 'Invoice number is too long (max 60 characters)')
+    .regex(/^[A-Za-z0-9/_.\-]+$/, 'Use letters, digits and / - _ . only')
+    .nullable(),
+});
+export type InvoiceNumberInput = z.infer<typeof invoiceNumberBody>;

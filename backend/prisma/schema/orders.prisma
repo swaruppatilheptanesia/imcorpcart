@@ -56,6 +56,12 @@ model Order {
   deliveryInstructions String? @map("delivery_instructions")
   cancelReason         String? @map("cancel_reason")
 
+  // The seller's GST invoice number, typed in by the Super Admin once the
+  // invoice is raised (no sequence is generated here). Deliberately not unique:
+  // each seller numbers its own invoices, so two sellers can share a number.
+  invoiceNumber   String?   @map("invoice_number")
+  invoiceNumberAt DateTime? @map("invoice_number_at")
+
   // Buyer. Null for partner orders (no internal employee/company).
   employeeId String?
   employee   Employee? @relation(fields: [employeeId], references: [id])

@@ -475,7 +475,14 @@ export type OrderForTransit = Prisma.OrderGetPayload<{ include: { shipment: true
 
 // actorId is null for transitions driven by the courier tracking poller rather
 // than a person; OrderStatusHistory.changedById is nullable for exactly that.
-export async function applyTransit(order: OrderForTransit, input: TransitUpdateInput, actorId: string | null) {
+// `event` is for the courier tracking poller only: the carrier's own scan time
+// and payload for the timeline entry. Never sourced from a request body.
+export async function applyTransit(
+  order: OrderForTransit,
+  input: TransitUpdateInput,
+  actorId: string | null,
+  event: { occurredAt?: Date; raw?: Prisma.InputJsonValue } = {},
+) {
   if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED) {
     throw AppError.badRequest(`Cannot update transit on a ${order.status} order`);
   }
@@ -530,7 +537,8 @@ export async function applyTransit(order: OrderForTransit, input: TransitUpdateI
         shipmentId: shipment.id,
         status: input.status,
         description: input.description ?? defaultTransitNote(input.status),
-        occurredAt: now,
+        occurredAt: event.occurredAt ?? now,
+        ...(event.raw !== undefined ? { raw: event.raw } : {}),
       },
     });
 
@@ -587,7 +595,7 @@ function defaultTransitNote(status: ShipmentStatus): string {
     case ShipmentStatus.DELIVERED:
       return 'Delivered';
     case ShipmentStatus.FAILED:
-      return 'Delivery failed';
+      return 'Delivery issue';
     case ShipmentStatus.RETURNED:
       return 'Returned to origin';
   }

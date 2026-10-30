@@ -1553,7 +1553,8 @@ export async function getTracking(userId: string, id: string) {
       shipment: {
         include: {
           courier: { select: { code: true, name: true } },
-          trackingEvents: { orderBy: { occurredAt: 'asc' } },
+          // Not `raw`: the courier's payload (consignee, hubs) stays staff-side.
+          trackingEvents: { orderBy: { occurredAt: 'asc' }, select: { status: true, description: true, occurredAt: true } },
         },
       },
       statusHistory: { orderBy: { createdAt: 'asc' } },

@@ -65,6 +65,13 @@ model Shipment {
   nextPollAt    DateTime? @map("next_poll_at")
   trackingError String?   @map("tracking_error")
 
+  // Automatic ePOD fetch (DTDC / BlueDart). The poller picks up a DELIVERED
+  // shipment with no POD document; `podNextFetchAt` null = due now, and it gives
+  // up after a fixed number of attempts, leaving `podFetchError` for staff.
+  podFetchAttempts Int       @default(0) @map("pod_fetch_attempts")
+  podNextFetchAt   DateTime? @map("pod_next_fetch_at")
+  podFetchError    String?   @map("pod_fetch_error")
+
   trackingEvents ShipmentTrackingEvent[]
 
   createdAt DateTime @default(now())

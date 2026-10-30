@@ -17,7 +17,7 @@ import type { SemanticTone, Order, OrderItem } from '@/data/types';
 import { useAsync } from '@/lib/useAsync';
 import { fmtDate } from '@/data/map';
 import { inr } from '@/lib/format';
-import { CourierAutomation, EpodControl, TransitControl } from './OrderFulfilment';
+import { CourierAutomation, EpodControl, TransitControl, InvoiceNumberControl } from './OrderFulfilment';
 import s from './screen.module.css';
 import styles from './OrderDetail.module.css';
 
@@ -190,6 +190,17 @@ export function OrderDetail() {
                   orderId={id ?? ''}
                   delivered={order.status === 'Delivered'}
                   info={order.fulfilment}
+                  onDone={reload}
+                />
+              </Card>
+
+              <Card>
+                <div className={s.sectionTitle}>Invoice</div>
+                <InvoiceNumberControl
+                  orderId={order.cuid}
+                  cancelled={cancelled}
+                  invoiceNumber={order.invoiceNumber}
+                  invoiceNumberAt={order.invoiceNumberAt}
                   onDone={reload}
                 />
               </Card>

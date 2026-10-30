@@ -4,6 +4,7 @@
 
 import { createAuthStore } from './auth-store';
 import { createHttpClient, createAuthApi } from './http';
+import type { CourierCode } from './api';
 
 export const resellerStore = createAuthStore('reseller');
 const client = createHttpClient(resellerStore);
@@ -94,7 +95,7 @@ export interface ResellerOfferWrite {
 export interface TransitUpdateInput {
   status: 'PENDING' | 'DISPATCHED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'RETURNED';
   awbNumber?: string;
-  courierCode?: 'BLUEDART' | 'DELHIVERY' | 'DTDC' | 'EKART' | 'INDIA_POST';
+  courierCode?: CourierCode;
   /** Blank lets the server default it from the product on the first dispatch. */
   deliveryMode?: 'APEX' | 'DP' | 'SURFACE';
   description?: string;

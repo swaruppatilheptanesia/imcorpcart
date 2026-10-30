@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { OrderStatus } from '@prisma/client';
+import { REPORT_PERIODS } from '../utils/date-range';
 
 const partnerStatus = z.enum(['ACTIVE', 'ONBOARDING', 'SUSPENDED']);
 const priceBasis = z.enum(['MRP', 'MOP', 'EPP']);
@@ -70,9 +72,16 @@ export const partnerActivityQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
 
+// `period`/`from`/`to` are the Orders report's own vocabulary, so the tab and its
+// download (the report scoped by partnerId) agree on which orders a period holds.
+// `status` is exact and wins over `bucket` (kept for older clients).
 export const partnerOrdersQuery = z.object({
   q: z.string().trim().optional(),
   bucket: z.enum(['all', 'active', 'delivered', 'cancelled']).optional(),
+  status: z.union([z.nativeEnum(OrderStatus), z.literal('all')]).optional(),
+  period: z.enum(REPORT_PERIODS).default('ALL'),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });

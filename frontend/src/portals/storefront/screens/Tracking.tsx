@@ -5,6 +5,7 @@ import { trackingSteps } from '@/data/fixtures/storefront';
 import { fmtDate } from '@/data/map';
 import { useAsync } from '@/lib/useAsync';
 import { getTracking } from '@/data/shop-api';
+import { SHIPMENT_EVENT_LABEL } from '../orderStatus';
 import styles from './Tracking.module.css';
 
 // Shipment status → number of completed timeline steps (of 5).
@@ -67,7 +68,7 @@ export function Tracking() {
           <div style={{ marginTop: 18, display: 'grid', gap: 8 }}>
             {events.map((e, i) => (
               <div key={i} style={{ fontSize: 13, color: 'var(--text2)' }}>
-                <strong style={{ color: 'var(--text)' }}>{e.status.replace(/_/g, ' ')}</strong>
+                <strong style={{ color: 'var(--text)' }}>{SHIPMENT_EVENT_LABEL[e.status] ?? e.status.replace(/_/g, ' ')}</strong>
                 {e.description ? ` — ${e.description}` : ''} · {fmtDate(e.occurredAt)}
               </div>
             ))}

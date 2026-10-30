@@ -233,6 +233,12 @@ enum CourierCode {
   DTDC
   EKART
   INDIA_POST
+  // Tracked through the H. K. Data Services aggregator (Oct 2026 collection).
+  GATI
+  CRITICALLOG
+  JAYDEEP
+  MOVIN
+  DELHIVERY_B2B // LR-number freight service; its "POD" endpoint returns the LR copy
 }
 
 // Courier service mode for pincode TAT (Blue Dart: APEX = air/priority,
@@ -269,6 +275,7 @@ enum DocumentType {
 enum DocumentSource {
   GENERATED
   UPLOADED
+  COURIER // fetched from the courier aggregator (DTDC / BlueDart ePOD)
 }
 
 // ── Notifications ────────────────────────────────────────────────────────────

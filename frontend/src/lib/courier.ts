@@ -8,8 +8,8 @@ import type { CourierCode, DeliveryMode } from '@/data/api';
  * backend/src/services/pincode.service.ts — so a code shown here reads the same
  * as the same code shown in a delivery estimate or a pincode row.
  *
- * The courier list predates this module in four screens with three different
- * spellings of "Blue Dart"; new code should import from here.
+ * Every courier picker (admin transit form, reseller transit drawer, Pincodes)
+ * reads this list, so adding a courier is one line here plus the enum.
  */
 
 export const COURIER_OPTIONS: { value: CourierCode; label: string }[] = [
@@ -18,6 +18,11 @@ export const COURIER_OPTIONS: { value: CourierCode; label: string }[] = [
   { value: 'DTDC', label: 'DTDC' },
   { value: 'EKART', label: 'Ekart' },
   { value: 'INDIA_POST', label: 'India Post' },
+  { value: 'GATI', label: 'Gati' },
+  { value: 'CRITICALLOG', label: 'CriticalLog' },
+  { value: 'JAYDEEP', label: 'Jaydeep' },
+  { value: 'MOVIN', label: 'Movin' },
+  { value: 'DELHIVERY_B2B', label: 'Delhivery B2B' },
 ];
 
 // APEX = air/priority, DP = domestic priority, SURFACE = ground. The courier

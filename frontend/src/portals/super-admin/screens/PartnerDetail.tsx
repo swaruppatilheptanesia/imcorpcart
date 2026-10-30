@@ -128,7 +128,9 @@ export function PartnerDetail() {
   };
 
   return (
-    <div className={s.wide}>
+    // The Orders tab is a ten-column table: it takes the full content width
+    // rather than the 1000px column the other tabs read well in.
+    <div className={tab === 'orders' ? undefined : s.wide}>
       <button className={styles.back} onClick={() => navigate('/super-admin/partners')}>
         <ArrowLeft size={16} /> Back to partners
       </button>
@@ -177,7 +179,7 @@ export function PartnerDetail() {
       {tab === 'catalogue' && (
         <PartnerCatalogue partnerId={id} defaultBasis={partner.priceField} defaultCommission={partner.commissionPct ?? 0} />
       )}
-      {tab === 'orders' && <PartnerOrders partnerId={id} />}
+      {tab === 'orders' && <PartnerOrders partnerId={id} partnerName={partner.name} />}
 
       {rotated && (
         <SecretModal label={rotated.label} value={rotated.value} onClose={() => setRotated(null)} />

@@ -2,39 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, AlertTriangle, ShoppingBag, Landmark } from 'lucide-react';
 import { Chip, StatusPill, EmptyState, Skeleton } from '@/components';
-import type { SemanticTone } from '@/data/types';
-import type { StoreOrderStatus } from '@/data/store-types';
 import { SEPP_STATUS_LABEL, SEPP_STATUS_TONE } from '@/data/sepp-types';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
 import { fmtDate } from '@/data/map';
 import { getOrders, getSeppRequests } from '@/data/shop-api';
 import { useStore } from '../store-context';
+import { SHOP_STATUS_TONE, shopStatusBucket, shopStatusLabel } from '../orderStatus';
 import styles from './Orders.module.css';
 
-const tone: Record<StoreOrderStatus, SemanticTone> = {
-  Processing: 'warning',
-  'In transit': 'info',
-  Delivered: 'success',
-  Cancelled: 'error',
-};
-
-const STATUS_IN: Record<string, StoreOrderStatus> = {
-  PLACED: 'Processing',
-  CONFIRMED: 'Processing',
-  DISPATCHED: 'In transit',
-  DELIVERED: 'Delivered',
-  CANCELLED: 'Cancelled',
-  RETURNED: 'Cancelled',
-};
-
 type Filter = 'all' | 'active' | 'delivered' | 'cancelled';
-
-function bucket(s: StoreOrderStatus): Filter {
-  if (s === 'Delivered') return 'delivered';
-  if (s === 'Cancelled') return 'cancelled';
-  return 'active';
-}
 
 export function Orders() {
   const navigate = useNavigate();
@@ -57,7 +34,7 @@ export function Orders() {
   const rows = (data ?? [])
     .map((o) => ({
       orderNo: o.orderNo,
-      status: STATUS_IN[o.status] ?? 'Processing',
+      status: shopStatusLabel(o.status, o.shipment?.status),
       total: o.total,
       date: fmtDate(o.createdAt),
       summary: o.items.map((i) => i.product.name).join(', ') || '—',
@@ -65,7 +42,7 @@ export function Orders() {
       vendorNote: ['imcorpcart', o.shipment?.courier?.name].filter(Boolean).join(' · '),
       splitOf: o.checkoutGroup ? groupSize.get(o.checkoutGroup) ?? 1 : 1,
     }))
-    .filter((o) => filter === 'all' || bucket(o.status) === filter);
+    .filter((o) => filter === 'all' || shopStatusBucket(o.status) === filter);
 
   return (
     <div>
@@ -149,7 +126,7 @@ export function Orders() {
                 </div>
               </div>
               <div className={styles.orderRight}>
-                <StatusPill label={o.status} tone={tone[o.status]} />
+                <StatusPill label={o.status} tone={SHOP_STATUS_TONE[o.status]} />
                 <span className={styles.orderTotal}>{inr(o.total)}</span>
                 <ChevronRight size={18} className={styles.chevron} />
               </div>

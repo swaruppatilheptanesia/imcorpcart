@@ -48,6 +48,13 @@ async function main() {
     { code: CourierCode.DTDC, name: "DTDC", priority: CourierPriority.MEDIUM },
     { code: CourierCode.EKART, name: "Ekart", priority: CourierPriority.MEDIUM },
     { code: CourierCode.INDIA_POST, name: "India Post", priority: CourierPriority.FALLBACK },
+    // Tracked via the H. K. Data Services aggregator; also inserted by migration
+    // 20261030120100 so production has them without a re-seed.
+    { code: CourierCode.GATI, name: "Gati", priority: CourierPriority.MEDIUM },
+    { code: CourierCode.CRITICALLOG, name: "CriticalLog", priority: CourierPriority.MEDIUM },
+    { code: CourierCode.JAYDEEP, name: "Jaydeep", priority: CourierPriority.MEDIUM },
+    { code: CourierCode.MOVIN, name: "Movin", priority: CourierPriority.MEDIUM },
+    { code: CourierCode.DELHIVERY_B2B, name: "Delhivery B2B", priority: CourierPriority.MEDIUM },
   ];
   for (const c of couriers) {
     await prisma.courier.upsert({

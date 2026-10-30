@@ -26,3 +26,16 @@
   align-items: center;
   gap: 10px;
 }
+/* A text link that is really an authed fetch (the Delhivery B2B LR copy). */
+.linkBtn {
+  justify-self: start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+.linkBtn:hover {
+  text-decoration: underline;
+}

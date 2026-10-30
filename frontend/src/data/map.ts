@@ -250,7 +250,8 @@ interface ApiOrderDocument {
   fileUrl?: string | null;
   generatedAt: string | null;
   createdAt: string;
-  metadata?: { fileName?: string | null } | null;
+  source?: string;
+  metadata?: { fileName?: string | null; fetchedFrom?: string | null } | null;
 }
 
 interface ApiOrderListRow {
@@ -267,7 +268,7 @@ interface ApiOrderListRow {
   shipment: {
     awbNumber: string | null;
     dispatchedAt: string | null;
-    courier: { name: string } | null;
+    courier: { code: string; name: string } | null;
     labelUrl?: string | null;
     lastTrackedAt?: string | null;
     trackingError?: string | null;
@@ -296,6 +297,7 @@ export function toOrderListRow(o: ApiOrderListRow): Order {
           capturedAt: pod.generatedAt ?? null,
           fileName: pod.metadata?.fileName ?? null,
           uploadedAt: pod.createdAt,
+          fetchedFrom: pod.source === 'COURIER' ? (pod.metadata?.fetchedFrom ?? 'the courier') : null,
         }
       : null,
     type: o.type,
@@ -335,6 +337,8 @@ interface ApiOrderItem {
 interface ApiOrderFull extends ApiOrderListRow {
   id: string;
   source?: string | null;
+  invoiceNumber?: string | null;
+  invoiceNumberAt?: string | null;
   documents?: ApiOrderDocument[];
   // The full order carries the buyer's email (orderFullInclude); the list row doesn't.
   employee: { user: { fullName: string; email?: string | null } } | null;
@@ -350,12 +354,19 @@ interface ApiOrderFull extends ApiOrderListRow {
  */
 export function toFulfilmentInfo(o: {
   source?: string | null;
-  shipment?: { labelUrl?: string | null; lastTrackedAt?: string | null; trackingError?: string | null } | null;
+  shipment?: {
+    labelUrl?: string | null;
+    lastTrackedAt?: string | null;
+    trackingError?: string | null;
+    podFetchError?: string | null;
+    courier?: { code: string } | null;
+  } | null;
   documents?: ApiOrderDocument[] | null;
 }): OrderFulfilmentInfo {
   // Newest POD wins; re-uploading a corrected scan supersedes the old one.
   const pods = (o.documents ?? []).filter((d) => d.docType === 'POD');
   const pod = pods[pods.length - 1];
+  const courier = o.shipment?.courier?.code ?? null;
   return {
     fromPartner: o.source === 'PARTNER',
     labelUrl: o.shipment?.labelUrl ?? null,
@@ -367,8 +378,13 @@ export function toFulfilmentInfo(o: {
           capturedAt: pod.generatedAt,
           fileName: pod.metadata?.fileName ?? null,
           uploadedAt: pod.createdAt,
+          fetchedFrom: pod.source === 'COURIER' ? (pod.metadata?.fetchedFrom ?? 'the courier') : null,
         }
       : null,
+    // Mirrors the backend's POD_PATH / lrCopySupported in courier/hkds.ts.
+    podAuto: courier === 'DTDC' || courier === 'BLUEDART',
+    podFetchError: o.shipment?.podFetchError ?? null,
+    lrCopy: courier === 'DELHIVERY_B2B',
   };
 }
 
@@ -413,6 +429,8 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
     courier: o.shipment?.courier?.name ?? 'Awaiting dispatch',
     awb: o.shipment?.awbNumber ?? '—',
     fulfilment: toFulfilmentInfo(o),
+    invoiceNumber: o.invoiceNumber ?? null,
+    invoiceNumberAt: o.invoiceNumberAt ?? null,
     total: o.total,
     items,
   };

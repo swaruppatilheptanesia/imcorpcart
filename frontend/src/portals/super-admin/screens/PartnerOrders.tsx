@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ChevronDown, Eye, Search, ShoppingBag } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Eye, FileSpreadsheet, FileText, Search, ShoppingBag } from 'lucide-react';
 import {
   Button,
-  Chip,
   DataTable,
   Drawer,
   EmptyState,
@@ -12,35 +11,52 @@ import {
   Row,
   Select,
   Skeleton,
+  Spinner,
   StatusPill,
   useToast,
 } from '@/components';
-import { CourierAutomation, EpodCell, EpodControl, TransitControl } from './OrderFulfilment';
+import { CourierAutomation, EpodCell, EpodControl, InvoiceNumberControl, TransitControl } from './OrderFulfilment';
 import {
+  downloadReport,
   getPartnerOrders,
   orderStatusTone,
   updateOrderTransit,
   type PartnerOrderRow,
-  type PartnerOrdersQuery,
+  type ReportFormat,
 } from '@/data/api';
 import { ApiError } from '@/data/http';
 import { useAsync } from '@/lib/useAsync';
 import { inr } from '@/lib/format';
 import { fmtDate } from '@/data/map';
+import { MODE_LABEL } from '@/lib/courier';
+import { PERIODS } from './reports/ReportFilters';
 import s from './screen.module.css';
 import styles from './Partners.module.css';
 
 const PAGE_SIZE = 25;
-// The Update column has to fit 'Out for delivery' plus the chevron.
-const COLS = '1.15fr 0.72fr 1.2fr 0.8fr 1.3fr 46px 0.8fr 66px';
+// Fixed floors per column (the table scrolls sideways below them rather than
+// squeezing cells into each other). Update has to fit 'Out for delivery' + chevron.
+// The order date sits under the order number to keep ten columns inside a laptop width.
+const COLS =
+  'minmax(124px,1.1fr) minmax(112px,1fr) 88px minmax(110px,1.3fr) 104px minmax(84px,0.8fr) 140px 46px 84px 66px';
 
-type Bucket = NonNullable<PartnerOrdersQuery['bucket']>;
-const BUCKETS: { value: Bucket; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'cancelled', label: 'Cancelled' },
+// The exact order status — not the display label, which folds Placed and
+// Confirmed together. Same values the Orders report's Status filter takes, so
+// the Download holds exactly what the table lists.
+const STATUSES: { value: string; label: string }[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'PLACED', label: 'Placed' },
+  { value: 'CONFIRMED', label: 'Confirmed' },
+  { value: 'DISPATCHED', label: 'Dispatched' },
+  { value: 'DELIVERED', label: 'Delivered' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'RETURNED', label: 'Returned' },
 ];
+// The report's own period list, "All time" first: this tab has always opened on every order.
+const TAB_PERIODS = [...PERIODS.filter((p) => p.value === 'ALL'), ...PERIODS.filter((p) => p.value !== 'ALL')];
+
+const fileStemFor = (name?: string) =>
+  `${(name ?? 'partner').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'partner'}-orders`;
 
 // The shipment statuses staff can set. Same list as the manual transit form.
 const TRANSIT_STATUSES = [
@@ -48,6 +64,9 @@ const TRANSIT_STATUSES = [
   { value: 'IN_TRANSIT', label: 'In transit' },
   { value: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
   { value: 'DELIVERED', label: 'Delivered' },
+  // The courier matcher's "Issue" column (attempted, held, refused, lost…).
+  // The order stays Dispatched; the next scan moves the shipment on again.
+  { value: 'FAILED', label: 'Delivery issue' },
   { value: 'RETURNED', label: 'Returned' },
 ];
 
@@ -59,11 +78,15 @@ const TRANSIT_STATUSES = [
  * dropdown saves on change, the ePOD cell uploads in one click, and the chevron
  * expands the full form for courier / AWB / note / courier automation.
  */
-export function PartnerOrders({ partnerId }: { partnerId: string }) {
+export function PartnerOrders({ partnerId, partnerName }: { partnerId: string; partnerName?: string }) {
   const { flash } = useToast();
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
-  const [bucket, setBucket] = useState<Bucket>('all');
+  const [status, setStatusFilter] = useState('all');
+  const [period, setPeriod] = useState('ALL');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState<ReportFormat | null>(null);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<PartnerOrderRow[]>([]);
   const [open, setOpen] = useState<string | null>(null); // expanded row id
@@ -74,11 +97,22 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
     const t = setTimeout(() => setQ(qInput.trim()), 300);
     return () => clearTimeout(t);
   }, [qInput]);
-  useEffect(() => setPage(1), [q, bucket]);
+  // The one filter set both the table and the Download send. Dates only count
+  // for a custom range, as on the Reports screen.
+  const custom = period === 'CUSTOM';
+  const filters = {
+    q: q || undefined,
+    status,
+    period,
+    from: custom && from ? from : undefined,
+    to: custom && to ? to : undefined,
+  };
+  const filterKey = JSON.stringify(filters);
+  useEffect(() => setPage(1), [filterKey]);
 
   const { data, state, error, reload } = useAsync(
-    () => getPartnerOrders(partnerId, { q: q || undefined, bucket, page, pageSize: PAGE_SIZE }),
-    [partnerId, q, bucket, page],
+    () => getPartnerOrders(partnerId, { ...filters, page, pageSize: PAGE_SIZE }),
+    [partnerId, filterKey, page],
     (d) => d.items.length === 0,
   );
   useEffect(() => {
@@ -87,7 +121,21 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
 
   const meta = data?.meta;
   const pageCount = meta?.pageCount ?? 1;
-  const filtered = Boolean(q) || bucket !== 'all';
+  const filtered = Boolean(q) || status !== 'all' || period !== 'ALL';
+
+  // The file is the admin Orders report scoped to this partner — every column it
+  // has, one row per line item — so it reconciles with Reports → Orders.
+  const download = async (format: ReportFormat) => {
+    setBusy(format);
+    try {
+      await downloadReport('ORDERS_ADMIN', format, { ...filters, partnerId }, fileStemFor(partnerName));
+      flash(`${format === 'CSV' ? 'CSV' : 'Excel'} downloaded`);
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setBusy(null);
+    }
+  };
   const drawerRow = rows.find((r) => r.id === drawerId) ?? null;
 
   // Inline status change: optimistic, then reconciled by the reload. A bare
@@ -116,9 +164,42 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
             onChange={(e) => setQInput(e.target.value)}
           />
         </div>
-        {BUCKETS.map((b) => (
-          <Chip key={b.value} label={b.label} active={bucket === b.value} onClick={() => setBucket(b.value)} />
-        ))}
+        <Select aria-label="Status" value={status} onChange={(e) => setStatusFilter(e.target.value)}>
+          {STATUSES.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+        <Select aria-label="Order date" value={period} onChange={(e) => setPeriod(e.target.value)}>
+          {TAB_PERIODS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
+        {custom && (
+          <>
+            <Input type="date" aria-label="From date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+            <Input type="date" aria-label="To date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </>
+        )}
+        <div className={s.spacer} />
+        <Button
+          variant="secondary"
+          icon={busy === 'CSV' ? <Spinner size={14} /> : <FileText size={15} />}
+          disabled={!!busy || !meta?.total}
+          onClick={() => download('CSV')}
+        >
+          {busy === 'CSV' ? 'Preparing…' : 'Download CSV'}
+        </Button>
+        <Button
+          icon={busy === 'XLSX' ? <Spinner size={14} /> : <FileSpreadsheet size={15} />}
+          disabled={!!busy || !meta?.total}
+          onClick={() => download('XLSX')}
+        >
+          {busy === 'XLSX' ? 'Preparing…' : 'Download Excel'}
+        </Button>
       </div>
 
       <div className={styles.cardTitle}>
@@ -126,6 +207,7 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
       </div>
       <p className={styles.cardHint}>
         Set the shipment status or attach a proof of delivery here — both push straight to the partner.
+        Downloads hold every column of the Orders report, one row per item, for the filters above.
       </p>
 
       {state === 'loading' && <Skeleton h={200} />}
@@ -152,24 +234,39 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
 
       {rows.length > 0 && (
         <>
-          <DataTable cols={COLS} headers={['Order', 'Date', 'Product', 'Status', 'Update', 'ePOD', 'Total', '']}>
+          <div className={styles.ordScroll}>
+          <DataTable
+            cols={COLS}
+            headers={['Order', 'Buyer', 'Dealer', 'Product', 'Status', 'Invoice', 'Update', 'ePOD', 'Total', '']}
+          >
             {rows.map((o) => {
               const cancelled = o.status === 'Cancelled';
               const expanded = open === o.id;
               return (
                 <div key={o.id}>
-                  <Row cols={COLS}>
+                  <Row cols={COLS} className={styles.ordRow}>
                     <div className={styles.ordId}>
                       <span>{o.orderNo}</span>
-                      {o.externalRef && <span className={s.mono}>{o.externalRef}</span>}
+                      {o.externalRef && <span className={s.mono} title={o.externalRef}>{o.externalRef}</span>}
+                      <span className={s.muted}>{fmtDate(o.createdAt)}</span>
                     </div>
-                    <div className={s.muted}>{fmtDate(o.createdAt)}</div>
+                    <div className={styles.ordId}>
+                      <span title={o.buyer.name ?? undefined}>{o.buyer.name ?? '—'}</span>
+                      {o.buyer.phone && <span className={s.muted}>{o.buyer.phone}</span>}
+                    </div>
+                    <div className={styles.ordCell} title={o.dealer.name ?? undefined}>
+                      {o.dealer.code ?? <span className={s.muted}>—</span>}
+                    </div>
                     <div className={styles.ordProduct}>
                       {o.items[0]?.name ?? '—'}
                       {o.itemCount > 1 && <span className={s.muted}> +{o.itemCount - 1} more</span>}
                     </div>
-                    <div>
+                    <div className={styles.ordStatus}>
                       <StatusPill label={o.status} tone={orderStatusTone[o.status]} />
+                      {o.deliveredAt && <span className={s.muted}>{fmtDate(o.deliveredAt)}</span>}
+                    </div>
+                    <div className={styles.ordCell} title={o.invoiceNumber ?? undefined}>
+                      {o.invoiceNumber ? <span className={s.mono}>{o.invoiceNumber}</span> : <span className={s.muted}>—</span>}
                     </div>
                     <div>
                       {cancelled ? (
@@ -246,6 +343,14 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
                             info={o.fulfilment}
                             onDone={reload}
                           />
+                          <div className={styles.pdSectionTitle} style={{ marginTop: 18 }}>Invoice</div>
+                          <InvoiceNumberControl
+                            orderId={o.id}
+                            cancelled={cancelled}
+                            invoiceNumber={o.invoiceNumber}
+                            invoiceNumberAt={o.invoiceNumberAt}
+                            onDone={reload}
+                          />
                         </div>
                       </div>
                     </div>
@@ -254,6 +359,7 @@ export function PartnerOrders({ partnerId }: { partnerId: string }) {
               );
             })}
           </DataTable>
+          </div>
 
           <div className={styles.ordPager}>
             <span className={s.muted} style={{ fontSize: 12.5 }}>
@@ -285,15 +391,33 @@ function OrderLine({ label, value, strong }: { label: string; value: string; str
   );
 }
 
+// One label → value row; empty values are left out so a sparse order stays short.
+function MetaRows({ rows }: { rows: [string, string | null | undefined][] }) {
+  const shown = rows.filter(([, v]) => v);
+  if (shown.length === 0) return <p className={styles.pdText}>—</p>;
+  return (
+    <dl className={styles.pdMeta}>
+      {shown.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /**
- * Read-only detail for one row: the item lines, shipping and totals the table
- * can't show. Fulfilment is edited in the row itself, not here, so the same
- * action never exists twice on one screen.
+ * Read-only detail for one row: everything the partner sent and everything we
+ * have recorded since — buyer, dealer, both addresses, each line's SKU /
+ * variant / HSN, invoice and fulfilment. Fulfilment is edited in the row
+ * itself, not here, so the same action never exists twice on one screen.
  */
 function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClose: () => void }) {
   const navigate = useNavigate();
+  const pod = order.fulfilment.epod;
   return (
-    <Drawer open onClose={onClose} title={order.orderNo} width={460}>
+    <Drawer open onClose={onClose} title={order.orderNo} width={480}>
       <div className={styles.pdWrap}>
         <div className={styles.pdHead}>
           <div className={s.muted} style={{ fontSize: 12.5 }}>
@@ -301,6 +425,45 @@ function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClos
             {fmtDate(order.createdAt)}
           </div>
           <StatusPill label={order.status} tone={orderStatusTone[order.status]} />
+        </div>
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Buyer</div>
+          <MetaRows
+            rows={[
+              ['Name', order.buyer.name],
+              ['Contact number', order.buyer.phone],
+            ]}
+          />
+        </div>
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Dealer</div>
+          <MetaRows
+            rows={[
+              ['Dealer code', order.dealer.code],
+              ['Dealer name', order.dealer.name],
+              ['Dealer mobile', order.dealer.mobile],
+            ]}
+          />
+        </div>
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Shipping address</div>
+          <p className={styles.pdText}>{order.shippingAddress || '—'}</p>
+          {order.deliveryInstructions && (
+            <p className={styles.pdText}>
+              <span className={s.muted}>Instructions: </span>
+              {order.deliveryInstructions}
+            </p>
+          )}
+        </div>
+
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Billing address</div>
+          <p className={styles.pdText}>
+            {order.billingAddress ?? <span className={s.muted}>Same as shipping</span>}
+          </p>
         </div>
 
         <div className={styles.pdSection}>
@@ -312,6 +475,11 @@ function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClos
                 <div className={styles.ordItemName}>
                   <span>{it.name}</span>
                   <span className={s.mono}>{it.sku}</span>
+                  {(it.variant || it.hsnCode) && (
+                    <span className={s.muted} style={{ fontSize: 12 }}>
+                      {[it.variant, it.hsnCode && `HSN ${it.hsnCode}`].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
                 </div>
                 <div className={styles.ordItemQty}>
                   {it.qty} × {inr(it.unitPrice)}
@@ -323,46 +491,29 @@ function PartnerOrderDrawer({ order, onClose }: { order: PartnerOrderRow; onClos
         </div>
 
         <div className={styles.pdSection}>
-          <div className={styles.pdSectionTitle}>Fulfilment</div>
-          <dl className={styles.pdMeta}>
-            <div>
-              <dt>Reseller</dt>
-              <dd>{order.reseller}</dd>
-            </div>
-          </dl>
+          <div className={styles.pdSectionTitle}>Invoice</div>
+          <MetaRows
+            rows={[
+              ['Our invoice number', order.invoiceNumber ?? 'Not entered yet'],
+              ['Entered', order.invoiceNumberAt ? fmtDate(order.invoiceNumberAt) : null],
+            ]}
+          />
         </div>
 
-        {(order.courier || order.awb || order.dispatchedAt) && (
-          <div className={styles.pdSection}>
-            <div className={styles.pdSectionTitle}>Shipping</div>
-            <dl className={styles.pdMeta}>
-              {order.courier && (
-                <div>
-                  <dt>Courier</dt>
-                  <dd>{order.courier}</dd>
-                </div>
-              )}
-              {order.awb && (
-                <div>
-                  <dt>AWB</dt>
-                  <dd>{order.awb}</dd>
-                </div>
-              )}
-              {order.dispatchedAt && (
-                <div>
-                  <dt>Dispatched</dt>
-                  <dd>{fmtDate(order.dispatchedAt)}</dd>
-                </div>
-              )}
-              {order.deliveredAt && (
-                <div>
-                  <dt>Delivered</dt>
-                  <dd>{fmtDate(order.deliveredAt)}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-        )}
+        <div className={styles.pdSection}>
+          <div className={styles.pdSectionTitle}>Fulfilment</div>
+          <MetaRows
+            rows={[
+              ['Reseller', order.reseller],
+              ['Courier', order.courier],
+              ['Delivery mode', order.deliveryMode ? (MODE_LABEL[order.deliveryMode] ?? order.deliveryMode) : null],
+              ['AWB', order.awb],
+              ['Dispatched', order.dispatchedAt ? fmtDate(order.dispatchedAt) : null],
+              ['Delivered', order.deliveredAt ? fmtDate(order.deliveredAt) : null],
+              ['Proof of delivery', pod ? 'Uploaded' : order.status === 'Delivered' ? 'Not uploaded' : null],
+            ]}
+          />
+        </div>
 
         <div className={styles.pdSection}>
           <div className={styles.pdSectionTitle}>Total</div>

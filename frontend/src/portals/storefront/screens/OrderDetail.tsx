@@ -1,28 +1,13 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Download, Truck, AlertTriangle, Gift, Clock, Copy } from 'lucide-react';
 import { Card, Button, StatusPill, Skeleton, EmptyState, useToast } from '@/components';
-import type { SemanticTone } from '@/data/types';
-import type { StoreOrderStatus } from '@/data/store-types';
 import { inr } from '@/lib/format';
 import { fmtDate, gradientFor } from '@/data/map';
 import { useAsync } from '@/lib/useAsync';
 import { getOrder } from '@/data/shop-api';
+import { SHOP_STATUS_TONE, shopStatusLabel } from '../orderStatus';
 import styles from './OrderDetail.module.css';
 
-const tone: Record<StoreOrderStatus, SemanticTone> = {
-  Processing: 'warning',
-  'In transit': 'info',
-  Delivered: 'success',
-  Cancelled: 'error',
-};
-const STATUS_IN: Record<string, StoreOrderStatus> = {
-  PLACED: 'Processing',
-  CONFIRMED: 'Processing',
-  DISPATCHED: 'In transit',
-  DELIVERED: 'Delivered',
-  CANCELLED: 'Cancelled',
-  RETURNED: 'Cancelled',
-};
 const PAY_METHOD_LABEL: Record<string, string> = {
   UPI: 'UPI',
   NET_BANKING: 'Net Banking',
@@ -55,7 +40,7 @@ export function OrderDetail() {
       />
     );
 
-  const status: StoreOrderStatus = STATUS_IN[order.status] ?? 'Processing';
+  const status = shopStatusLabel(order.status, order.shipment?.status);
   // Reseller name intentionally omitted — employees don't see the vendor.
   const vendorNote = ['imcorpcart', order.shipment?.courier?.name].filter(Boolean).join(' · ');
   const addr = order.address;
@@ -67,7 +52,7 @@ export function OrderDetail() {
           <div className={styles.orderId}>{order.orderNo}</div>
           <div className={styles.sub}>{fmtDate(order.createdAt)} · {vendorNote}</div>
         </div>
-        <StatusPill label={status} tone={tone[status]} size="md" />
+        <StatusPill label={status} tone={SHOP_STATUS_TONE[status]} size="md" />
       </div>
 
       <div className={styles.grid}>
@@ -107,7 +92,7 @@ export function OrderDetail() {
             })}
           </Card>
 
-          {status !== 'Cancelled' && (
+          {status !== 'Cancelled' && status !== 'Returned' && (
             <Button variant="secondary" icon={<Truck size={16} />} onClick={() => navigate(`/shop/tracking/${order.orderNo}`)}>
               Track this order
             </Button>

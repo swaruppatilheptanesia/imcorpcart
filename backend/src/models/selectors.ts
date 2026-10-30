@@ -93,7 +93,7 @@ export const orderListSelect = {
   // without a request per row. Metadata carries the original file name.
   documents: {
     where: { docType: DocumentType.POD },
-    select: { id: true, generatedAt: true, createdAt: true, metadata: true },
+    select: { id: true, source: true, generatedAt: true, createdAt: true, metadata: true },
     orderBy: { createdAt: 'desc' },
     take: 1,
   },
@@ -188,6 +188,14 @@ export const orderFullInclude = {
 // list payloads. `hubbleOrderRef` stays internal — serialize() strips *Ref keys.
 export const shopOrderFullInclude = {
   ...orderFullInclude,
+  // The buyer's timeline, without each event's raw courier payload.
+  shipment: {
+    include: {
+      courier: { select: { code: true, name: true } },
+      fulfillmentPartner: { select: { id: true, name: true } },
+      trackingEvents: { orderBy: { occurredAt: 'asc' }, select: { status: true, description: true, occurredAt: true } },
+    },
+  },
   // Smart-EPP orders carry their lease request so the buyer sees EMI × tenure
   // where an EPP order shows its payment.
   smartEppRequest: {

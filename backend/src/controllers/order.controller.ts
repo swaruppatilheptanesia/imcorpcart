@@ -19,6 +19,11 @@ export async function overrideStatus(req: Request, res: Response) {
   res.json(await service.overrideStatus(getParam(req, 'id'), req.body, req.user.id));
 }
 
+export async function setInvoiceNumber(req: Request, res: Response) {
+  if (!req.user) throw AppError.unauthorized();
+  res.json(await service.setInvoiceNumber(getParam(req, 'id'), req.body, req.user.id));
+}
+
 export async function updateTransit(req: Request, res: Response) {
   if (!req.user) throw AppError.unauthorized();
   res.json(await service.updateTransit(getParam(req, 'id'), req.body, req.user.id));
@@ -60,6 +65,18 @@ export async function generateAwb(req: Request, res: Response) {
 export async function refreshTracking(req: Request, res: Response) {
   if (!req.user) throw AppError.unauthorized();
   res.json(await courier.refreshTracking(getParam(req, 'id'), req.user.id));
+}
+
+export async function fetchCourierEpod(req: Request, res: Response) {
+  if (!req.user) throw AppError.unauthorized();
+  res.json(await courier.fetchCourierPod(getParam(req, 'id'), req.user.id));
+}
+
+export async function downloadLrCopy(req: Request, res: Response) {
+  const { file, fileName } = await courier.fetchOrderLrCopy(getParam(req, 'id'));
+  res.type(file.mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${fileName.replace(/"/g, '')}"`);
+  res.send(file.buffer);
 }
 
 // ─── Proof of delivery ───────────────────────────────────────────────────────

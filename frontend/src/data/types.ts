@@ -84,7 +84,7 @@ export interface Order {
    *  does not match — any endpoint call from a list row must use this. */
   cuid?: string;
   /** Proof of delivery on this order, for the one-click list cell. */
-  epod?: { id: string; capturedAt: string | null; fileName: string | null; uploadedAt: string } | null;
+  epod?: { id: string; capturedAt: string | null; fileName: string | null; uploadedAt: string; fetchedFrom: string | null } | null;
   type?: 'EPP' | 'SMART_EPP' | string; // SMART_EPP = lease-financed (no payment row; paid via payroll)
   company: string;
   buyer: string;
@@ -99,6 +99,9 @@ export interface Order {
   awb: string;
   /** Courier-automation + proof-of-delivery state (admin order detail only). */
   fulfilment?: OrderFulfilmentInfo;
+  /** The seller's GST invoice number, admin-entered (order detail only). */
+  invoiceNumber?: string | null;
+  invoiceNumberAt?: string | null;
   total: number;
   items: OrderItem[];
 }
@@ -195,6 +198,19 @@ export interface OrderFulfilmentInfo {
   lastTrackedAt: string | null;
   /** Why automatic tracking last failed, for staff falling back to manual. */
   trackingError: string | null;
-  /** The uploaded proof of delivery, if any. */
-  epod: { id: string; capturedAt: string | null; fileName: string | null; uploadedAt: string } | null;
+  /** The proof of delivery, if any — uploaded by staff or fetched from the courier. */
+  epod: {
+    id: string;
+    capturedAt: string | null;
+    fileName: string | null;
+    uploadedAt: string;
+    /** Set when the courier supplied it, e.g. "DTDC". */
+    fetchedFrom: string | null;
+  } | null;
+  /** The courier publishes the POD (DTDC / BlueDart), so it is fetched automatically. */
+  podAuto: boolean;
+  /** Why the last automatic POD fetch did not file one. */
+  podFetchError: string | null;
+  /** Delhivery B2B: the LR copy can be fetched from the courier. */
+  lrCopy: boolean;
 }

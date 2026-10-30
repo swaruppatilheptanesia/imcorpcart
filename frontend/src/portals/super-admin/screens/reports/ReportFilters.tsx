@@ -11,7 +11,8 @@ import styles from './reports.module.css';
  * so `type="date"` is a native picker in house styling.
  */
 
-const PERIODS: { value: string; label: string }[] = [
+// Exported for the Partner → Orders tab, whose Download is this same report.
+export const PERIODS: { value: string; label: string }[] = [
   { value: 'DAY', label: 'Today' },
   { value: 'WEEK', label: 'This week' },
   { value: 'MONTH', label: 'This month' },
