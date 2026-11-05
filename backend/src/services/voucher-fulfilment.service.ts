@@ -107,6 +107,117 @@ export async function resumePendingFulfilments(): Promise<void> {
   }
 }
 
+/**
+ * Deliver the gift cards the old flow lost. It bought one Hubble order for a whole
+ * line and kept only its first voucher, so a buyer of 2+ cards paid for cards they
+ * never saw. Runs on every boot and from prisma/recover-voucher-cards.ts: reads each
+ * such order back from Hubble and, only when Hubble holds exactly the cards paid for,
+ * files the missing ones and emails just those. Anything else is logged for a manual
+ * decision. It NEVER buys, never logs a code or PIN, and a line holding all its cards
+ * is left alone, so running it repeatedly is safe.
+ */
+export async function recoverMissingCards(
+  opts: { apply: boolean; orderNo?: string; log?: (line: string) => void } = { apply: true },
+): Promise<void> {
+  if (!hubbleConfigured()) return;
+  const log = opts.log ?? ((line: string) => console.log(`[voucher recovery] ${line}`));
+  const lines = await prisma.voucherFulfilment.findMany({
+    where: {
+      status: VoucherFulfilmentStatus.DELIVERED,
+      hubbleOrderRef: { not: null },
+      orderItem: { quantity: { gt: 1 }, ...(opts.orderNo ? { order: { orderNo: opts.orderNo } } : {}) },
+    },
+    select: {
+      id: true,
+      denomination: true,
+      hubbleOrderRef: true,
+      cards: { where: { status: VoucherFulfilmentStatus.DELIVERED }, orderBy: { unitNo: 'asc' } },
+      orderItem: {
+        select: {
+          quantity: true,
+          product: { select: { brand: true, name: true } },
+          order: { select: { orderNo: true, employee: { select: { user: { select: { email: true } } } } } },
+        },
+      },
+    },
+  });
+
+  for (const line of lines) {
+    const { quantity, order, product } = line.orderItem;
+    const brand = product.brand || product.name;
+    const denomination = toNumber(line.denomination);
+    const label = `${order.orderNo} · ${brand} · ${quantity} × ₹${denomination}`;
+    if (line.cards.length >= quantity) {
+      log(`OK       ${label} · all ${quantity} cards on file`);
+      continue;
+    }
+
+    let vouchers: NonNullable<HubbleOrder['vouchers']>;
+    try {
+      const hubble = await hubbleGetOrder(line.hubbleOrderRef as string);
+      vouchers = hubble.vouchers ?? [];
+      const amounts = vouchers.map((v) => v.amount ?? '?').join(', ') || 'none';
+      log(`HUBBLE   ${label} · status ${hubble.status} · ${vouchers.length} voucher(s), amounts: ${amounts} · ${line.cards.length} on file`);
+    } catch (e) {
+      log(`ERROR    ${label} · ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+
+    const exact = vouchers.length === quantity && vouchers.every((v) => v.amount == null || Number(v.amount) === denomination);
+    if (!exact) {
+      log(`DECIDE   ${label} · Hubble's vouchers don't match what was paid for. Nothing changed.`);
+      continue;
+    }
+
+    const held = new Set(line.cards.map((c) => `${c.code ?? ''}|${c.pin ?? ''}`));
+    const missing = vouchers.filter((v) => !held.has(`${v.cardNumber ?? ''}|${v.cardPin ?? ''}`));
+    if (!opts.apply) {
+      log(`RECOVER  ${label} · would file and email ${missing.length} card(s)`);
+      continue;
+    }
+
+    const filed: { code?: string | null; pin?: string | null; expiry?: string | null; amount: number }[] = [];
+    let unitNo = Math.max(0, ...line.cards.map((c) => c.unitNo));
+    try {
+      for (const v of missing) {
+        unitNo += 1;
+        const expiry = v.validTill ? new Date(v.validTill) : null;
+        // The unique (fulfilmentId, unitNo) stops a second process filing it too.
+        await prisma.voucherCard.create({
+          data: {
+            fulfilmentId: line.id,
+            unitNo,
+            status: VoucherFulfilmentStatus.DELIVERED,
+            hubbleOrderRef: line.hubbleOrderRef,
+            code: v.cardNumber ?? null,
+            pin: v.cardPin ?? null,
+            cardType: v.cardType ?? null,
+            expiry: expiry && !Number.isNaN(+expiry) ? expiry : null,
+            amount: v.amount ?? line.denomination,
+            deliveredAt: new Date(),
+          },
+        });
+        filed.push({ code: v.cardNumber, pin: v.cardPin, expiry: v.validTill, amount: toNumber(v.amount ?? line.denomination) });
+      }
+    } catch (e) {
+      log(`ERROR    ${label} · could not file a card: ${e instanceof Error ? e.message : e}`);
+    }
+    if (!filed.length) continue;
+
+    const email = order.employee?.user?.email;
+    if (email) {
+      await sendVoucherEmail(email, {
+        brand,
+        amount: denomination,
+        cards: filed,
+        orderNo: order.orderNo,
+        note: `Here ${filed.length > 1 ? 'are the remaining gift cards' : 'is the remaining gift card'} from your order ${order.orderNo}. We're sorry for the delay.`,
+      });
+    }
+    log(`DONE     ${label} · filed ${filed.length} card(s)${email ? ', emailed the buyer' : ', NO buyer email on file'}`);
+  }
+}
+
 // Card 1 keeps the bare item id, so a line whose Hubble order was placed before cards
 // existed is still found; the rest are suffixed (Hubble allows 40 chars, a cuid is 25).
 const refFor = (itemId: string, unitNo: number) => (unitNo === 1 ? itemId : `${itemId}-${unitNo}`);

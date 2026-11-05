@@ -101,7 +101,7 @@ function appBase(): string {
     .map((o) => (/^https?:\/\//.test(o) ? o : `https://${o}`))
     .filter(isWebOrigin);
   const base = origins.find((o) => !isLocalOrigin(o)) ?? (env.isProd ? undefined : origins[0]);
-  return (base || 'https://imcorp.heptanesia.com').replace(/\/+$/, '');
+  return (base || 'https://imcorpcart.com').replace(/\/+$/, '');
 }
 
 const VOUCHER_ACCENT = '#0a5bd6'; // brand accent (tokens.css --accent) — literal for email

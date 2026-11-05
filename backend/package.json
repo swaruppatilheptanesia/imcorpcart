@@ -18,6 +18,7 @@
     "db:seed-demo-reseller": "ts-node prisma/seed-demo-reseller.ts",
     "db:seed-demo-sepp": "ts-node prisma/seed-demo-sepp.ts",
     "db:seed-demo-partner": "ts-node prisma/seed-demo-partner.ts",
+    "vouchers:recover": "ts-node prisma/recover-voucher-cards.ts",
     "studio": "prisma studio"
   },
   "prisma": {
