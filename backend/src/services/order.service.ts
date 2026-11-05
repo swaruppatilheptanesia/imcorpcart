@@ -11,6 +11,7 @@ import { shopProductInclude, toStoreProduct, pickBuyBox } from './shop.service';
 import { retryVoucherFulfilment, resendVoucherEmail } from './voucher-fulfilment.service';
 import { notifyPartnerOrderStatus, notifyPartnerEpod } from './webhook.service';
 import { PRIVATE_UPLOAD_DIR } from '../config/document-upload';
+import { moveLineStock, restoreOrderStock } from './stock.service';
 import type { OrderListQuery, OverrideStatusInput, ColourSwapInput, EpodInput, InvoiceNumberInput } from '../validators/order.schema';
 import type { TransitUpdateInput } from '../validators/reseller.schema';
 
@@ -70,12 +71,16 @@ export async function overrideStatus(id: string, input: OverrideStatusInput, act
     throw AppError.badRequest(`Cannot change status of a ${order.status} order`);
   }
 
-  await prisma.$transaction([
-    prisma.order.update({ where: { id: order.id }, data: { status: input.status } }),
-    prisma.orderStatusHistory.create({
+  await prisma.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: input.status } });
+    await tx.orderStatusHistory.create({
       data: { orderId: order.id, status: input.status, changedById: actorId, note: input.note },
-    }),
-  ]);
+    });
+    // Cancelling here returns the units like every other cancel path. A move to
+    // RETURNED deliberately does not: returned goods are restocked by hand after
+    // inspection.
+    if (input.status === OrderStatus.CANCELLED) await restoreOrderStock(tx, order.id);
+  });
 
   // Tell the origin partner. Outside the transaction so a rolled-back change is
   // never pushed; a no-op for internal orders (the notifier checks order.source).
@@ -165,22 +170,25 @@ export async function cancelOrder(id: string, note: string | undefined, actorId:
 
   const reason = note ?? 'Cancelled by admin';
 
-  await prisma.$transaction([
+  await prisma.$transaction(async (tx) => {
     // cancelReason is what the partner webhook sends as `remarks`; this used to
     // be left null here while the partner-initiated cancel set it.
-    prisma.order.update({
+    await tx.order.update({
       where: { id: order.id },
       data: { status: OrderStatus.CANCELLED, cancelReason: reason },
-    }),
-    prisma.orderStatusHistory.create({
+    });
+    await tx.orderStatusHistory.create({
       data: {
         orderId: order.id,
         status: OrderStatus.CANCELLED,
         changedById: actorId,
         note: reason,
       },
-    }),
-  ]);
+    });
+    // The cancelled units go back on sale (a no-op for orders placed before
+    // stock deduction existed).
+    await restoreOrderStock(tx, order.id);
+  });
 
   await notifyPartnerOrderStatus(order.id, { event: 'order.cancelled' });
 
@@ -419,8 +427,11 @@ export async function swapItemColour(
     byId: actorId,
   };
 
-  await prisma.$transaction([
-    prisma.orderItem.update({
+  await prisma.$transaction(async (tx) => {
+    // The units move with the line: back to the old SKU/colour, off the new one
+    // (refused if it hasn't got them). Before the update, which it reads from.
+    await moveLineStock(tx, item.order.id, item.id, { productId: target.productId ?? item.productId, shade: target.shade });
+    await tx.orderItem.update({
       where: { id: item.id },
       data: {
         shade: target.shade,
@@ -429,8 +440,8 @@ export async function swapItemColour(
         ...(target.productId ? { productId: target.productId } : {}),
         substitution: substitution as Prisma.InputJsonValue,
       },
-    }),
-    prisma.orderStatusHistory.create({
+    });
+    await tx.orderStatusHistory.create({
       data: {
         orderId: item.order.id,
         // Unchanged: a colour swap is not a status change. This row exists as an
@@ -439,8 +450,8 @@ export async function swapItemColour(
         changedById: actorId,
         note: `Colour changed ${from ?? 'unspecified'} → ${target.label}: ${input.reason}`,
       },
-    }),
-  ]);
+    });
+  });
 
   // A manual, money-adjacent override deserves an audit row. Best-effort: losing
   // the log must never fail the swap that already committed.

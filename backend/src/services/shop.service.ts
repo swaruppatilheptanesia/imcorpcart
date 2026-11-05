@@ -27,6 +27,7 @@ import { kickoffVoucherFulfilments } from './voucher-fulfilment.service';
 import { computeSeppQuote } from './sepp-calc';
 import { getSeppContext, type SeppContext } from './sepp-context';
 import { getCreditSummary } from './credit.service';
+import { deductOrderStock } from './stock.service';
 import type {
   AddToCartInput,
   UpdateCartInput,
@@ -742,8 +743,10 @@ export async function updateCartItem(userId: string, itemId: string, input: Upda
     await prisma.cartItem.delete({ where: { id: item.id } });
   } else {
     const available = shadeStock(toStoreProduct(item.product), item.shade);
-    if (available > 0 && input.qty > available) {
-      throw AppError.badRequest(`Only ${available} in stock for this option`);
+    // Zero is "out of stock", not "unknown" — the same rule as addToCart, now
+    // that stock goes down as orders are placed.
+    if (input.qty > available) {
+      throw AppError.badRequest(available > 0 ? `Only ${available} in stock for this option` : 'This option is out of stock');
     }
     await prisma.cartItem.update({ where: { id: item.id }, data: { quantity: input.qty } });
   }
@@ -919,16 +922,40 @@ async function priceCart(userId: string, couponCode?: string, method?: PaymentMe
     const denomination = voucher ? Number(it.shade) : null;
     if (voucher) {
       assertValidVoucherAmount(voucherSpecOf(it.product), Number(it.shade), p.name);
+    } else if (it.shade) {
+      // A colour with its own swatch stock (stock.service deducts it too).
+      const sh = p.shades.find((x) => x.name === it.shade);
+      if (sh && it.quantity > sh.stock) {
+        throw AppError.badRequest(sh.stock > 0 ? `Only ${sh.stock} left of "${p.name}" in ${it.shade}` : `"${p.name}" is out of stock in ${it.shade}`);
+      }
     }
     return {
       it,
       p,
+      offerQuantity: offer.quantity,
       resellerId: offer.resellerId ?? null,
       unitPrice: voucher ? voucherChargeFor(it.product, denomination as number) : toNumber(offer.eppPrice),
       isVoucher: voucher,
       denomination,
     };
   });
+
+  // Enough stock for what is being bought — checked here, before payment opens,
+  // so a shopper is stopped rather than charged and refunded. Lines of the same
+  // product (different colours) draw on the same offer, so they are summed.
+  // placeOrder takes the stock for real, race-safe, inside its transaction.
+  const wanted = new Map<string, { qty: number; avail: number; name: string }>();
+  for (const l of lines) {
+    if (l.isVoucher) continue;
+    const w = wanted.get(l.it.productId) ?? { qty: 0, avail: l.offerQuantity, name: l.p.name };
+    w.qty += l.it.quantity;
+    wanted.set(l.it.productId, w);
+  }
+  for (const w of wanted.values()) {
+    if (w.qty > w.avail) {
+      throw AppError.badRequest(w.avail > 0 ? `Only ${w.avail} left of "${w.name}" — please reduce the quantity` : `"${w.name}" is out of stock`);
+    }
+  }
 
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.it.quantity, 0);
 
@@ -1161,8 +1188,37 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
     throw AppError.forbidden('Checkout is temporarily unavailable — online payments are launching soon');
   }
   await assertNotViewOnly(userId);
-  const { employeeId, companyId, cart, coupon, dbCoupon, qr, priced, grandTotal, walletApplied } =
-    await priceCart(userId, input.couponCode, input.method, input.useWallet);
+  let pricedCart: Awaited<ReturnType<typeof priceCart>>;
+  try {
+    pricedCart = await priceCart(userId, input.couponCode, input.method, input.useWallet);
+  } catch (e) {
+    // The shopper has usually PAID by now: this re-price runs after the Razorpay
+    // modal. If the cart can no longer be bought (stock ran out in between — now
+    // likelier, since orders take stock), refund rather than keep the money with
+    // no order. Only for a genuine signed result: an unsigned id is never refunded.
+    const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = input;
+    if (razorpayOrderId && razorpayPaymentId && razorpaySignature) {
+      verifyRazorpaySignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+      const refunded = await refundQuietly(razorpayPaymentId);
+      const reason = e instanceof Error ? e.message : 'Unknown error';
+      await prisma.auditLog
+        .create({
+          data: {
+            actorId: userId,
+            action: 'checkout.failed_refunded',
+            entityType: 'Payment',
+            entityId: razorpayPaymentId,
+            after: { reason, rzpOrderId: razorpayOrderId, refunded, stage: 'reprice' },
+          },
+        })
+        .catch(() => undefined);
+      if (e instanceof AppError) {
+        throw new AppError(e.statusCode, e.code, `${e.message}${refunded ? ' — you have been refunded' : ''}`);
+      }
+    }
+    throw e;
+  }
+  const { employeeId, companyId, cart, coupon, dbCoupon, qr, priced, grandTotal, walletApplied } = pricedCart;
 
   // Payment is always via Razorpay — a verified gateway result is required for
   // any payable checkout. Only a fully-discounted ₹0 cart places without one.
@@ -1317,6 +1373,11 @@ export async function placeOrder(userId: string, input: PlaceOrderInput) {
           voucherItemIds.push(oi.id);
         }
       }
+
+      // Take this order's units off its seller's stock. Race-safe: if another
+      // checkout took them first this throws, the transaction rolls back and the
+      // captured payment is refunded below.
+      await deductOrderStock(tx, order.id);
 
       // Record the captured gateway payment against each split order (they all
       // share the one Razorpay order; amounts are this order's slice).

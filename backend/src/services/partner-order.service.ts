@@ -9,6 +9,7 @@ import { pickBuyBox, shopProductInclude } from './shop.service';
 import { ORDER_FOR_SHIPMENT } from './reseller.service';
 import { entryPrice } from './partner.service';
 import { estimateDelivery } from './delivery.service';
+import { deductOrderStock, OutOfStockError, restoreOrderStock } from './stock.service';
 import { enqueueWebhook, notifyPartnerOrderStatus } from './webhook.service';
 import { parsePagination, pageMeta } from '../utils/pagination';
 import {
@@ -109,7 +110,13 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
   const baseNo = Date.now().toString().slice(-8);
   const checkoutGroup = nanoid(12);
 
-  const result = await prisma.$transaction(async (tx) => {
+  // The availability check above is a snapshot; the stock is actually taken
+  // inside this transaction (race-safe). If another order got there first, the
+  // whole acceptance rolls back and the partner gets the same OUT_OF_STOCK
+  // rejection as the pre-check would have produced.
+  let result: { statusCode: number; body: { status: string; orderNo: string; checkoutGroup: string; orderCount: number; orderNos: string[] } };
+  try {
+  result = await prisma.$transaction(async (tx) => {
     const address = await tx.address.create({
       data: {
         type: AddressType.OFFICE,
@@ -155,11 +162,21 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
           statusHistory: { create: { status: OrderStatus.PLACED, note: `Accepted via partner API (${partner.slug})` } },
         },
       });
+      await deductOrderStock(tx, order.id);
       orderNos.push(order.orderNo);
     }
     const body = { status: 'ACCEPTED', orderNo: orderNos[0], checkoutGroup, orderCount: orderNos.length, orderNos };
     return { statusCode: 201, body };
   });
+  } catch (e) {
+    if (e instanceof OutOfStockError) {
+      return {
+        statusCode: 422,
+        body: { status: 'REJECTED', reasons: [{ code: 'OUT_OF_STOCK', sku: e.sku, message: `Out of stock: ${e.sku}` }] },
+      };
+    }
+    throw e;
+  }
 
   // Best-effort audit (actorId is a User FK, so the partner id goes in entityId).
   prisma.auditLog
@@ -170,8 +187,8 @@ export async function acceptOrder(partner: PartnerPrincipal, input: AcceptOrderI
 }
 
 // Cancel a partner's order (the whole order / checkout group). Only PLACED or
-// CONFIRMED orders are cancellable. Partner orders don't reserve offer stock at
-// placement (stock is fulfillment-managed), so there is nothing to restore.
+// CONFIRMED orders are cancellable. The units taken at acceptance go back to
+// their seller's stock in the same transaction.
 export async function cancelPartnerOrder(partner: PartnerPrincipal, ref: string, reason?: string) {
   const orders = await prisma.order.findMany({
     where: { partnerId: partner.id, OR: [{ orderNo: ref }, { externalRef: ref }] },
@@ -196,6 +213,7 @@ export async function cancelPartnerOrder(partner: PartnerPrincipal, ref: string,
       await tx.orderStatusHistory.create({
         data: { orderId: o.id, status: OrderStatus.CANCELLED, note: reason ? `Cancelled by partner: ${reason}` : 'Cancelled by partner' },
       });
+      await restoreOrderStock(tx, o.id);
     }
   });
 

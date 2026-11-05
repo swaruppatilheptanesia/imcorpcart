@@ -17,6 +17,7 @@ import { computeSeppQuote, computeAdvance, DEFAULT_SEPP_PARAMS, type SeppParams,
 import { consumeCredit, releaseCredit } from './credit.service';
 import { seppRequestInclude, toSeppRequestView, reservedAmountOf, refundAdvance } from './sepp.service';
 import { notifySepp } from './sepp-notify';
+import { deductOrderStock } from './stock.service';
 import type {
   LeasingParamsInput,
   LeasingPreviewInput,
@@ -335,6 +336,9 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
     if (!p) throw AppError.badRequest(`"${it.product.name}" is no longer in the catalogue`);
     const offer = pickBuyBox(p.offers);
     if (!offer) throw AppError.badRequest(`"${it.product.name}" is out of stock — ask the employee to re-submit`);
+    if (offer.quantity < it.quantity) {
+      throw AppError.badRequest(`Only ${offer.quantity} left of "${it.product.name}" — restock it or decline the request`);
+    }
     const key = offer.resellerId ?? null;
     const arr = groups.get(key) ?? [];
     arr.push({
@@ -384,7 +388,7 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
     for (let gi = 0; gi < sellerGroups.length; gi += 1) {
       const [resellerId, lines] = sellerGroups[gi];
       const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-      await tx.order.create({
+      const order = await tx.order.create({
         data: {
           orderNo: sellerGroups.length > 1 ? `IMC-${baseNo}-${gi + 1}` : `IMC-${baseNo}`,
           type: OrderType.SMART_EPP,
@@ -413,6 +417,9 @@ export async function decideRequest(userId: string, id: string, input: LeasingDe
           },
         },
       });
+      // The devices leave stock now. Short of stock → the whole approval rolls
+      // back (no lease, no orders) and the operator sees which product.
+      await deductOrderStock(tx, order.id);
     }
 
     await tx.smartEppRequest.update({

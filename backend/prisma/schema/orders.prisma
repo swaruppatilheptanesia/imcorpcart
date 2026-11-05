@@ -62,6 +62,13 @@ model Order {
   invoiceNumber   String?   @map("invoice_number")
   invoiceNumberAt DateTime? @map("invoice_number_at")
 
+  // Stock bookkeeping (services/stock.service.ts). Set when this order's units
+  // were taken off its seller's offer, and when a cancellation put them back —
+  // so a restock happens at most once, and never for orders placed before stock
+  // deduction existed (stockDeductedAt null).
+  stockDeductedAt DateTime? @map("stock_deducted_at")
+  stockRestoredAt DateTime? @map("stock_restored_at")
+
   // Buyer. Null for partner orders (no internal employee/company).
   employeeId String?
   employee   Employee? @relation(fields: [employeeId], references: [id])
