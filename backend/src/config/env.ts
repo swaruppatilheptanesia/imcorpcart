@@ -92,7 +92,7 @@ const raw = parsed.data;
 export const env = {
   ...raw,
   isProd: raw.NODE_ENV === 'production',
-  corsOrigins: raw.CORS_ORIGIN.split(',')
+  corsOrigins: raw.CORS_ORIGIN.split(/[,;]/)
     .map((o) => o.trim())
     .filter(Boolean),
 };

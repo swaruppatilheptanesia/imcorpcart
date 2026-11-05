@@ -1,4 +1,4 @@
-import { Prisma, VoucherFulfilmentStatus } from '@prisma/client';
+import { Prisma, VoucherCard, VoucherFulfilmentStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { getRazorpay } from '../config/razorpay';
 import { AppError } from '../utils/AppError';
@@ -19,23 +19,25 @@ import {
 //
 // A voucher's issuance state lives in its own table (VoucherFulfilment, 1:1 with
 // the OrderItem it fulfils) — a digital voucher has a different lifecycle than a
-// physical order line. After the line is PAID (its VoucherFulfilment starts
-// PENDING), we place a Hubble order (auto-debits the client's Hubble wallet).
-// Issuance is async: Hubble usually returns PROCESSING with no code, so we poll
-// GET /orders/:id until SUCCESS (store the code, email + reveal it in-app) or the
-// 15-min cutoff (FAILED → refund the buyer). All fire-and-forget so a Hubble
-// outage never blocks or rolls back the paid checkout. Idempotent on the
-// OrderItem id (Hubble's referenceId), so a retry or a post-restart resume never
-// double-issues / double-debits.
+// physical order line. A line for N cards owns N VoucherCard rows, and each card is
+// its own Hubble order of quantity 1 (auto-debits the client's Hubble wallet), so
+// the buyer always gets N separate cards and Hubble's per-order caps don't apply.
+// Cards are placed one at a time. Issuance is async: Hubble usually returns
+// PROCESSING with no code, so we poll GET /orders/:id until SUCCESS (store the code)
+// or the 15-min cutoff (card FAILED). Once every card has settled the line rolls up,
+// the failed cards' share is refunded and ONE email carries every issued card. All
+// fire-and-forget so a Hubble outage never blocks or rolls back the paid checkout.
+// Idempotent on each card's Hubble referenceId (refFor), so a retry or a post-restart
+// resume never double-issues / double-debits.
 //
-// Everything here is keyed on the OrderItem id (the public API + the Hubble
-// referenceId); the VoucherFulfilment row is looked up by its unique orderItemId.
-// This module must NOT import shop.service (shop.service → this, one-way): the
-// partial-refund uses getRazorpay() directly.
+// Everything here is keyed on the OrderItem id (the public API); the rows are looked
+// up by the fulfilment's unique orderItemId. This module must NOT import shop.service
+// (shop.service → this, one-way): the partial-refund uses getRazorpay() directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 20_000; // between polls of a PROCESSING order
-const CUTOFF_MS = 15 * 60 * 1000; // give up after 15 min (Hubble's own max window)
+const CUTOFF_MS = 15 * 60 * 1000; // give up on a card after 15 min (Hubble's own max window)
+const UNFINISHED = [VoucherFulfilmentStatus.PENDING, VoucherFulfilmentStatus.PROCESSING];
 
 // In-flight guard so one worker runs per item (avoids duplicate place/poll loops
 // from concurrent kickoff + resume, or overlapping timers).
@@ -43,6 +45,7 @@ const inFlight = new Set<string>();
 
 type VfRow = Prisma.VoucherFulfilmentGetPayload<{
   select: {
+    id: true;
     status: true;
     denomination: true;
     hubbleOrderRef: true;
@@ -60,6 +63,7 @@ type VfRow = Prisma.VoucherFulfilmentGetPayload<{
 }>;
 
 const vfSelect = {
+  id: true,
   status: true,
   denomination: true,
   hubbleOrderRef: true,
@@ -103,7 +107,31 @@ export async function resumePendingFulfilments(): Promise<void> {
   }
 }
 
-// Place the Hubble order (or recover an existing one) for a PENDING/PROCESSING item.
+// Card 1 keeps the bare item id, so a line whose Hubble order was placed before cards
+// existed is still found; the rest are suffixed (Hubble allows 40 chars, a cuid is 25).
+const refFor = (itemId: string, unitNo: number) => (unitNo === 1 ? itemId : `${itemId}-${unitNo}`);
+
+// Create the line's missing card rows. Card 1 inherits a Hubble order the old flow
+// already placed, so it is polled rather than bought again.
+async function ensureCards(vf: VfRow): Promise<void> {
+  await prisma.voucherCard.createMany({
+    data: Array.from({ length: vf.orderItem.quantity }, (_, i) => {
+      const inherited = i === 0 ? vf.hubbleOrderRef : null;
+      return {
+        fulfilmentId: vf.id,
+        unitNo: i + 1,
+        hubbleOrderRef: inherited,
+        status: inherited ? VoucherFulfilmentStatus.PROCESSING : VoucherFulfilmentStatus.PENDING,
+      };
+    }),
+    skipDuplicates: true,
+  });
+}
+
+// Drive a line forward: place or poll its unfinished cards, lowest first, and stop at
+// the first one still issuing (a poll is scheduled to pick it back up). One at a time
+// on purpose — an old-style order for the whole line fills the later cards when it
+// completes, which must happen before they would be bought separately.
 async function fulfilItem(itemId: string): Promise<void> {
   if (inFlight.has(itemId)) return;
   inFlight.add(itemId);
@@ -115,129 +143,215 @@ async function fulfilItem(itemId: string): Promise<void> {
       return;
     }
 
-    // Already placed (PROCESSING with a Hubble order) → just poll.
-    if (vf.status === VoucherFulfilmentStatus.PROCESSING && vf.hubbleOrderRef) {
-      await pollOnce(itemId);
-      return;
-    }
-
+    await ensureCards(vf);
     const productId = vf.orderItem.product.externalRef;
     const denomination = toNumber(vf.denomination);
-    if (!productId || !(denomination > 0)) {
-      await markFailed(itemId, 'Voucher is misconfigured (missing product reference or amount)');
-      return;
-    }
+    const misconfigured = !productId || !(denomination > 0);
 
-    // Recover from a prior attempt that may have placed before a crash: Hubble's
-    // referenceId (= our OrderItem id) is idempotent. 404 = safe to place fresh.
-    let order: HubbleOrder | null = null;
-    try {
-      order = await hubbleGetOrderByReference(itemId);
-    } catch (e) {
-      if (!(e instanceof HubbleApiError && e.status === 404)) {
-        // A transient lookup error — fall through to place (idempotent) rather than fail.
-        console.error(`[voucher] by-reference lookup failed for ${itemId}:`, e);
+    for (;;) {
+      const card = await prisma.voucherCard.findFirst({
+        where: { fulfilmentId: vf.id, status: { in: UNFINISHED } },
+        orderBy: { unitNo: 'asc' },
+      });
+      if (!card) break;
+      if (misconfigured) {
+        await failCard(card.id, 'Voucher is misconfigured (missing product reference or amount)');
+        continue;
       }
-    }
-
-    if (!order) {
-      try {
-        order = await hubblePlaceOrder({
-          productId,
-          referenceId: itemId,
-          amount: denomination * vf.orderItem.quantity,
-          denominationDetails: [{ denomination, quantity: vf.orderItem.quantity }],
-        });
-      } catch (e) {
-        const msg =
-          e instanceof HubbleApiError && e.code === HUBBLE_INSUFFICIENT_BALANCE
-            ? 'Gift-card wallet balance is insufficient — please contact support'
-            : e instanceof Error
-              ? e.message
-              : 'Voucher order failed';
-        await markFailed(itemId, msg);
+      if (await advanceCard(vf, card, productId as string, denomination)) {
+        schedulePoll(itemId);
         return;
       }
     }
-
-    await handleOrderState(itemId, order);
+    await settleLine(itemId);
   } finally {
     inFlight.delete(itemId);
   }
 }
 
-// Apply a Hubble order's state to our fulfilment: deliver on SUCCESS, poll on
-// PROCESSING, refund on a terminal failure.
-async function handleOrderState(itemId: string, order: HubbleOrder): Promise<void> {
-  await prisma.voucherFulfilment.update({ where: { orderItemId: itemId }, data: { hubbleOrderRef: order.id } });
-
-  const voucher = order.vouchers?.[0];
-  if (order.status === 'SUCCESS' && voucher) {
-    await deliver(itemId, order);
-    return;
+// Move one card along. Returns true while Hubble is still issuing it.
+async function advanceCard(vf: VfRow, card: VoucherCard, productId: string, denomination: number): Promise<boolean> {
+  // Already placed → just poll. A poll never writes the card, so updatedAt is when it
+  // went PROCESSING.
+  if (card.status === VoucherFulfilmentStatus.PROCESSING && card.hubbleOrderRef) {
+    if (Date.now() - card.updatedAt.getTime() > CUTOFF_MS) {
+      await failCard(card.id, 'Voucher issuance timed out');
+      return false;
+    }
+    try {
+      return await applyOrder(vf, card, await hubbleGetOrder(card.hubbleOrderRef));
+    } catch (e) {
+      console.error(`[voucher] poll card ${card.id} failed (will retry):`, e instanceof Error ? e.message : e);
+      return true; // transient — retry until cutoff
+    }
   }
-  if (order.status === 'PROCESSING' || (order.status === 'SUCCESS' && !voucher)) {
-    await prisma.voucherFulfilment.update({
-      where: { orderItemId: itemId },
-      data: { status: VoucherFulfilmentStatus.PROCESSING },
-    });
-    schedulePoll(itemId);
-    return;
+
+  // Recover from a prior attempt that may have placed before a crash: Hubble's
+  // referenceId is idempotent. 404 = safe to place fresh.
+  const referenceId = refFor(vf.orderItem.id, card.unitNo);
+  let order: HubbleOrder | null = null;
+  try {
+    order = await hubbleGetOrderByReference(referenceId);
+  } catch (e) {
+    if (!(e instanceof HubbleApiError && e.status === 404)) {
+      // A transient lookup error — fall through to place (idempotent) rather than fail.
+      console.error(`[voucher] by-reference lookup failed for ${referenceId}:`, e);
+    }
+  }
+
+  if (!order) {
+    try {
+      order = await hubblePlaceOrder({
+        productId,
+        referenceId,
+        amount: denomination,
+        denominationDetails: [{ denomination, quantity: 1 }],
+      });
+    } catch (e) {
+      const msg =
+        e instanceof HubbleApiError && e.code === HUBBLE_INSUFFICIENT_BALANCE
+          ? 'Gift-card wallet balance is insufficient — please contact support'
+          : e instanceof Error
+            ? e.message
+            : 'Voucher order failed';
+      await failCard(card.id, msg);
+      return false;
+    }
+  }
+
+  return applyOrder(vf, card, order);
+}
+
+// Apply a Hubble order's state to a card: file it on SUCCESS, keep polling while
+// issuing, fail it on a terminal state. Returns true while Hubble is still issuing.
+async function applyOrder(vf: VfRow, card: VoucherCard, order: HubbleOrder): Promise<boolean> {
+  if (order.status === 'SUCCESS' && order.vouchers?.length) {
+    await fileVouchers(vf, card, order);
+    return false;
+  }
+  if (order.status === 'PROCESSING' || order.status === 'SUCCESS') {
+    if (card.status !== VoucherFulfilmentStatus.PROCESSING || card.hubbleOrderRef !== order.id) {
+      await prisma.voucherCard.update({
+        where: { id: card.id },
+        data: { status: VoucherFulfilmentStatus.PROCESSING, hubbleOrderRef: order.id },
+      });
+    }
+    return true;
   }
   // FAILED / CANCELLED / REVERSED
-  await markFailed(itemId, order.failureReason || `Voucher order ${order.status.toLowerCase()}`);
+  await failCard(card.id, order.failureReason || `Voucher order ${order.status.toLowerCase()}`, order.id);
+  return false;
 }
 
-// Store the issued credential, mark DELIVERED, email it (best-effort; also shown in-app).
-async function deliver(itemId: string, order: HubbleOrder): Promise<void> {
-  const voucher = order.vouchers?.[0];
-  if (!voucher) return;
-  const vf = await loadFulfilment(itemId);
-  if (!vf || vf.status === VoucherFulfilmentStatus.DELIVERED) return;
-
-  const expiry = voucher.validTill ? new Date(voucher.validTill) : null;
-  await prisma.voucherFulfilment.update({
-    where: { orderItemId: itemId },
-    data: {
-      status: VoucherFulfilmentStatus.DELIVERED,
-      hubbleOrderRef: order.id,
-      voucherCode: voucher.cardNumber ?? null,
-      voucherPin: voucher.cardPin ?? null,
-      voucherCardType: voucher.cardType ?? null,
-      voucherExpiry: expiry && !Number.isNaN(+expiry) ? expiry : null,
-      fulfilmentError: null,
-      deliveredAt: new Date(),
-    },
+// Store what Hubble issued. Normally one voucher for this card; an old-style order
+// placed for the whole line carries several, which fill the line's next open cards.
+async function fileVouchers(vf: VfRow, card: VoucherCard, order: HubbleOrder): Promise<void> {
+  const open = await prisma.voucherCard.findMany({
+    where: { fulfilmentId: vf.id, status: { in: UNFINISHED }, unitNo: { gte: card.unitNo } },
+    orderBy: { unitNo: 'asc' },
   });
-
-  const email = vf.orderItem.order.employee?.user?.email;
-  if (email) {
-    await sendVoucherEmail(email, {
-      brand: vf.orderItem.product.brand || vf.orderItem.product.name,
-      amount: toNumber(vf.denomination),
-      code: voucher.cardNumber,
-      pin: voucher.cardPin,
-      cardType: voucher.cardType,
-      expiry: voucher.validTill,
-      orderNo: vf.orderItem.order.orderNo,
+  const vouchers = order.vouchers ?? [];
+  for (let i = 0; i < Math.min(open.length, vouchers.length); i++) {
+    const v = vouchers[i];
+    const expiry = v.validTill ? new Date(v.validTill) : null;
+    await prisma.voucherCard.update({
+      where: { id: open[i].id },
+      data: {
+        status: VoucherFulfilmentStatus.DELIVERED,
+        hubbleOrderRef: order.id,
+        code: v.cardNumber ?? null,
+        pin: v.cardPin ?? null,
+        cardType: v.cardType ?? null,
+        expiry: expiry && !Number.isNaN(+expiry) ? expiry : null,
+        amount: v.amount ?? vf.denomination,
+        error: null,
+        deliveredAt: new Date(),
+      },
     });
   }
-  console.log(`[voucher] delivered ${itemId} (order ${vf.orderItem.order.orderNo})`);
 }
 
-// Admin action: re-send an already-issued voucher email to the buyer (support: a
-// lost code). Reads the stored credential server-side and re-uses sendVoucherEmail
-// — the raw code is never returned to the caller. Only works once DELIVERED.
+async function failCard(cardId: string, reason: string, hubbleOrderRef?: string): Promise<void> {
+  await prisma.voucherCard.update({
+    where: { id: cardId },
+    data: { status: VoucherFulfilmentStatus.FAILED, error: reason.slice(0, 500), ...(hubbleOrderRef ? { hubbleOrderRef } : {}) },
+  });
+  console.error(`[voucher] card ${cardId} FAILED: ${reason}`);
+}
+
+function schedulePoll(itemId: string): void {
+  setTimeout(() => {
+    void fulfilItem(itemId).catch((e) => console.error(`[voucher] scheduled poll ${itemId} failed:`, e));
+  }, POLL_INTERVAL_MS).unref?.();
+}
+
+type EmailCard = Pick<VoucherCard, 'code' | 'pin' | 'expiry' | 'amount'>;
+const toEmailCard = (c: EmailCard) => ({
+  code: c.code,
+  pin: c.pin,
+  expiry: c.expiry ? c.expiry.toISOString().slice(0, 10) : null,
+  amount: toNumber(c.amount),
+});
+
+// Every card has settled: roll the line up, refund what failed and send the one email.
+// The conditional update makes this happen once, however many workers reach it.
+async function settleLine(itemId: string): Promise<void> {
+  const vf = await loadFulfilment(itemId);
+  if (!vf) return;
+  const cards = await prisma.voucherCard.findMany({ where: { fulfilmentId: vf.id }, orderBy: { unitNo: 'asc' } });
+  const issued = cards.filter((c) => c.status === VoucherFulfilmentStatus.DELIVERED);
+  const failed = cards.filter((c) => c.status === VoucherFulfilmentStatus.FAILED);
+  const reason = failed[0]?.error ?? null;
+
+  const settled = await prisma.voucherFulfilment.updateMany({
+    where: { orderItemId: itemId, status: { in: UNFINISHED } },
+    data: {
+      status: issued.length ? VoucherFulfilmentStatus.DELIVERED : VoucherFulfilmentStatus.FAILED,
+      fulfilmentError: failed.length
+        ? `${failed.length} of ${cards.length} could not be issued: ${reason}`.slice(0, 500)
+        : null,
+      deliveredAt: issued.length ? new Date() : null,
+    },
+  });
+  if (settled.count === 0) return;
+
+  const brand = vf.orderItem.product.brand || vf.orderItem.product.name;
+  const refunded = failed.length ? await refundFailedCards(vf) : null;
+  if (failed.length) {
+    await noteOnOrder(vf, brand, issued.length, cards.length, reason, refunded);
+  }
+
+  const email = vf.orderItem.order.employee?.user?.email;
+  if (email && issued.length) {
+    await sendVoucherEmail(email, {
+      brand,
+      amount: toNumber(vf.denomination),
+      cards: issued.map(toEmailCard),
+      orderNo: vf.orderItem.order.orderNo,
+      note: failed.length
+        ? `${failed.length} of the ${cards.length} gift cards you ordered could not be issued.${refunded ? ` ${rupeesText(refunded)} has been refunded.` : ''}`
+        : null,
+    });
+  }
+  console.log(`[voucher] settled ${itemId}: ${issued.length} of ${cards.length} issued (order ${vf.orderItem.order.orderNo})`);
+}
+
+const rupeesText = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+// Admin action: re-send every issued card of a line to the buyer (support: lost
+// codes). Reads the stored credentials server-side and re-uses sendVoucherEmail — the
+// raw codes are never returned to the caller. Only works once DELIVERED.
 export async function resendVoucherEmail(itemId: string): Promise<void> {
   const vf = await prisma.voucherFulfilment.findUnique({
     where: { orderItemId: itemId },
     select: {
       status: true,
       denomination: true,
-      voucherCode: true,
-      voucherPin: true,
-      voucherCardType: true,
-      voucherExpiry: true,
+      cards: {
+        where: { status: VoucherFulfilmentStatus.DELIVERED },
+        orderBy: { unitNo: 'asc' },
+        select: { code: true, pin: true, expiry: true, amount: true },
+      },
       orderItem: {
         select: {
           product: { select: { brand: true, name: true } },
@@ -246,7 +360,7 @@ export async function resendVoucherEmail(itemId: string): Promise<void> {
       },
     },
   });
-  if (!vf || vf.status !== VoucherFulfilmentStatus.DELIVERED || !vf.voucherCode) {
+  if (!vf || vf.status !== VoucherFulfilmentStatus.DELIVERED || !vf.cards.length) {
     throw AppError.badRequest('No delivered voucher to resend for this item');
   }
   const email = vf.orderItem.order.employee?.user?.email;
@@ -254,84 +368,60 @@ export async function resendVoucherEmail(itemId: string): Promise<void> {
   await sendVoucherEmail(email, {
     brand: vf.orderItem.product.brand || vf.orderItem.product.name,
     amount: toNumber(vf.denomination),
-    code: vf.voucherCode,
-    pin: vf.voucherPin,
-    cardType: vf.voucherCardType,
-    expiry: vf.voucherExpiry ? vf.voucherExpiry.toISOString().slice(0, 10) : null,
+    cards: vf.cards.map(toEmailCard),
     orderNo: vf.orderItem.order.orderNo,
   });
 }
 
-// Poll a PROCESSING order once; deliver / fail / reschedule based on the result.
-async function pollOnce(itemId: string): Promise<void> {
-  const vf = await loadFulfilment(itemId);
-  if (!vf || vf.status !== VoucherFulfilmentStatus.PROCESSING || !vf.hubbleOrderRef) return;
-
-  if (Date.now() - vf.orderItem.order.createdAt.getTime() > CUTOFF_MS) {
-    await markFailed(itemId, 'Voucher issuance timed out');
-    return;
-  }
-
-  let order: HubbleOrder;
-  try {
-    order = await hubbleGetOrder(vf.hubbleOrderRef);
-  } catch (e) {
-    console.error(`[voucher] poll ${itemId} failed (will retry):`, e instanceof Error ? e.message : e);
-    schedulePoll(itemId); // transient — retry until cutoff
-    return;
-  }
-
-  const voucher = order.vouchers?.[0];
-  if (order.status === 'SUCCESS' && voucher) {
-    await deliver(itemId, order);
-  } else if (order.status === 'PROCESSING' || (order.status === 'SUCCESS' && !voucher)) {
-    schedulePoll(itemId);
-  } else {
-    await markFailed(itemId, order.failureReason || `Voucher order ${order.status.toLowerCase()}`);
-  }
-}
-
-function schedulePoll(itemId: string): void {
-  setTimeout(() => {
-    void pollOnce(itemId).catch((e) => console.error(`[voucher] scheduled poll ${itemId} failed:`, e));
-  }, POLL_INTERVAL_MS).unref?.();
-}
-
-// Mark FAILED, refund the buyer's line (best-effort), and leave an audit note on the
-// order so the admin sees it. Hubble auto-reverses its own wallet on a FAILED order.
-async function markFailed(itemId: string, reason: string): Promise<void> {
-  const vf = await loadFulfilment(itemId);
-  if (!vf || vf.status === VoucherFulfilmentStatus.FAILED) return;
-  await prisma.voucherFulfilment.update({
-    where: { orderItemId: itemId },
-    data: { status: VoucherFulfilmentStatus.FAILED, fulfilmentError: reason.slice(0, 500) },
+// Partial-refund the failed cards' share against the order's captured Razorpay
+// payment, so the buyer is never charged for a voucher we couldn't issue. Each card is
+// stamped first so it can't be refunded twice. Returns the amount refunded: null when
+// nothing was newly due, 0 when the refund did not go through.
+async function refundFailedCards(vf: VfRow): Promise<number | null> {
+  const stamp = new Date();
+  const claimed = await prisma.voucherCard.updateMany({
+    where: { fulfilmentId: vf.id, status: VoucherFulfilmentStatus.FAILED, refundedAt: null },
+    data: { refundedAt: stamp },
   });
-  console.error(`[voucher] FAILED ${itemId} (order ${vf.orderItem.order.orderNo}): ${reason}`);
-  await refundLine(vf, reason);
-}
+  if (claimed.count === 0) return null;
 
-// Partial-refund the failed voucher line against its order's captured Razorpay
-// payment, so the buyer is never charged for a voucher we couldn't issue.
-async function refundLine(vf: VfRow, reason: string): Promise<void> {
-  const amount = toNumber(vf.orderItem.lineTotal);
+  const share = toNumber(vf.orderItem.lineTotal) / vf.orderItem.quantity;
+  const amount = Math.round(share * claimed.count * 100) / 100;
   try {
     const payment = await prisma.payment.findFirst({
       where: { orderId: vf.orderItem.orderId, gateway: 'RAZORPAY', status: 'CAPTURED', gatewayTxnId: { not: null } },
       select: { gatewayTxnId: true },
     });
-    if (payment?.gatewayTxnId && amount > 0) {
-      await getRazorpay().payments.refund(payment.gatewayTxnId, { amount: Math.round(amount * 100) });
-    }
+    if (!payment?.gatewayTxnId || !(amount > 0)) throw new Error('No captured payment to refund');
+    await getRazorpay().payments.refund(payment.gatewayTxnId, { amount: Math.round(amount * 100) });
+    return amount;
   } catch (e) {
     console.error(`[voucher] refund failed for item ${vf.orderItem.id}:`, e instanceof Error ? e.message : e);
+    await prisma.voucherCard.updateMany({
+      where: { fulfilmentId: vf.id, refundedAt: stamp },
+      data: { refundedAt: null },
+    });
+    return 0;
   }
-  // Audit note on the order (visible in the admin timeline) — best-effort.
+}
+
+// Audit note on the order (visible in the admin timeline) — best-effort.
+async function noteOnOrder(
+  vf: VfRow,
+  brand: string,
+  issued: number,
+  total: number,
+  reason: string | null,
+  refunded: number | null,
+): Promise<void> {
+  const money =
+    refunded === null ? '' : refunded > 0 ? ` Buyer refunded ${rupeesText(refunded)}.` : ' The refund did not go through, please refund by hand.';
   try {
     await prisma.orderStatusHistory.create({
       data: {
         orderId: vf.orderItem.orderId,
         status: 'PLACED',
-        note: `Gift card "${vf.orderItem.product.brand || vf.orderItem.product.name}" could not be issued (${reason}). Buyer refunded ₹${amount}.`,
+        note: `Gift card "${brand}": ${issued} of ${total} issued (${reason}).${money}`,
       },
     });
   } catch {
@@ -344,9 +434,16 @@ async function refundLine(vf: VfRow, reason: string): Promise<void> {
  * PROCESSING) and re-runs. Safe — idempotent on the Hubble referenceId.
  */
 export async function retryVoucherFulfilment(itemId: string): Promise<void> {
-  const vf = await prisma.voucherFulfilment.findUnique({ where: { orderItemId: itemId }, select: { status: true } });
+  const vf = await prisma.voucherFulfilment.findUnique({
+    where: { orderItemId: itemId },
+    select: { id: true, status: true },
+  });
   if (!vf) return; // not a voucher line
   if (vf.status === VoucherFulfilmentStatus.FAILED) {
+    await prisma.voucherCard.updateMany({
+      where: { fulfilmentId: vf.id, status: VoucherFulfilmentStatus.FAILED },
+      data: { status: VoucherFulfilmentStatus.PENDING, error: null },
+    });
     await prisma.voucherFulfilment.update({
       where: { orderItemId: itemId },
       data: { status: VoucherFulfilmentStatus.PENDING, fulfilmentError: null },

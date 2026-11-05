@@ -62,47 +62,73 @@ export async function sendOtpEmail(to: string, code: string, expiresMin: number)
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
-export interface VoucherEmailData {
-  brand: string; // e.g. "Amazon Pay"
-  amount: number; // face value ₹
+export interface VoucherEmailCard {
   code?: string | null; // card number
   pin?: string | null; // card pin (when applicable)
-  cardType?: string | null;
-  redemptionUrl?: string | null;
   expiry?: string | null; // YYYY-MM-DD
+  amount?: number | null; // face value ₹ Hubble issued
+}
+
+export interface VoucherEmailData {
+  brand: string; // e.g. "Amazon Pay"
+  amount: number; // face value ₹ of each card
+  cards: VoucherEmailCard[]; // every card this email delivers
+  redemptionUrl?: string | null;
   orderNo?: string | null; // for the "view in your account" deep-link
+  note?: string | null; // e.g. some cards couldn't be issued and were refunded
 }
 
 // ₹ + en-IN grouping (e.g. 2000 → "2,000") — a tiny local helper so the mailer
 // (backend) doesn't depend on the frontend's inr().
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
-// App base URL for deep-links: the first configured CORS origin, else prod.
+const isWebOrigin = (o: string) => {
+  try {
+    return ['http:', 'https:'].includes(new URL(o).protocol);
+  } catch {
+    return false;
+  }
+};
+const isLocalOrigin = (o: string) => /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(o);
+
+// App base URL for deep-links: the first public CORS origin, else (dev only) the local
+// one, else prod. CORS_ORIGIN is hand-typed, so a value such as
+// "http://localhost:5173;imcorp.heptanesia.com" must still give a working link: a bare
+// domain is read as https, and a buyer's email never points at localhost in production.
 function appBase(): string {
-  const first = (env.CORS_ORIGIN || '').split(',')[0]?.trim();
-  return (first || 'https://imcorp.heptanesia.com').replace(/\/+$/, '');
+  const origins = env.corsOrigins
+    .filter((o) => o !== '*')
+    .map((o) => (/^https?:\/\//.test(o) ? o : `https://${o}`))
+    .filter(isWebOrigin);
+  const base = origins.find((o) => !isLocalOrigin(o)) ?? (env.isProd ? undefined : origins[0]);
+  return (base || 'https://imcorp.heptanesia.com').replace(/\/+$/, '');
 }
 
 const VOUCHER_ACCENT = '#0a5bd6'; // brand accent (tokens.css --accent) — literal for email
 
 function voucherEmail(d: VoucherEmailData): { subject: string; html: string; text: string } {
   const amount = rupees(d.amount);
-  const subject = `Your ${amount} ${d.brand} gift card`;
-  const ctaUrl = d.redemptionUrl || (d.orderNo ? `${appBase()}/shop/orders/${encodeURIComponent(d.orderNo)}` : null);
+  const many = d.cards.length > 1;
+  const subject = many ? `Your ${d.cards.length} ${amount} ${d.brand} gift cards` : `Your ${amount} ${d.brand} gift card`;
+  const ctaUrl = d.redemptionUrl || (d.orderNo ? `${appBase()}/shop/orderDetail/${encodeURIComponent(d.orderNo)}` : null);
   const ctaLabel = d.redemptionUrl ? 'Redeem your gift card' : 'View in your account';
 
   const text = [
-    `Your ${amount} ${d.brand} gift card is ready.`,
-    '',
-    d.code ? `Card number: ${d.code}` : '',
-    d.pin ? `PIN: ${d.pin}` : '',
-    d.expiry ? `Valid till: ${d.expiry}` : '',
+    many ? `Your ${d.cards.length} ${amount} ${d.brand} gift cards are ready.` : `Your ${amount} ${d.brand} gift card is ready.`,
+    d.note ?? '',
+    ...d.cards.flatMap((c, i) => [
+      '',
+      many ? `Card ${i + 1} of ${d.cards.length}` : '',
+      c.code ? `Card number: ${c.code}` : '',
+      c.pin ? `PIN: ${c.pin}` : '',
+      c.expiry ? `Valid till: ${c.expiry}` : '',
+    ]),
     '',
     'Treat these details like cash — anyone with the code can spend it.',
     ctaUrl ? `${ctaLabel}: ${ctaUrl}` : '',
-    'You can also view this code any time on your order in the imcorpcart app.',
+    `You can also view ${many ? 'these codes' : 'this code'} any time on your order in the imcorpcart app.`,
   ]
-    .filter((l) => l !== '')
+    .filter((l, i, all) => l !== '' || (i > 0 && all[i - 1] !== ''))
     .join('\n');
 
   // Credential block: label stacked above a large monospace value (table-based so
@@ -131,18 +157,34 @@ function voucherEmail(d: VoucherEmailData): { subject: string; html: string; tex
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#eef4ff,#f7f9ff);border:1px solid #dbe6fb;border-radius:14px;">
           <tr><td style="padding:20px 22px;">
             <div style="font-size:13px;font-weight:600;color:#4a5568;">${esc(d.brand)}</div>
-            <div style="font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#0a2540;margin-top:2px;">${amount}</div>
-            <div style="font-size:12.5px;color:#6e6e73;margin-top:4px;">Your gift card is ready 🎉</div>
+            <div style="font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#0a2540;margin-top:2px;">${many ? `${d.cards.length} &times; ${amount}` : amount}</div>
+            <div style="font-size:12.5px;color:#6e6e73;margin-top:4px;">Your gift card${many ? 's are' : ' is'} ready 🎉</div>
           </td></tr>
         </table>
       </td></tr>
 
+      ${
+        d.note
+          ? `<!-- Note -->
+      <tr><td style="padding:12px 32px 0;font-size:13px;line-height:1.55;color:#4a5568;">${esc(d.note)}</td></tr>`
+          : ''
+      }
+
       <!-- Credentials -->
       <tr><td style="padding:8px 32px 0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          ${d.code ? cred('Card number', d.code) : ''}
-          ${d.pin ? cred('PIN', d.pin) : ''}
-          ${d.expiry ? cred('Valid till', d.expiry) : ''}
+          ${d.cards
+            .map(
+              (c, i) => `${
+                many
+                  ? `<tr><td style="padding:${i ? 18 : 8}px 0 0;font-size:13px;font-weight:700;color:#1d1d1f;">Card ${i + 1} of ${d.cards.length}</td></tr>`
+                  : ''
+              }
+          ${c.code ? cred('Card number', c.code) : ''}
+          ${c.pin ? cred('PIN', c.pin) : ''}
+          ${c.expiry ? cred('Valid till', c.expiry) : ''}`,
+            )
+            .join('')}
         </table>
       </td></tr>
 
@@ -168,7 +210,7 @@ function voucherEmail(d: VoucherEmailData): { subject: string; html: string; tex
 
       <!-- Footer -->
       <tr><td style="padding:18px 32px 30px;">
-        <div style="font-size:12px;line-height:1.6;color:#8e8e93;">You can also view this code any time on your order in the imcorpcart app.</div>
+        <div style="font-size:12px;line-height:1.6;color:#8e8e93;">You can also view ${many ? 'these codes' : 'this code'} any time on your order in the imcorpcart app.</div>
       </td></tr>
     </table>
   </div>`;

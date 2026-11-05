@@ -75,6 +75,7 @@ export interface OrderItem {
   courierCode?: string | null; // the product's preferred courier (prefills dispatch)
   denomination?: number | null; // gift-card face value (voucher lines only)
   fulfilmentStatus?: string | null; // PENDING | PROCESSING | DELIVERED | FAILED (voucher lines only)
+  cardsIssued?: number; // gift cards issued so far on this line, out of `qty`
   deliveredAt?: string | null; // when the voucher code was issued + emailed
 }
 

@@ -296,7 +296,10 @@ function VoucherFulfilmentCard({ order, orderId, onDone }: { order: Order; order
   const msgFor = (it: Order['items'][number]) => {
     if (it.fulfilmentStatus === 'DELIVERED') {
       const to = order.buyerEmail || 'the buyer';
-      return `Voucher code emailed to ${to}${it.deliveredAt ? ` · ${fmtDate(it.deliveredAt)}` : ''}.`;
+      const refunded = it.qty - (it.cardsIssued ?? 0);
+      return `${it.qty > 1 ? 'Voucher codes' : 'Voucher code'} emailed to ${to}${it.deliveredAt ? ` · ${fmtDate(it.deliveredAt)}` : ''}.${
+        refunded > 0 ? ` ${refunded} couldn’t be issued and ${refunded > 1 ? 'were' : 'was'} refunded.` : ''
+      }`;
     }
     if (it.fulfilmentStatus === 'FAILED') {
       return 'Couldn’t be issued — the buyer was refunded.';
@@ -311,7 +314,10 @@ function VoucherFulfilmentCard({ order, orderId, onDone }: { order: Order; order
           <div key={i} className={styles.vfRow}>
             <div className={styles.vfMain}>
               <div className={s.cellName}>{it.name}</div>
-              <div className={s.cellSub}>{inr(it.denomination ?? it.price)} gift card</div>
+              <div className={s.cellSub}>
+                {inr(it.denomination ?? it.price)} gift card
+                {it.qty > 1 ? ` · ${it.cardsIssued ?? 0} of ${it.qty} issued` : ''}
+              </div>
               <div className={styles.vfMsg}>{msgFor(it)}</div>
             </div>
             <VoucherStatusChip status={it.fulfilmentStatus ?? ''} orderId={orderId} itemId={it.itemId} onDone={onDone} />

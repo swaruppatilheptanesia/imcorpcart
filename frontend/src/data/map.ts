@@ -322,7 +322,12 @@ interface ApiOrderItem {
   unitPrice: number;
   // Voucher issuance now lives in its own table, nested on the item (status only
   // for admin; no raw code). Flattened onto OrderItem below so components are stable.
-  voucherFulfilment?: { status?: string | null; denomination?: number | null; deliveredAt?: string | null } | null;
+  voucherFulfilment?: {
+    status?: string | null;
+    denomination?: number | null;
+    deliveredAt?: string | null;
+    cards?: { status?: string | null }[] | null;
+  } | null;
   shade?: string | null;
   substitution?: OrderSubstitution | null;
   product: {
@@ -411,6 +416,7 @@ export function toOrderFull(o: ApiOrderFull): Order & { cuid: string } {
       denomination: it.voucherFulfilment?.denomination ?? null,
       fulfilmentStatus: it.voucherFulfilment?.status ?? null,
       deliveredAt: it.voucherFulfilment?.deliveredAt ?? null,
+      cardsIssued: it.voucherFulfilment?.cards?.filter((c) => c.status === 'DELIVERED').length ?? 0,
     };
   });
   return {

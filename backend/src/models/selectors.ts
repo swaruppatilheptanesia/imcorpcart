@@ -114,7 +114,7 @@ export const orderFullInclude = {
   address: true,
   coupon: { select: { id: true, code: true, type: true } },
   // Explicit item select (NOT `include`): carries the voucher fulfilment STATUS
-  // for the admin, but never the raw credential (voucherCode/voucherPin/…). The
+  // for the admin, but never the raw credential (a card's code/pin). The
   // buyer's own order detail uses `shopOrderFullInclude` below, which adds them.
   items: {
     select: {
@@ -125,7 +125,9 @@ export const orderFullInclude = {
       // Colour on the line + the post-order colour-swap record, if any.
       shade: true,
       substitution: true,
-      voucherFulfilment: { select: { status: true, denomination: true, deliveredAt: true } },
+      voucherFulfilment: {
+        select: { status: true, denomination: true, deliveredAt: true, cards: { select: { status: true } } },
+      },
       // courierCode: the product's preferred courier, used to pre-select the
       // courier when staff dispatch this order.
       product: {
@@ -218,12 +220,12 @@ export const shopOrderFullInclude = {
           status: true,
           denomination: true,
           deliveredAt: true,
-          voucherCode: true,
-          voucherPin: true,
-          voucherCardType: true,
           redemptionUrl: true,
-          voucherExpiry: true,
           fulfilmentError: true,
+          cards: {
+            orderBy: { unitNo: 'asc' },
+            select: { unitNo: true, status: true, code: true, pin: true, cardType: true, expiry: true, amount: true, refundedAt: true },
+          },
         },
       },
       product: { select: { id: true, name: true, sku: true, sourceId: true, source: { select: { name: true } } } },

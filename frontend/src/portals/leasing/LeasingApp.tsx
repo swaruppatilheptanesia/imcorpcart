@@ -61,7 +61,10 @@ export default function LeasingApp() {
       </div>
     );
   }
-  if (stage !== 'in') return <Navigate to="/" replace />;
+  if (stage !== 'in') {
+    const { pathname, search } = window.location;
+    return <Navigate to={`/?next=${encodeURIComponent(pathname + search)}`} replace />;
+  }
 
   return (
     <ToastProvider>

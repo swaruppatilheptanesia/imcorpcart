@@ -70,7 +70,10 @@ export default function CompanyApp() {
     );
   }
   // Single door: signed-out (or wrong-role) visits go to the unified login.
-  if (stage !== 'in') return <Navigate to="/" replace />;
+  if (stage !== 'in') {
+    const { pathname, search } = window.location;
+    return <Navigate to={`/?next=${encodeURIComponent(pathname + search)}`} replace />;
+  }
 
   return (
     <ToastProvider>

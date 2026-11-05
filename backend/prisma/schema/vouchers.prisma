@@ -4,7 +4,8 @@
 // shipment / courier / transit — just async code issuance from the client's
 // Hubble wallet), so its issuance state lives in its own table, 1:1 with the
 // OrderItem it fulfils. The presence of a VoucherFulfilment row is what marks an
-// order line as a gift card.
+// order line as a gift card. A line for N cards owns N VoucherCard rows, each its
+// own Hubble order of quantity 1 and its own credential.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model VoucherFulfilment {
@@ -16,10 +17,11 @@ model VoucherFulfilment {
   // charge and the Hubble order amount). Equals the order line's unitPrice.
   denomination Decimal @db.Decimal(12, 2)
 
-  // Issuance state: after the order is paid we place a Hubble order, poll it, then
-  // store the issued credential here. `hubbleOrderRef` is *Ref-named so serialize()
-  // strips it from every response (internal-only). The credential fields
-  // (voucherCode/voucherPin) are exposed ONLY on the buyer's own getOrder.
+  // The line's overall state, rolled up from its cards. `hubbleOrderRef` and the
+  // voucherCode..voucherExpiry columns are deprecated: they held the single card
+  // of the old one-order-per-line flow, were copied onto VoucherCard by migration
+  // 20261105120000, and are no longer written (the recovery script still reads
+  // hubbleOrderRef to find old orders).
   status          VoucherFulfilmentStatus @default(PENDING)
   hubbleOrderRef  String?                 @map("hubble_order_ref")
   voucherCode     String?                 @map("voucher_code")
@@ -33,6 +35,36 @@ model VoucherFulfilment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  cards VoucherCard[]
+
   @@index([status])
   @@map("voucher_fulfilments")
+}
+
+// One issued (or to-be-issued) gift card of a line. `hubbleOrderRef` is *Ref-named
+// so serialize() strips it from every response; code/pin are selected ONLY on the
+// buyer's own getOrder (shopOrderFullInclude).
+model VoucherCard {
+  id           String            @id @default(cuid())
+  fulfilmentId String            @map("fulfilment_id")
+  fulfilment   VoucherFulfilment @relation(fields: [fulfilmentId], references: [id], onDelete: Cascade)
+
+  unitNo         Int                     @map("unit_no") // 1..OrderItem.quantity
+  status         VoucherFulfilmentStatus @default(PENDING)
+  hubbleOrderRef String?                 @map("hubble_order_ref")
+  code           String?
+  pin            String?
+  cardType       String?                 @map("card_type")
+  expiry         DateTime?
+  amount         Decimal?                @db.Decimal(12, 2) // face value Hubble issued
+  error          String?
+  refundedAt     DateTime?               @map("refunded_at") // this card's share went back to the buyer
+  deliveredAt    DateTime?               @map("delivered_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fulfilmentId, unitNo])
+  @@index([status])
+  @@map("voucher_cards")
 }

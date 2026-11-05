@@ -106,7 +106,8 @@ function ShopShell({ authed, onSignOut }: { authed: boolean; onSignOut: () => vo
   const ctx: ShopShellCtx = { openFilter: () => setFilterOpen(true) };
 
   // Routes that require a signed-in employee; in public mode send them to login.
-  const authOnly = (el: ReactNode) => (authed ? el : <Navigate to="/" replace />);
+  const authOnly = (el: ReactNode) =>
+    authed ? el : <Navigate to={`/?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
 
   return (
     <div className={styles.page}>

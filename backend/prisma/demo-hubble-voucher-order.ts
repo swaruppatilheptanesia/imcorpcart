@@ -144,8 +144,34 @@ async function main() {
       include: { items: true },
     });
     // Voucher issuance lives in its own table (1:1 with the order line).
+    const { voucherCode, voucherPin, voucherCardType, voucherExpiry, ...line } = s.fulfilment;
     await prisma.voucherFulfilment.create({
-      data: { orderItemId: order.items[0].id, denomination: s.amount, ...s.fulfilment },
+      data: {
+        orderItemId: order.items[0].id,
+        denomination: s.amount,
+        ...line,
+        // The issued or failed card itself. A PROCESSING line gets its card when the
+        // fulfilment engine picks it up (and polls the fake ref, so nothing is bought).
+        ...(line.status === VoucherFulfilmentStatus.PROCESSING
+          ? {}
+          : {
+              cards: {
+                create: {
+                  unitNo: 1,
+                  status: line.status,
+                  hubbleOrderRef: line.hubbleOrderRef,
+                  code: voucherCode,
+                  pin: voucherPin,
+                  cardType: voucherCardType,
+                  expiry: voucherExpiry,
+                  amount: s.amount,
+                  error: line.fulfilmentError,
+                  deliveredAt: line.deliveredAt,
+                  refundedAt: line.status === VoucherFulfilmentStatus.FAILED ? now : null,
+                },
+              },
+            }),
+      },
     });
     console.log(`✓ ${s.orderNo} (${order.id}) — ${s.product.brand ?? s.product.name} · ₹${s.amount} · ${s.fulfilment.status}`);
   }

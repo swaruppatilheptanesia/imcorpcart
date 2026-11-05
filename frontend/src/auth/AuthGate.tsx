@@ -33,7 +33,10 @@ export function AuthGate() {
     };
   }, [qrToken]);
 
-  const done = (portalPath: string) => navigate(portalPath);
+  // A signed-out deep link (e.g. an order link in an email) comes here as
+  // `/?next=<path>`. Only a path inside this role's own portal is honoured.
+  const next = params.get('next');
+  const done = (portalPath: string) => navigate(next?.startsWith(`${portalPath}/`) ? next : portalPath);
   const toOtp = (ct: string, addr: string) => {
     setChallengeToken(ct);
     setEmail(addr);

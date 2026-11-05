@@ -212,33 +212,55 @@ function VoucherPanel({ vf }: { vf: any }) {
   };
 
   if (status === 'DELIVERED') {
-    const expiry = vf.voucherExpiry ? new Date(vf.voucherExpiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cards: any[] = vf.cards ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const issued = cards.filter((c: any) => c.status === 'DELIVERED');
+    const failedCount = cards.length - issued.length;
     return (
       <div className={styles.voucherPanel}>
         <div className={styles.voucherHead}>
-          <Gift size={15} /> Your gift card
+          <Gift size={15} /> {issued.length > 1 ? `Your ${issued.length} gift cards` : 'Your gift card'}
         </div>
-        {vf.voucherCode && (
-          <button className={styles.voucherCred} onClick={() => copy('Card number', vf.voucherCode)}>
-            <div>
-              <div className={styles.credLabel}>Card number</div>
-              <div className={styles.credValue}>{vf.voucherCode}</div>
-            </div>
-            <Copy size={15} />
-          </button>
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {issued.map((c: any, i: number) => (
+          <div key={c.unitNo} className={styles.voucherCard}>
+            {issued.length > 1 && (
+              <div className={styles.voucherCardNo}>
+                Card {i + 1} of {issued.length}
+              </div>
+            )}
+            {c.code && (
+              <button className={styles.voucherCred} onClick={() => copy('Card number', c.code)}>
+                <div>
+                  <div className={styles.credLabel}>Card number</div>
+                  <div className={styles.credValue}>{c.code}</div>
+                </div>
+                <Copy size={15} />
+              </button>
+            )}
+            {c.pin && (
+              <button className={styles.voucherCred} onClick={() => copy('PIN', c.pin)}>
+                <div>
+                  <div className={styles.credLabel}>PIN</div>
+                  <div className={styles.credValue}>{c.pin}</div>
+                </div>
+                <Copy size={15} />
+              </button>
+            )}
+            {c.expiry && (
+              <div className={styles.voucherMeta}>
+                Valid till {new Date(c.expiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.
+              </div>
+            )}
+          </div>
+        ))}
+        {failedCount > 0 && (
+          <div className={styles.voucherMeta}>
+            {failedCount} of your {cards.length} gift cards couldn’t be issued, and you’ve been refunded for {failedCount > 1 ? 'them' : 'it'}.
+          </div>
         )}
-        {vf.voucherPin && (
-          <button className={styles.voucherCred} onClick={() => copy('PIN', vf.voucherPin)}>
-            <div>
-              <div className={styles.credLabel}>PIN</div>
-              <div className={styles.credValue}>{vf.voucherPin}</div>
-            </div>
-            <Copy size={15} />
-          </button>
-        )}
-        <div className={styles.voucherMeta}>
-          {expiry ? `Valid till ${expiry}. ` : ''}Also emailed to you. Treat this code like cash.
-        </div>
+        <div className={styles.voucherMeta}>Also emailed to you. Treat {issued.length > 1 ? 'these codes' : 'this code'} like cash.</div>
         {vf.redemptionUrl && (
           <a className={styles.voucherLink} href={vf.redemptionUrl} target="_blank" rel="noreferrer">
             Redeem your gift card →
